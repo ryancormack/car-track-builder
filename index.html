@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hot Track Builder</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="logo"><span class="logo-hot">HOT</span><span class="logo-track">TRACK</span></h1>
+
+    <div class="mode-switch">
+      <button id="mode-build" class="mode-btn active" data-mode="build">🏗 Build</button>
+      <button id="mode-play" class="mode-btn" data-mode="play">▶ Play</button>
+    </div>
+
+    <div class="hud">
+      <div class="hud-item"><span class="hud-label">Speed</span><span id="hud-speed" class="hud-value">0</span></div>
+      <div class="hud-item"><span class="hud-label">Score</span><span id="hud-score" class="hud-value">0</span></div>
+      <div class="hud-item"><span class="hud-label">Pieces</span><span id="hud-pieces" class="hud-value">0</span></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar" id="sidebar">
+      <section class="panel">
+        <h2 class="panel-title">Start</h2>
+        <label class="row">
+          <span>Drop height</span>
+          <input id="drop-height" type="range" min="0" max="6" step="1" value="3" />
+          <output id="drop-height-val">3</output>
+        </label>
+        <p class="hint">Higher drops give more starting speed.</p>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Track Pieces</h2>
+        <div id="palette" class="palette"></div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Track</h2>
+        <div class="row buttons">
+          <button id="btn-undo" class="btn">↶ Undo</button>
+          <button id="btn-clear" class="btn danger">🗑 Clear</button>
+        </div>
+        <div class="row buttons">
+          <button id="btn-save" class="btn ghost">💾 Save</button>
+          <button id="btn-load" class="btn ghost">📂 Load</button>
+        </div>
+        <p id="status" class="status"></p>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <canvas id="canvas"></canvas>
+      <div id="overlay" class="overlay hidden">
+        <div class="overlay-card">
+          <h2 id="overlay-title">Run complete</h2>
+          <p id="overlay-body">Nice run!</p>
+          <div class="overlay-stats">
+            <div><span class="hud-label">Score</span><strong id="overlay-score">0</strong></div>
+            <div><span class="hud-label">Top Speed</span><strong id="overlay-top">0</strong></div>
+            <div><span class="hud-label">Length</span><strong id="overlay-length">0</strong></div>
+          </div>
+          <button id="overlay-close" class="btn primary">Back to Build</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Drag to pan · Scroll to zoom · <kbd>R</kbd> rotate camera · <kbd>Space</kbd> play/pause</span>
+  </footer>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.162.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
