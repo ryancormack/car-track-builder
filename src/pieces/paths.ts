@@ -39,14 +39,15 @@ export const pathLoop: PathFn = (t) => {
 };
 
 export const pathCorkscrew: PathFn = (t) => {
-  // Barrel roll: the centreline traces a single helical loop (radius R) while
-  // advancing forward. The spin is eased with smootherstep so the piece enters
-  // and exits flat — ly = lz = 0 and banking = 0 at both ends — which makes it
-  // join cleanly onto neighbouring track instead of floating above it.
+  // Barrel roll spanning two cells (lx: 0 -> 2): the centreline traces a single
+  // helical loop (radius R) stretched over the extra length so it reads as a
+  // clean, graceful corkscrew rather than a cramped knot. The spin is eased with
+  // smootherstep so the piece enters and exits flat — ly = lz = 0 and banking = 0
+  // at both ends — joining cleanly onto neighbouring track.
   const s = t * t * t * (t * (t * 6 - 15) + 10); // smootherstep: S(0)=0, S(1)=1, S'=0 at ends
   const a = 2 * Math.PI * s;
-  const R = 0.34;
-  return { lx: t, ly: R * Math.sin(a), lz: R * (1 - Math.cos(a)), banking: a };
+  const R = 0.4;
+  return { lx: 2 * t, ly: R * Math.sin(a), lz: R * (1 - Math.cos(a)), banking: a };
 };
 
 export const pathJump: PathFn = (t) => {
