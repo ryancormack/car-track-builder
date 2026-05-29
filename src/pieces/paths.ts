@@ -39,15 +39,17 @@ export const pathLoop: PathFn = (t) => {
 };
 
 export const pathCorkscrew: PathFn = (t) => {
-  // Barrel roll spanning two cells (lx: 0 -> 2): the centreline traces a single
-  // helical loop (radius R) stretched over the extra length so it reads as a
-  // clean, graceful corkscrew rather than a cramped knot. The spin is eased with
-  // smootherstep so the piece enters and exits flat — ly = lz = 0 and banking = 0
-  // at both ends — joining cleanly onto neighbouring track.
-  const s = t * t * t * (t * (t * 6 - 15) + 10); // smootherstep: S(0)=0, S(1)=1, S'=0 at ends
-  const a = 2 * Math.PI * s;
-  const R = 0.4;
-  return { lx: 2 * t, ly: R * Math.sin(a), lz: R * (1 - Math.cos(a)), banking: a };
+  // A parametric helix laid on its horizontal axis — the standard game-engine
+  // corkscrew. With angle theta = 2*pi*t for one full inversion over the piece:
+  //   x = k * theta   (forward, stretched across two cells: k = L / 2*pi, L = 2)
+  //   y = r * sin(theta)              (lateral sway)
+  //   z = r * (1 - cos(theta))        (height; 0 at both ends, apex 2r at theta = pi)
+  //   banking = theta                 (roll tracks the curve exactly)
+  // Pitch is uniform (theta is linear in t), so it reads as an evenly-coiled
+  // spring rather than a bunched knot.
+  const theta = 2 * Math.PI * t;
+  const r = 0.4;
+  return { lx: 2 * t, ly: r * Math.sin(theta), lz: r * (1 - Math.cos(theta)), banking: theta };
 };
 
 export const pathJump: PathFn = (t) => {
