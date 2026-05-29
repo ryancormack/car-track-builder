@@ -84,8 +84,8 @@ export const PIECES: Record<PieceId, Piece> = {
   },
   JUMP: {
     id: 'JUMP', name: 'Jump', icon: '⤴', category: 'stunt', featured: true,
-    forward: 1, turn: 0, dz: 0,
-    pathLen: 1.5, excitement: 12, minV2: 18, boostEnergy: 0,
+    forward: 2, turn: 0, dz: 0,
+    pathLen: 3.0, excitement: 12, minV2: 18, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathJump,
   },

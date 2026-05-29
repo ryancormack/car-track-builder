@@ -11,10 +11,10 @@ export function buildCar(): THREE.Group {
     new THREE.BoxGeometry(0.55, 0.18, 0.32),
     new THREE.MeshStandardMaterial({
       color: COLORS.car,
-      metalness: 0.6,
-      roughness: 0.3,
+      metalness: 0.55,
+      roughness: 0.28,
       emissive: COLORS.carEm,
-      emissiveIntensity: 0.4,
+      emissiveIntensity: 0.45,
     }),
   );
   body.castShadow = true;
@@ -38,6 +38,31 @@ export function buildCar(): THREE.Group {
     w.rotation.x = Math.PI / 2;
     w.position.set(x, y, z);
     group.add(w);
+  }
+
+  // Glowing headlights at the front.
+  const headlightMat = new THREE.MeshStandardMaterial({
+    color: COLORS.carHeadlight,
+    emissive: COLORS.carHeadlightEm,
+    emissiveIntensity: 1.0,
+    roughness: 0.3,
+  });
+  const headlightGeo = new THREE.BoxGeometry(0.05, 0.07, 0.09);
+  for (const z of [0.1, -0.1]) {
+    const hl = new THREE.Mesh(headlightGeo, headlightMat);
+    hl.position.set(0.28, 0.02, z);
+    group.add(hl);
+  }
+
+  // Rear spoiler.
+  const spoilerMat = new THREE.MeshStandardMaterial({ color: COLORS.carCabin, metalness: 0.6, roughness: 0.4 });
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.03, 0.34), spoilerMat);
+  wing.position.set(-0.26, 0.13, 0);
+  group.add(wing);
+  for (const z of [0.13, -0.13]) {
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.03), spoilerMat);
+    strut.position.set(-0.26, 0.07, z);
+    group.add(strut);
   }
   return group;
 }
