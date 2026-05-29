@@ -4,13 +4,6 @@
 
 import type { PathFn } from '../types.js';
 
-/**
- * Smootherstep S(t) = 6t^5 - 15t^4 + 10t^3. Maps [0,1] -> [0,1] with zero first
- * AND second derivative at both ends, so curves built on it meet their
- * neighbours with no slope (and no curvature) discontinuity.
- */
-function smootherstep(t: number): number { return t * t * t * (t * (t * 6 - 15) + 10); }
-
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
 export const pathCurveR: PathFn = (t) => {
@@ -25,12 +18,33 @@ export const pathCurveL: PathFn = (t) => {
   return { lx: 0.5 * Math.cos(a), ly: -0.5 + 0.5 * Math.sin(a), lz: 0, banking: 0 };
 };
 
-// Ramps change elevation by one unit using a smootherstep height profile, so
-// the grade eases from flat (zero slope) at the entry, up through the middle,
-// and back to flat at the exit. That means they join straight track — and each
-// other — with no sharp crease, while still netting the full ±1 elevation change.
-export const pathRampUp: PathFn = (t) => ({ lx: t, ly: 0, lz: smootherstep(t), banking: 0 });
-export const pathRampDown: PathFn = (t) => ({ lx: t, ly: 0, lz: -smootherstep(t), banking: 0 });
+// Ramps change elevation by one unit. The elevation profile is a cubic Hermite
+// interpolant from (0,0) to (1,1) with configurable entry/exit slopes. When
+// easeIn is true, slope=0 at t=0 (smooth join to flat track); when false,
+// slope=1 (linear join to a neighboring ramp). Likewise for easeOut at t=1.
+function rampElevation(t: number, easeIn: boolean, easeOut: boolean): number {
+  const m0 = easeIn ? 0 : 1;
+  const m1 = easeOut ? 0 : 1;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  // Hermite basis: H(t) = h01*p1 + h10*m0 + h11*m1  (p0 = 0, p1 = 1)
+  return (-2 * t3 + 3 * t2) + (t3 - 2 * t2 + t) * m0 + (t3 - t2) * m1;
+}
+
+/** Factory for context-aware ramp-up paths. */
+export function makeRampUpPath(easeIn: boolean, easeOut: boolean): PathFn {
+  return (t) => ({ lx: t, ly: 0, lz: rampElevation(t, easeIn, easeOut), banking: 0 });
+}
+
+/** Factory for context-aware ramp-down paths. */
+export function makeRampDownPath(easeIn: boolean, easeOut: boolean): PathFn {
+  return (t) => ({ lx: t, ly: 0, lz: -rampElevation(t, easeIn, easeOut), banking: 0 });
+}
+
+// Default both-eased variants: zero slope at both ends, so they join flat track
+// (and each other in the legacy sense) with no sharp crease.
+export const pathRampUp: PathFn = makeRampUpPath(true, true);
+export const pathRampDown: PathFn = makeRampDownPath(true, true);
 
 export const pathLoop: PathFn = (t) => {
   // Approach (0..0.1): straight from back edge to loop bottom (lx=0.5, lz=0).

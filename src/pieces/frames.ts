@@ -8,7 +8,7 @@
 // Coordinates are grid space: x = forward (wx), y = lateral (wy), z = up (wz).
 
 import { piecePathAtT } from './sampling.js';
-import type { GridState, Piece } from '../types.js';
+import type { GridState, PathFn } from '../types.js';
 
 export interface Vec3 { x: number; y: number; z: number; }
 
@@ -41,17 +41,17 @@ const lerp = (a: Vec3, b: Vec3, f: number): Vec3 => ({
 
 const DIFF = 0.004; // finite-difference half-step for the tangent
 
-function tangentAt(piece: Piece, entry: GridState, t: number): Vec3 {
-  const a = piecePathAtT(piece, entry, Math.max(t - DIFF, 0));
-  const b = piecePathAtT(piece, entry, Math.min(t + DIFF, 1));
+function tangentAt(path: PathFn, entry: GridState, t: number): Vec3 {
+  const a = piecePathAtT(path, entry, Math.max(t - DIFF, 0));
+  const b = piecePathAtT(path, entry, Math.min(t + DIFF, 1));
   const d: Vec3 = { x: b.wx - a.wx, y: b.wy - a.wy, z: b.wz - a.wz };
   return lenSq(d) > 1e-12 ? normalize(d) : { x: 1, y: 0, z: 0 };
 }
 
-function buildFrame(piece: Piece, entry: GridState, t: number, prevSide: Vec3 | null): TrackFrame {
-  const h = piecePathAtT(piece, entry, t);
+function buildFrame(path: PathFn, entry: GridState, t: number, prevSide: Vec3 | null): TrackFrame {
+  const h = piecePathAtT(path, entry, t);
   const pos: Vec3 = { x: h.wx, y: h.wy, z: h.wz };
-  const tangent = tangentAt(piece, entry, t);
+  const tangent = tangentAt(path, entry, t);
 
   // Surface normal rolled by the banking angle about the forward axis: banking 0
   // -> straight up; a corkscrew's banking sweeps it a full turn. side = tangent x
@@ -74,13 +74,13 @@ function buildFrame(piece: Piece, entry: GridState, t: number, prevSide: Vec3 | 
  * corkscrews come out smooth.
  */
 export function trackFrames(
-  piece: Piece, entry: GridState, segments: number, tStart = 0, tEnd = 1,
+  path: PathFn, entry: GridState, segments: number, tStart = 0, tEnd = 1,
 ): TrackFrame[] {
   const frames: TrackFrame[] = [];
   let prevSide: Vec3 | null = null;
   for (let i = 0; i <= segments; i++) {
     const t = tStart + (tEnd - tStart) * (i / segments);
-    const f = buildFrame(piece, entry, t, prevSide);
+    const f = buildFrame(path, entry, t, prevSide);
     frames.push(f);
     prevSide = f.side;
   }
@@ -92,8 +92,8 @@ export function trackFrames(
  * tracking is applied) and interpolates at t, taking the exact centreline
  * position from the path. Used by the simulator to place the car each frame.
  */
-export function trackFrameAt(piece: Piece, entry: GridState, t: number, segments = 48): TrackFrame {
-  const frames = trackFrames(piece, entry, segments);
+export function trackFrameAt(path: PathFn, entry: GridState, t: number, segments = 48): TrackFrame {
+  const frames = trackFrames(path, entry, segments, 0, 1);
   const clamped = Math.min(Math.max(t, 0), 1);
   const x = clamped * segments;
   const i = Math.min(Math.floor(x), segments - 1);
@@ -101,7 +101,7 @@ export function trackFrameAt(piece: Piece, entry: GridState, t: number, segments
   const a = frames[i];
   const b = frames[i + 1];
 
-  const h = piecePathAtT(piece, entry, clamped);
+  const h = piecePathAtT(path, entry, clamped);
   const pos: Vec3 = { x: h.wx, y: h.wy, z: h.wz };
   const tangent = normalize(lerp(a.tangent, b.tangent, f));
   let up = normalize(lerp(a.up, b.up, f));

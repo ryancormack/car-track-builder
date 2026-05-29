@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { piecePathAtT } from '../pieces/sampling.js';
 import { trackFrames } from '../pieces/frames.js';
 import { COLORS } from './colors.js';
-import type { GridState, Piece, WorldSample } from '../types.js';
+import type { GridState, PathFn, Piece, WorldSample } from '../types.js';
 
 interface TubeOpts {
   segments?: number;
@@ -19,23 +19,23 @@ interface TubeOpts {
   tEnd?: number;
 }
 
-/** Grid (gx, gy, gz) → Three.js (x, y=up, z) since Three uses y-up. */
+/** Grid (gx, gy, gz) -> Three.js (x, y=up, z) since Three uses y-up. */
 function v3(p: WorldSample): THREE.Vector3 { return new THREE.Vector3(p.wx, p.wz, p.wy); }
 
 /** Evenly-spaced world samples across a sub-range [tStart, tEnd] of the path. */
-function sampleRange(piece: Piece, entry: GridState, n: number, tStart: number, tEnd: number): WorldSample[] {
+function sampleRange(path: PathFn, entry: GridState, n: number, tStart: number, tEnd: number): WorldSample[] {
   const out: WorldSample[] = [];
   for (let i = 0; i <= n; i++) {
-    out.push(piecePathAtT(piece, entry, tStart + (tEnd - tStart) * (i / n)));
+    out.push(piecePathAtT(path, entry, tStart + (tEnd - tStart) * (i / n)));
   }
   return out;
 }
 
 /** Orthonormal frame (tangent, up, side) at parameter t, honouring banking. */
-function frameAt(piece: Piece, entry: GridState, t: number) {
-  const here = piecePathAtT(piece, entry, t);
-  const a = piecePathAtT(piece, entry, Math.max(t - 0.005, 0));
-  const b = piecePathAtT(piece, entry, Math.min(t + 0.005, 1));
+function frameAt(path: PathFn, entry: GridState, t: number) {
+  const here = piecePathAtT(path, entry, t);
+  const a = piecePathAtT(path, entry, Math.max(t - 0.005, 0));
+  const b = piecePathAtT(path, entry, Math.min(t + 0.005, 1));
 
   const tang = new THREE.Vector3(b.wx - a.wx, b.wz - a.wz, b.wy - a.wy);
   if (tang.lengthSq() < 1e-8) tang.set(1, 0, 0);
@@ -56,8 +56,8 @@ function frameAt(piece: Piece, entry: GridState, t: number) {
 
 // ---------- Track tubes ----------
 
-function buildCenterTube(piece: Piece, entry: GridState, color: number, opts: TubeOpts = {}): THREE.Mesh {
-  const samples = sampleRange(piece, entry, opts.segments ?? 48, opts.tStart ?? 0, opts.tEnd ?? 1);
+function buildCenterTube(path: PathFn, entry: GridState, color: number, opts: TubeOpts = {}): THREE.Mesh {
+  const samples = sampleRange(path, entry, opts.segments ?? 48, opts.tStart ?? 0, opts.tEnd ?? 1);
   const curve = new THREE.CatmullRomCurve3(samples.map(v3), false, 'catmullrom', 0.0);
   const tube = new THREE.TubeGeometry(curve, opts.tubularSegments ?? 64, opts.radius ?? 0.05, 12, false);
   const mat = new THREE.MeshStandardMaterial({
@@ -78,11 +78,11 @@ function buildCenterTube(piece: Piece, entry: GridState, color: number, opts: Tu
  * side of the path. Banking is honoured for corkscrews so the rails twist with
  * the car. Can render a sub-range of the path via opts.tStart / opts.tEnd.
  */
-export function buildRailedTrack(piece: Piece, entry: GridState, color: number, opts: TubeOpts = {}): THREE.Group {
+export function buildRailedTrack(path: PathFn, entry: GridState, color: number, opts: TubeOpts = {}): THREE.Group {
   const tStart = opts.tStart ?? 0;
   const tEnd = opts.tEnd ?? 1;
   const group = new THREE.Group();
-  group.add(buildCenterTube(piece, entry, color, { ...opts, radius: 0.045 }));
+  group.add(buildCenterTube(path, entry, color, { ...opts, radius: 0.045 }));
 
   const segments = opts.segments ?? 44;
   const railOffset = 0.18;
@@ -92,7 +92,7 @@ export function buildRailedTrack(piece: Piece, entry: GridState, color: number, 
   // The shared, unit-tested frame logic supplies the lateral axis; we just map
   // grid space -> three.js (x, z, y) and offset the rails to either side. This
   // is the same frame the car uses, so the rails and the car always agree.
-  for (const f of trackFrames(piece, entry, segments, tStart, tEnd)) {
+  for (const f of trackFrames(path, entry, segments, tStart, tEnd)) {
     const pos = new THREE.Vector3(f.pos.x, f.pos.z, f.pos.y);
     const side = new THREE.Vector3(f.side.x, f.side.z, f.side.y);
     left.push(pos.clone().addScaledVector(side, -railOffset));
@@ -119,8 +119,8 @@ export function buildRailedTrack(piece: Piece, entry: GridState, color: number, 
 
 // ---------- Special pieces ----------
 
-function buildBoosterPiece(piece: Piece, entry: GridState): THREE.Group {
-  const group = buildRailedTrack(piece, entry, COLORS.booster, {
+function buildBoosterPiece(path: PathFn, entry: GridState): THREE.Group {
+  const group = buildRailedTrack(path, entry, COLORS.booster, {
     emissive: COLORS.boosterEm,
     emissiveIntensity: 0.7,
   });
@@ -133,7 +133,7 @@ function buildBoosterPiece(piece: Piece, entry: GridState): THREE.Group {
     roughness: 0.4,
   });
   for (const t of [0.25, 0.5, 0.75]) {
-    const { pos, tang } = frameAt(piece, entry, t);
+    const { pos, tang } = frameAt(path, entry, t);
     const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), arrowMat);
     arrow.position.copy(pos).addScaledVector(new THREE.Vector3(0, 1, 0), 0.24);
     arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tang);
@@ -144,8 +144,8 @@ function buildBoosterPiece(piece: Piece, entry: GridState): THREE.Group {
 }
 
 /** A small glowing cross-bar marking the take-off / landing edge of a jump. */
-function buildJumpLip(piece: Piece, entry: GridState, t: number): THREE.Mesh {
-  const { pos, tang, up, side } = frameAt(piece, entry, t);
+function buildJumpLip(path: PathFn, entry: GridState, t: number): THREE.Mesh {
+  const { pos, tang, up, side } = frameAt(path, entry, t);
   const mat = new THREE.MeshStandardMaterial({
     color: COLORS.jumpLip,
     emissive: COLORS.jumpLipEm,
@@ -160,21 +160,21 @@ function buildJumpLip(piece: Piece, entry: GridState, t: number): THREE.Mesh {
   return lip;
 }
 
-function buildJumpPiece(piece: Piece, entry: GridState): THREE.Group {
+function buildJumpPiece(path: PathFn, entry: GridState): THREE.Group {
   const group = new THREE.Group();
   const color = COLORS.trackOrangeBright;
   // Take-off ramp + landing ramp, leaving a visible gap (no track) in between.
-  group.add(buildRailedTrack(piece, entry, color, { tStart: 0, tEnd: 0.32, segments: 14 }));
-  group.add(buildRailedTrack(piece, entry, color, { tStart: 0.68, tEnd: 1, segments: 14 }));
-  group.add(buildJumpLip(piece, entry, 0.32));
-  group.add(buildJumpLip(piece, entry, 0.68));
+  group.add(buildRailedTrack(path, entry, color, { tStart: 0, tEnd: 0.32, segments: 14 }));
+  group.add(buildRailedTrack(path, entry, color, { tStart: 0.68, tEnd: 1, segments: 14 }));
+  group.add(buildJumpLip(path, entry, 0.32));
+  group.add(buildJumpLip(path, entry, 0.68));
   return group;
 }
 
-function buildFinishPiece(piece: Piece, entry: GridState): THREE.Group {
-  const group = buildRailedTrack(piece, entry, COLORS.trackBlue);
-  const start = piecePathAtT(piece, entry, 0);
-  const end = piecePathAtT(piece, entry, 1);
+function buildFinishPiece(path: PathFn, entry: GridState): THREE.Group {
+  const group = buildRailedTrack(path, entry, COLORS.trackBlue);
+  const start = piecePathAtT(path, entry, 0);
+  const end = piecePathAtT(path, entry, 1);
   const cx = (start.wx + end.wx) / 2;
   const cy = (start.wy + end.wy) / 2;
   const cz = (start.wz + end.wz) / 2;
@@ -203,22 +203,22 @@ function buildFinishPiece(piece: Piece, entry: GridState): THREE.Group {
 
 // ---------- Public dispatcher ----------
 
-export function buildPieceMesh(piece: Piece, entry: GridState): THREE.Group {
-  if (piece.id === 'BOOSTER') return buildBoosterPiece(piece, entry);
-  if (piece.id === 'FINISH') return buildFinishPiece(piece, entry);
-  if (piece.id === 'JUMP') return buildJumpPiece(piece, entry);
+export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): THREE.Group {
+  if (piece.id === 'BOOSTER') return buildBoosterPiece(path, entry);
+  if (piece.id === 'FINISH') return buildFinishPiece(path, entry);
+  if (piece.id === 'JUMP') return buildJumpPiece(path, entry);
   if (piece.id === 'LOOP' || piece.id === 'CORKSCREW') {
-    return buildRailedTrack(piece, entry, COLORS.trackBlue, {
+    return buildRailedTrack(path, entry, COLORS.trackBlue, {
       emissive: COLORS.trackBlue,
       emissiveIntensity: 0.12,
       segments: 64,
     });
   }
-  return buildRailedTrack(piece, entry, COLORS.trackOrange);
+  return buildRailedTrack(path, entry, COLORS.trackOrange);
 }
 
-export function buildGhostPiece(piece: Piece, entry: GridState): THREE.Mesh {
-  const samples = sampleRange(piece, entry, 28, 0, 1);
+export function buildGhostPiece(path: PathFn, entry: GridState): THREE.Mesh {
+  const samples = sampleRange(path, entry, 28, 0, 1);
   const curve = new THREE.CatmullRomCurve3(samples.map(v3));
   const tube = new THREE.TubeGeometry(curve, 40, 0.16, 10, false);
   const mat = new THREE.MeshBasicMaterial({
