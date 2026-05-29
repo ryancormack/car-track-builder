@@ -62,12 +62,13 @@ function easedProgress(t: number): number {
 export const pathCorkscrew: PathFn = (t) => {
   // A parametric helix on its horizontal axis (the standard game-engine
   // corkscrew): x = k*theta, y = r*sin(theta), z = r*(1 - cos(theta)),
-  // banking = theta. Forward travel (lx) stays linear so the piece spans its two
+  // banking = theta. Spread over THREE cells (lx = 3*t) so a single 360° roll is
+  // nice and gentle. Forward travel stays linear so the piece spans its three
   // cells evenly and the tangent is always well defined; only the angle theta is
   // eased (easedProgress) so the spin glides in and out smoothly at the seams.
   const theta = 2 * Math.PI * easedProgress(t);
   const r = 0.4;
-  return { lx: 2 * t, ly: r * Math.sin(theta), lz: r * (1 - Math.cos(theta)), banking: theta };
+  return { lx: 3 * t, ly: r * Math.sin(theta), lz: r * (1 - Math.cos(theta)), banking: theta };
 };
 
 export const pathJump: PathFn = (t) => {
