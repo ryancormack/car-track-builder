@@ -31,6 +31,13 @@ export class Renderer implements CameraControlHost {
   startGroup: THREE.Group;
   car: THREE.Group;
 
+  private _launchAnim: {
+    startTime: number;
+    duration: number;
+    restPos: THREE.Vector3;
+    pushDir: THREE.Vector3;
+  } | null = null;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
@@ -109,6 +116,50 @@ export class Renderer implements CameraControlHost {
   }
 
   clearGhost(): void { this._clearGroup(this.ghostGroup); }
+
+  animateLauncher(): void {
+    const plunger = this.startGroup.getObjectByName('plunger') as THREE.Mesh | undefined;
+    if (!plunger) return;
+    this._launchAnim = {
+      startTime: performance.now() / 1000,
+      duration: 0.4,
+      restPos: plunger.position.clone(),
+      pushDir: new THREE.Vector3(1, 0, 0), // East = +x in Three.js
+    };
+  }
+
+  updateAnimations(_dt: number): void {
+    if (!this._launchAnim) return;
+    const plunger = this.startGroup.getObjectByName('plunger') as THREE.Mesh | undefined;
+    if (!plunger) { this._launchAnim = null; return; }
+
+    const now = performance.now() / 1000;
+    const elapsed = now - this._launchAnim.startTime;
+    const { duration, restPos, pushDir } = this._launchAnim;
+
+    if (elapsed >= duration) {
+      // Animation complete: reset to rest position
+      plunger.position.copy(restPos);
+      this._launchAnim = null;
+      return;
+    }
+
+    const t = elapsed / duration;
+    const maxPush = 0.5;
+    // Ease-out push in first half, spring back in second half
+    let offset: number;
+    if (t < 0.5) {
+      // Push forward with ease-out: fast start, slow end
+      const p = t / 0.5; // 0..1 over first half
+      offset = maxPush * (1 - (1 - p) * (1 - p));
+    } else {
+      // Retract with ease-in: slow start, fast end
+      const p = (t - 0.5) / 0.5; // 0..1 over second half
+      offset = maxPush * (1 - p) * (1 - p);
+    }
+
+    plunger.position.copy(restPos).addScaledVector(pushDir, offset);
+  }
 
   render(): void { this.renderer.render(this.scene, this.camera); }
 

@@ -395,5 +395,25 @@ export function buildStartTower(state: GridState, dropHeight: number): THREE.Gro
   );
   ring.position.set(state.gx - 0.5, 0.04, state.gy);
   group.add(ring);
+
+  // Plunger: sits behind the car's start position (behind = -x in Three.js
+  // since the track starts facing East / +x). The plunger is a cylinder
+  // oriented along the x-axis so it can push forward.
+  const plunger = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 0.35, 16),
+    new THREE.MeshStandardMaterial({
+      color: COLORS.start, emissive: COLORS.startEm, emissiveIntensity: 0.6,
+      metalness: 0.3, roughness: 0.4,
+    }),
+  );
+  // Rotate cylinder so its axis aligns with x (push direction)
+  plunger.rotation.z = Math.PI / 2;
+  // Position behind the start: car starts at (state.gx, dropHeight, state.gy).
+  // Place plunger behind it along -x.
+  plunger.position.set(state.gx - 0.5 - 0.3, dropHeight, state.gy);
+  plunger.castShadow = true;
+  plunger.name = 'plunger';
+  group.add(plunger);
+
   return group;
 }

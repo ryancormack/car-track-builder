@@ -145,6 +145,7 @@ function switchMode(next: Mode): void {
     sim = new Simulator(track);
     runResult = null;
     renderer.setCar(true, sim.carSample());
+    renderer.animateLauncher();
   } else {
     mode = 'build';
     document.body.classList.remove('mode-play');
@@ -193,6 +194,7 @@ function frame(now: number): void {
     }
   }
 
+  renderer.updateAnimations(dt);
   renderer.render();
   requestAnimationFrame(frame);
 }
