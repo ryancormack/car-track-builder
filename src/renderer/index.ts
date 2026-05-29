@@ -10,7 +10,7 @@ import { buildCar, placeCar } from './car.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
-import type { CarSample } from '../types.js';
+import type { TrackFrame } from '../pieces/frames.js';
 
 export class Renderer implements CameraControlHost {
   canvas: HTMLCanvasElement;
@@ -77,7 +77,7 @@ export class Renderer implements CameraControlHost {
 
   // -------- public API --------
 
-  setCar(visible: boolean, sample: CarSample | null = null): void {
+  setCar(visible: boolean, sample: TrackFrame | null = null): void {
     this.car.visible = !!visible;
     if (visible && sample) placeCar(this.car, sample);
   }

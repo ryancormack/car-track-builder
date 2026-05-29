@@ -5,3 +5,4 @@ export * from './geometry.js';
 export * from './paths.js';
 export * from './definitions.js';
 export * from './sampling.js';
+export * from './frames.js';

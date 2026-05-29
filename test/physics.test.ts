@@ -89,12 +89,16 @@ test('step() is a no-op once the run has ended', () => {
   assert.equal(sim.elapsed, tBefore);
 });
 
-test('carSample returns position + tangent + banking for the active piece', () => {
+test('carSample returns a valid frame (position + orthonormal axes) for the active piece', () => {
   const sim = new Simulator(trackOf(['STRAIGHT', 'FINISH'], 3));
   const s = sim.carSample();
   assert.ok(s);
-  for (const k of ['wx', 'wy', 'wz'] as const) assert.ok(Number.isFinite(s.pos[k]));
-  for (const k of ['dx', 'dy', 'dz'] as const) assert.ok(Number.isFinite(s.tangent[k]));
+  for (const v of [s.pos, s.tangent, s.up, s.side]) {
+    assert.ok(Number.isFinite(v.x + v.y + v.z), 'frame vector should be finite');
+  }
+  for (const v of [s.tangent, s.up, s.side]) {
+    assert.ok(Math.abs(Math.hypot(v.x, v.y, v.z) - 1) < 1e-6, 'axis should be unit length');
+  }
 });
 
 test('reset() restores the simulator to its initial state', () => {

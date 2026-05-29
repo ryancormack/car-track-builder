@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { piecePathAtT } from '../pieces/sampling.js';
+import { trackFrames } from '../pieces/frames.js';
 import { COLORS } from './colors.js';
 import type { GridState, Piece, WorldSample } from '../types.js';
 
@@ -87,30 +88,13 @@ export function buildRailedTrack(piece: Piece, entry: GridState, color: number, 
   const railOffset = 0.18;
   const left: THREE.Vector3[] = [];
   const right: THREE.Vector3[] = [];
-  const lateralFallback = new THREE.Vector3(0, 0, 1);
 
-  for (let i = 0; i <= segments; i++) {
-    const t = tStart + (tEnd - tStart) * (i / segments);
-    const here = piecePathAtT(piece, entry, t);
-    const a = piecePathAtT(piece, entry, Math.max(t - 0.004, 0));
-    const b = piecePathAtT(piece, entry, Math.min(t + 0.004, 1));
-
-    const pos = new THREE.Vector3(here.wx, here.wz, here.wy);
-    const tang = new THREE.Vector3(b.wx - a.wx, b.wz - a.wz, b.wy - a.wy);
-    if (tang.lengthSq() < 1e-10) tang.set(1, 0, 0);
-    tang.normalize();
-
-    // Track surface normal, rolled by the banking angle about the forward axis.
-    // Unbanked pieces -> world up (rails sit flat to either side). The corkscrew
-    // rolls it a full turn, which gives the rails a single clean revolution that
-    // (a) always stays perpendicular to the tangent (no shearing) and (b) returns
-    // to level at both seams. Taking side = tangent x normal keeps the rails
-    // square to the track; this is what fixes the previously-wandering outer rails.
-    const normal = new THREE.Vector3(0, Math.cos(here.banking), -Math.sin(here.banking));
-    const side = new THREE.Vector3().crossVectors(tang, normal);
-    if (side.lengthSq() < 1e-8) side.copy(lateralFallback); // tangent ∥ normal (vertical loop point)
-    side.normalize();
-
+  // The shared, unit-tested frame logic supplies the lateral axis; we just map
+  // grid space -> three.js (x, z, y) and offset the rails to either side. This
+  // is the same frame the car uses, so the rails and the car always agree.
+  for (const f of trackFrames(piece, entry, segments, tStart, tEnd)) {
+    const pos = new THREE.Vector3(f.pos.x, f.pos.z, f.pos.y);
+    const side = new THREE.Vector3(f.side.x, f.side.z, f.side.y);
     left.push(pos.clone().addScaledVector(side, -railOffset));
     right.push(pos.clone().addScaledVector(side, railOffset));
   }

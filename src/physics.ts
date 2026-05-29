@@ -8,10 +8,10 @@
 // require enough centripetal speed to stay on the track). Failing that, the
 // car is launched off the track and the run ends.
 
-import { PIECES, piecePathAtT } from './pieces/index.js';
+import { PIECES, trackFrameAt } from './pieces/index.js';
 import { G, FRICTION, RAMP_FRICTION_MULT, DRAG } from './constants.js';
 import type { Track } from './track.js';
-import type { CarSample } from './types.js';
+import type { TrackFrame } from './pieces/frames.js';
 
 // Re-exported for convenience (and backwards compatibility for importers/tests).
 export { G, FRICTION, RAMP_FRICTION_MULT, DRAG };
@@ -129,8 +129,10 @@ export class Simulator {
     }
   }
 
-  // Sample current car world position and forward direction (grid-space coords).
-  carSample(): CarSample | null {
+  // Sample the car's current frame (position + orientation) from the shared,
+  // unit-tested frame logic, so the car hugs the track surface (loops/corkscrews
+  // included) exactly as the rails do.
+  carSample(): TrackFrame | null {
     const n = this.track.pieces.length;
     if (n === 0) return null;
 
@@ -148,17 +150,6 @@ export class Simulator {
 
     const piece = PIECES[this.track.pieces[idx]];
     const entry = this.track.entryStateAt(idx);
-    const here = piecePathAtT(piece, entry, t);
-
-    // Tangent via finite difference.
-    const t2 = Math.min(t + 0.02, 1);
-    const t1 = Math.max(t - 0.02, 0);
-    const a = piecePathAtT(piece, entry, t1);
-    const b = piecePathAtT(piece, entry, t2);
-    return {
-      pos: here,
-      tangent: { dx: b.wx - a.wx, dy: b.wy - a.wy, dz: b.wz - a.wz },
-      banking: here.banking || 0,
-    };
+    return trackFrameAt(piece, entry, t);
   }
 }
