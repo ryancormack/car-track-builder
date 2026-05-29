@@ -27,10 +27,17 @@ test('every piece yields a finite, orthonormal frame at all samples', () => {
   }
 });
 
-test('straight / ramp keep the car upright (up ≈ world up)', () => {
-  for (const t of [0, 0.5, 1]) {
-    assert.ok(frameAt('STRAIGHT', t).up.z > 0.999, 'straight upright');
-    assert.ok(frameAt('RAMP_UP', t).up.z > 0.5, 'ramp mostly upright');
+test('straight stays level and ramps pitch with the grade without ever inverting', () => {
+  for (const t of [0, 0.5, 1]) assert.ok(frameAt('STRAIGHT', t).up.z > 0.999, 'straight upright');
+
+  // A ramp's car pitches with the (now eased) grade, but must never roll or
+  // invert — up stays in the upper hemisphere — and is level at the flat seams.
+  for (const id of ['RAMP_UP', 'RAMP_DN'] as PieceId[]) {
+    assert.ok(frameAt(id, 0).up.z > 0.99, `${id} level at entry`);
+    assert.ok(frameAt(id, 1).up.z > 0.99, `${id} level at exit`);
+    for (let t = 0; t <= 1; t += 0.1) {
+      assert.ok(frameAt(id, t).up.z > 0, `${id} should never invert (t=${t})`);
+    }
   }
 });
 

@@ -37,6 +37,23 @@ test('pathRampDown loses exactly 1 unit of altitude', () => {
   assert.equal(pathRampDown(1).lz - pathRampDown(0).lz, -1);
 });
 
+test('ramps join flat track smoothly: ~zero grade at both ends, monotonic climb', () => {
+  for (const ramp of [pathRampUp, pathRampDown]) {
+    const d = 1e-3;
+    const gradeStart = Math.abs(ramp(d).lz - ramp(0).lz) / d;
+    const gradeEnd = Math.abs(ramp(1).lz - ramp(1 - d).lz) / d;
+    assert.ok(gradeStart < 0.02, `${ramp.name}: entry grade should be ~0 (got ${gradeStart})`);
+    assert.ok(gradeEnd < 0.02, `${ramp.name}: exit grade should be ~0 (got ${gradeEnd})`);
+    // |lz| increases monotonically (no dip / overshoot).
+    let prev = -Infinity;
+    for (let t = 0; t <= 1; t += 0.02) {
+      const z = Math.abs(ramp(t).lz);
+      assert.ok(z >= prev - 1e-9, `${ramp.name}: not monotonic at t=${t}`);
+      prev = z;
+    }
+  }
+});
+
 test('pathCurveR exits at (0.5, 0.5, 0)', () => {
   const p = pathCurveR(1);
   assert.ok(Math.abs(p.lx - 0.5) < 1e-9);
