@@ -6,3 +6,4 @@ export * from './paths.js';
 export * from './definitions.js';
 export * from './sampling.js';
 export * from './frames.js';
+export * from './resolve.js';

@@ -3,13 +3,14 @@
 // the meshes/car/controls submodules.
 
 import * as THREE from 'three';
-import { PIECES, isPieceId } from '../pieces/index.js';
+import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
 import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
+import type { PieceId } from '../types.js';
 import type { TrackFrame } from '../pieces/frames.js';
 
 export class Renderer implements CameraControlHost {
@@ -90,7 +91,8 @@ export class Renderer implements CameraControlHost {
       const id = track.pieces[i];
       const p = PIECES[id];
       const entry = track.entryStateAt(i);
-      this.trackGroup.add(buildPieceMesh(p, entry));
+      const resolvedPath = resolvePathLocal(track.pieces, i);
+      this.trackGroup.add(buildPieceMesh(p, entry, resolvedPath));
     }
     this._recenterCamera(track);
   }
@@ -99,7 +101,11 @@ export class Renderer implements CameraControlHost {
     this._clearGroup(this.ghostGroup);
     if (!pieceId || !isPieceId(pieceId)) return;
     if (!track.canAdd(pieceId)) return;
-    this.ghostGroup.add(buildGhostPiece(PIECES[pieceId], track.cursorState()));
+    // Build a hypothetical piece list to resolve the ghost's path with neighbor context.
+    const hypotheticalPieces = [...track.pieces, pieceId as PieceId];
+    const ghostIndex = hypotheticalPieces.length - 1;
+    const resolvedPath = resolvePathLocal(hypotheticalPieces, ghostIndex);
+    this.ghostGroup.add(buildGhostPiece(resolvedPath, track.cursorState()));
   }
 
   clearGhost(): void { this._clearGroup(this.ghostGroup); }

@@ -8,10 +8,11 @@
 // require enough centripetal speed to stay on the track). Failing that, the
 // car is launched off the track and the run ends.
 
-import { PIECES, trackFrameAt } from './pieces/index.js';
+import { PIECES, trackFrameAt, resolvePathLocal } from './pieces/index.js';
 import { G, FRICTION, RAMP_FRICTION_MULT, DRAG } from './constants.js';
 import type { Track } from './track.js';
 import type { TrackFrame } from './pieces/frames.js';
+import type { PathFn } from './types.js';
 
 // Re-exported for convenience (and backwards compatibility for importers/tests).
 export { G, FRICTION, RAMP_FRICTION_MULT, DRAG };
@@ -29,6 +30,7 @@ export class Simulator {
   finished = false;
   elapsed = 0;
   private _enteredPiece = -1; // last piece index where we ran the entry check
+  private _resolvedPath: PathFn | null = null;
 
   constructor(track: Track) {
     this.track = track;
@@ -47,6 +49,10 @@ export class Simulator {
     this.finished = false;
     this.elapsed = 0;
     this._enteredPiece = -1;
+    // Eagerly initialize the resolved path so the hot loop never hits a null.
+    this._resolvedPath = this.track.pieces.length > 0
+      ? resolvePathLocal(this.track.pieces, 0)
+      : null;
   }
 
   get speed(): number { return Math.sqrt(Math.max(this.v2, 0)); }
@@ -66,9 +72,10 @@ export class Simulator {
     const pieceId = this.track.pieces[this.pieceIndex];
     const piece = PIECES[pieceId];
 
-    // Entry checks — once per piece.
+    // Entry checks -- once per piece.
     if (this._enteredPiece !== this.pieceIndex) {
       this._enteredPiece = this.pieceIndex;
+      this._resolvedPath = resolvePathLocal(this.track.pieces, this.pieceIndex);
       if (piece.minV2 > 0 && this.v2 < piece.minV2) {
         this.failed = true;
         this.failReason = `Too slow for ${piece.name}! Add a booster or higher drop.`;
@@ -94,10 +101,11 @@ export class Simulator {
     const t_new = Math.min(t_old + ds / piece.pathLen, 1);
     const ds_actual = (t_new - t_old) * piece.pathLen;
 
-    // Use actual altitude change over the substep — this correctly models
+    // Use actual altitude change over the substep -- this correctly models
     // gravity through loops where lz oscillates.
-    const p1 = piece.pathLocal(t_old);
-    const p2 = piece.pathLocal(t_new);
+    const resolvedPath = this._resolvedPath!;
+    const p1 = resolvedPath(t_old);
+    const p2 = resolvedPath(t_new);
     const dh = p2.lz - p1.lz; // local altitude change (grid units)
 
     const frictionMult = piece.id === 'RAMP_UP' || piece.id === 'RAMP_DN' ? RAMP_FRICTION_MULT : 1.0;
@@ -112,7 +120,7 @@ export class Simulator {
     this.distanceTraveled += ds_actual;
 
     if (this.t >= 1 - 1e-6) {
-      // Finished this piece — advance.
+      // Finished this piece -- advance.
       const completed = piece;
       this.t = 0;
       this.pieceIndex++;
@@ -122,7 +130,7 @@ export class Simulator {
         return;
       }
       if (this.pieceIndex >= this.track.pieces.length) {
-        // Ran off the end without a Finish piece — counts as falling off.
+        // Ran off the end without a Finish piece -- counts as falling off.
         this.failed = true;
         this.failReason = 'Track ended without a Finish line!';
       }
@@ -148,8 +156,8 @@ export class Simulator {
       t = Math.min(Math.max(this.t, 0), 1);
     }
 
-    const piece = PIECES[this.track.pieces[idx]];
     const entry = this.track.entryStateAt(idx);
-    return trackFrameAt(piece, entry, t);
+    const resolvedPath = resolvePathLocal(this.track.pieces, idx);
+    return trackFrameAt(resolvedPath, entry, t);
   }
 }
