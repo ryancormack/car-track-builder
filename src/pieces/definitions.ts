@@ -71,7 +71,7 @@ export const PIECES: Record<PieceId, Piece> = {
   CORKSCREW: {
     id: 'CORKSCREW', name: 'Corkscrew', icon: '🌀', category: 'stunt', featured: true,
     forward: 2, turn: 0, dz: 0,
-    pathLen: 3.4, excitement: 18, minV2: 22, boostEnergy: 0,
+    pathLen: 3.36, excitement: 18, minV2: 22, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathCorkscrew,
   },
