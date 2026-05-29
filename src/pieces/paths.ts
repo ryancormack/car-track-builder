@@ -4,6 +4,13 @@
 
 import type { PathFn } from '../types.js';
 
+/**
+ * Smootherstep S(t) = 6t^5 - 15t^4 + 10t^3. Maps [0,1] -> [0,1] with zero first
+ * AND second derivative at both ends, so curves built on it meet their
+ * neighbours with no slope (and no curvature) discontinuity.
+ */
+function smootherstep(t: number): number { return t * t * t * (t * (t * 6 - 15) + 10); }
+
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
 export const pathCurveR: PathFn = (t) => {
@@ -18,8 +25,12 @@ export const pathCurveL: PathFn = (t) => {
   return { lx: 0.5 * Math.cos(a), ly: -0.5 + 0.5 * Math.sin(a), lz: 0, banking: 0 };
 };
 
-export const pathRampUp: PathFn = (t) => ({ lx: t, ly: 0, lz: t, banking: 0 });
-export const pathRampDown: PathFn = (t) => ({ lx: t, ly: 0, lz: -t, banking: 0 });
+// Ramps change elevation by one unit using a smootherstep height profile, so
+// the grade eases from flat (zero slope) at the entry, up through the middle,
+// and back to flat at the exit. That means they join straight track — and each
+// other — with no sharp crease, while still netting the full ±1 elevation change.
+export const pathRampUp: PathFn = (t) => ({ lx: t, ly: 0, lz: smootherstep(t), banking: 0 });
+export const pathRampDown: PathFn = (t) => ({ lx: t, ly: 0, lz: -smootherstep(t), banking: 0 });
 
 export const pathLoop: PathFn = (t) => {
   // Approach (0..0.1): straight from back edge to loop bottom (lx=0.5, lz=0).

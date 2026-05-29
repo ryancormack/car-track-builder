@@ -50,14 +50,14 @@ export const PIECES: Record<PieceId, Piece> = {
   RAMP_UP: {
     id: 'RAMP_UP', name: 'Ramp Up', icon: '⬈', category: 'elev',
     forward: 1, turn: 0, dz: 1,
-    pathLen: 1.4, excitement: 2, minV2: 8, boostEnergy: 0,
+    pathLen: 1.5, excitement: 2, minV2: 8, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathRampUp,
   },
   RAMP_DN: {
     id: 'RAMP_DN', name: 'Ramp Down', icon: '⬊', category: 'elev',
     forward: 1, turn: 0, dz: -1,
-    pathLen: 1.4, excitement: 2, minV2: 0, boostEnergy: 0,
+    pathLen: 1.5, excitement: 2, minV2: 0, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathRampDown,
   },
