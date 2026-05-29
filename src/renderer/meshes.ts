@@ -204,7 +204,11 @@ export function buildPieceMesh(piece: Piece, entry: GridState): THREE.Group {
   if (piece.id === 'FINISH') return buildFinishPiece(piece, entry);
   if (piece.id === 'JUMP') return buildJumpPiece(piece, entry);
   if (piece.id === 'LOOP' || piece.id === 'CORKSCREW') {
-    return buildRailedTrack(piece, entry, COLORS.trackBlue, { emissive: COLORS.trackBlue, emissiveIntensity: 0.12 });
+    return buildRailedTrack(piece, entry, COLORS.trackBlue, {
+      emissive: COLORS.trackBlue,
+      emissiveIntensity: 0.12,
+      segments: 64,
+    });
   }
   return buildRailedTrack(piece, entry, COLORS.trackOrange);
 }
