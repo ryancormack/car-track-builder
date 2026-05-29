@@ -38,16 +38,36 @@ export const pathLoop: PathFn = (t) => {
   };
 };
 
+// --- Corkscrew easing ---------------------------------------------------------
+// Trapezoidal rate profile for the corkscrew's spin: ramp the rotation rate up
+// over the first `p` of the piece, hold it constant through the middle (uniform
+// pitch — no bunched coils), then ramp down over the last `p`. The rate is zero
+// at both ends, so the roll (and the path's lateral/vertical velocity) eases to
+// nothing at the seams and the coil glides into straight track without a kink.
+const CORK_EASE = 0.3; // fraction of the piece spent easing in / out at each end
+
+// Integral over [0, x] of smoothstep s(u)=u^2(3-2u): the eased ramp for the
+// rotation rate. (Closed form so easedProgress stays a cheap pure function.)
+function smoothstepArea(x: number): number { return x * x * x - 0.5 * x * x * x * x; }
+
+/** Eased progress in [0, 1]: smooth ease in/out at the ends, linear in the middle. */
+function easedProgress(t: number): number {
+  const p = CORK_EASE;
+  const area = 1 - p; // area under the trapezoidal (peak = 1) rate profile
+  if (t < p) return (p * smoothstepArea(t / p)) / area;
+  if (t > 1 - p) return (area - p * smoothstepArea((1 - t) / p)) / area;
+  return (0.5 * p + (t - p)) / area;
+}
+
 export const pathCorkscrew: PathFn = (t) => {
-  // Barrel roll spanning two cells (lx: 0 -> 2): the centreline traces a single
-  // helical loop (radius R) stretched over the extra length so it reads as a
-  // clean, graceful corkscrew rather than a cramped knot. The spin is eased with
-  // smootherstep so the piece enters and exits flat — ly = lz = 0 and banking = 0
-  // at both ends — joining cleanly onto neighbouring track.
-  const s = t * t * t * (t * (t * 6 - 15) + 10); // smootherstep: S(0)=0, S(1)=1, S'=0 at ends
-  const a = 2 * Math.PI * s;
-  const R = 0.4;
-  return { lx: 2 * t, ly: R * Math.sin(a), lz: R * (1 - Math.cos(a)), banking: a };
+  // A parametric helix on its horizontal axis (the standard game-engine
+  // corkscrew): x = k*theta, y = r*sin(theta), z = r*(1 - cos(theta)),
+  // banking = theta. Forward travel (lx) stays linear so the piece spans its two
+  // cells evenly and the tangent is always well defined; only the angle theta is
+  // eased (easedProgress) so the spin glides in and out smoothly at the seams.
+  const theta = 2 * Math.PI * easedProgress(t);
+  const r = 0.4;
+  return { lx: 2 * t, ly: r * Math.sin(theta), lz: r * (1 - Math.cos(theta)), banking: theta };
 };
 
 export const pathJump: PathFn = (t) => {
