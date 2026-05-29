@@ -1,6 +1,6 @@
-// renderer/meshes.ts — mesh builders for each track piece, the ghost preview,
-// and the start tower. The track itself is built as TubeGeometry along each
-// piece's parametric path, so loops/corkscrews/jumps come out correctly in 3D.
+// renderer/meshes.ts -- mesh builders for each track piece, the ghost preview,
+// and the start tower. Track pieces are rendered as a solid road surface with
+// semi-transparent edge barriers and a centre lane marking.
 
 import * as THREE from 'three';
 import { piecePathAtT } from '../pieces/sampling.js';
@@ -54,66 +54,200 @@ function frameAt(path: PathFn, entry: GridState, t: number) {
   return { pos: new THREE.Vector3(here.wx, here.wz, here.wy), tang, up, side };
 }
 
-// ---------- Track tubes ----------
+// ---------- Road surface geometry helpers ----------
 
-function buildCenterTube(path: PathFn, entry: GridState, color: number, opts: TubeOpts = {}): THREE.Mesh {
-  const samples = sampleRange(path, entry, opts.segments ?? 48, opts.tStart ?? 0, opts.tEnd ?? 1);
-  const curve = new THREE.CatmullRomCurve3(samples.map(v3), false, 'catmullrom', 0.0);
-  const tube = new THREE.TubeGeometry(curve, opts.tubularSegments ?? 64, opts.radius ?? 0.05, 12, false);
-  const mat = new THREE.MeshStandardMaterial({
-    color,
-    metalness: 0.35,
-    roughness: 0.45,
-    emissive: opts.emissive ?? 0x000000,
-    emissiveIntensity: opts.emissiveIntensity ?? 0,
-  });
-  const mesh = new THREE.Mesh(tube, mat);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
+/**
+ * Build a ribbon (quad-strip) BufferGeometry from an array of frame pairs
+ * (left vertex, right vertex). Optionally also generates a matching set of
+ * normals from the frame 'up' vectors.
+ */
+function buildRibbonGeometry(
+  leftVerts: THREE.Vector3[],
+  rightVerts: THREE.Vector3[],
+  normals: THREE.Vector3[],
+): THREE.BufferGeometry {
+  const n = leftVerts.length; // number of cross-sections
+  const positions: number[] = [];
+  const norms: number[] = [];
+  const indices: number[] = [];
+
+  // Two vertices per cross-section: index 2*i = left, 2*i+1 = right
+  for (let i = 0; i < n; i++) {
+    const l = leftVerts[i];
+    const r = rightVerts[i];
+    const nm = normals[i];
+    positions.push(l.x, l.y, l.z);
+    norms.push(nm.x, nm.y, nm.z);
+    positions.push(r.x, r.y, r.z);
+    norms.push(nm.x, nm.y, nm.z);
+  }
+
+  // Connect adjacent cross-sections into quads (two triangles each)
+  for (let i = 0; i < n - 1; i++) {
+    const bl = i * 2;
+    const br = i * 2 + 1;
+    const tl = (i + 1) * 2;
+    const tr = (i + 1) * 2 + 1;
+    // Triangle 1
+    indices.push(bl, tl, br);
+    // Triangle 2
+    indices.push(br, tl, tr);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(norms, 3));
+  geom.setIndex(indices);
+  return geom;
 }
 
 /**
- * Twin-rail look: a thin centre tube plus two glossy rail tubes offset to either
- * side of the path. Banking is honoured for corkscrews so the rails twist with
- * the car. Can render a sub-range of the path via opts.tStart / opts.tEnd.
+ * Build a wall strip geometry. For each cross-section, the wall goes from a
+ * base vertex upward along the up direction by the given height.
+ */
+function buildWallGeometry(
+  baseVerts: THREE.Vector3[],
+  upVecs: THREE.Vector3[],
+  height: number,
+  outwardNormals: THREE.Vector3[],
+): THREE.BufferGeometry {
+  const n = baseVerts.length;
+  const positions: number[] = [];
+  const norms: number[] = [];
+  const indices: number[] = [];
+
+  // Two vertices per cross-section: bottom and top
+  for (let i = 0; i < n; i++) {
+    const base = baseVerts[i];
+    const up = upVecs[i];
+    const top = base.clone().addScaledVector(up, height);
+    const nm = outwardNormals[i];
+
+    positions.push(base.x, base.y, base.z);
+    norms.push(nm.x, nm.y, nm.z);
+    positions.push(top.x, top.y, top.z);
+    norms.push(nm.x, nm.y, nm.z);
+  }
+
+  for (let i = 0; i < n - 1; i++) {
+    const bl = i * 2;
+    const bt = i * 2 + 1;
+    const nl = (i + 1) * 2;
+    const nt = (i + 1) * 2 + 1;
+    indices.push(bl, nl, bt);
+    indices.push(bt, nl, nt);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(norms, 3));
+  geom.setIndex(indices);
+  return geom;
+}
+
+// ---------- Road track builder ----------
+
+/**
+ * Solid road surface with semi-transparent edge barriers and a centre lane
+ * marking. Replaces the former 3-tube rail approach. The road banks with the
+ * track through loops and corkscrews using the trackFrames() basis.
+ *
+ * Function signature is unchanged for compatibility with all callers.
  */
 export function buildRailedTrack(path: PathFn, entry: GridState, color: number, opts: TubeOpts = {}): THREE.Group {
   const tStart = opts.tStart ?? 0;
   const tEnd = opts.tEnd ?? 1;
+  const segments = opts.segments ?? 48;
   const group = new THREE.Group();
-  group.add(buildCenterTube(path, entry, color, { ...opts, radius: 0.045 }));
 
-  const segments = opts.segments ?? 44;
-  const railOffset = 0.18;
-  const left: THREE.Vector3[] = [];
-  const right: THREE.Vector3[] = [];
+  const halfWidth = 0.22;
+  const barrierHeight = 0.12;
+  const centerLineHalfWidth = 0.012;
+  const centerLineRaise = 0.005;
 
-  // The shared, unit-tested frame logic supplies the lateral axis; we just map
-  // grid space -> three.js (x, z, y) and offset the rails to either side. This
-  // is the same frame the car uses, so the rails and the car always agree.
-  for (const f of trackFrames(path, entry, segments, tStart, tEnd)) {
+  // Gather frame data
+  const frames = trackFrames(path, entry, segments, tStart, tEnd);
+
+  const leftVerts: THREE.Vector3[] = [];
+  const rightVerts: THREE.Vector3[] = [];
+  const upVecs: THREE.Vector3[] = [];
+  const sideVecs: THREE.Vector3[] = [];
+  const centerVerts: THREE.Vector3[] = [];
+
+  for (const f of frames) {
     const pos = new THREE.Vector3(f.pos.x, f.pos.z, f.pos.y);
     const side = new THREE.Vector3(f.side.x, f.side.z, f.side.y);
-    left.push(pos.clone().addScaledVector(side, -railOffset));
-    right.push(pos.clone().addScaledVector(side, railOffset));
+    const up = new THREE.Vector3(f.up.x, f.up.z, f.up.y);
+
+    leftVerts.push(pos.clone().addScaledVector(side, -halfWidth));
+    rightVerts.push(pos.clone().addScaledVector(side, halfWidth));
+    upVecs.push(up.clone());
+    sideVecs.push(side.clone());
+    centerVerts.push(pos.clone().addScaledVector(up, centerLineRaise));
   }
 
-  const railMat = new THREE.MeshStandardMaterial({
+  // --- Road surface ---
+  const roadGeom = buildRibbonGeometry(leftVerts, rightVerts, upVecs);
+  const roadMat = new THREE.MeshStandardMaterial({
     color,
-    metalness: 0.55,
-    roughness: 0.28,
+    metalness: 0.15,
+    roughness: 0.72,
     emissive: opts.emissive ?? 0x000000,
-    emissiveIntensity: (opts.emissiveIntensity ?? 0) * 0.8,
+    emissiveIntensity: opts.emissiveIntensity ?? 0,
   });
-  const leftRail = new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(left), 64, 0.055, 12, false), railMat,
-  );
-  const rightRail = new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(right), 64, 0.055, 12, false), railMat,
-  );
-  leftRail.castShadow = rightRail.castShadow = true;
-  group.add(leftRail, rightRail);
+  const roadMesh = new THREE.Mesh(roadGeom, roadMat);
+  roadMesh.castShadow = true;
+  roadMesh.receiveShadow = true;
+  group.add(roadMesh);
+
+  // --- Edge barriers (semi-transparent walls) ---
+  const barrierMat = new THREE.MeshStandardMaterial({
+    color,
+    metalness: 0.3,
+    roughness: 0.5,
+    transparent: true,
+    opacity: 0.35,
+    emissive: opts.emissive ?? 0x000000,
+    emissiveIntensity: (opts.emissiveIntensity ?? 0) * 0.5,
+    side: THREE.DoubleSide,
+  });
+
+  // Left wall: outward normal is -side
+  const leftOutNormals = sideVecs.map(s => s.clone().negate());
+  const leftWallGeom = buildWallGeometry(leftVerts, upVecs, barrierHeight, leftOutNormals);
+  const leftWall = new THREE.Mesh(leftWallGeom, barrierMat);
+  leftWall.castShadow = true;
+  leftWall.receiveShadow = true;
+  group.add(leftWall);
+
+  // Right wall: outward normal is +side
+  const rightWallGeom = buildWallGeometry(rightVerts, upVecs, barrierHeight, sideVecs);
+  const rightWall = new THREE.Mesh(rightWallGeom, barrierMat);
+  rightWall.castShadow = true;
+  rightWall.receiveShadow = true;
+  group.add(rightWall);
+
+  // --- Centre lane marking ---
+  const centerLeft: THREE.Vector3[] = [];
+  const centerRight: THREE.Vector3[] = [];
+  for (let i = 0; i < centerVerts.length; i++) {
+    const s = sideVecs[i];
+    centerLeft.push(centerVerts[i].clone().addScaledVector(s, -centerLineHalfWidth));
+    centerRight.push(centerVerts[i].clone().addScaledVector(s, centerLineHalfWidth));
+  }
+  const centerGeom = buildRibbonGeometry(centerLeft, centerRight, upVecs);
+  const centerMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    metalness: 0.1,
+    roughness: 0.6,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.15,
+  });
+  const centerMesh = new THREE.Mesh(centerGeom, centerMat);
+  centerMesh.castShadow = false;
+  centerMesh.receiveShadow = true;
+  group.add(centerMesh);
+
   return group;
 }
 
