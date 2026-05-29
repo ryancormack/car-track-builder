@@ -1,11 +1,21 @@
 // pieces/definitions.js — the catalogue of all piece types and palette ordering.
-// Physics constants used here must stay in sync with physics.js (G ≈ 9.8, FRICTION ≈ 0.55).
+//
+// The Loop's entry-speed gate is derived from the shared physics constants (see
+// LOOP_MIN_V2 below). The other stunt `minV2` values (ramps, corkscrew, jump)
+// are hand-tuned gameplay thresholds, not physical derivations.
 
 import {
   pathStraight, pathCurveR, pathCurveL,
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
 } from './paths.js';
+import { G, LOOP_RADIUS } from '../constants.js';
+
+// Classic result for a vertical loop: to stay pinned to the track at the apex,
+// the car needs v² ≥ 5·g·R at the bottom (entry). With g=9.8 and R=0.5 that's
+// 24.5. The simulator sheds a little extra to friction on the way up, but stays
+// above the stall threshold, so this is genuinely passable at the gate value.
+const LOOP_MIN_V2 = 5 * G * LOOP_RADIUS;
 
 export const PIECES = {
   START: {
@@ -53,7 +63,7 @@ export const PIECES = {
   LOOP: {
     id: 'LOOP', name: 'Loop', icon: '⭕', category: 'stunt', featured: true,
     forward: 1, turn: 0, dz: 0,
-    pathLen: 4.14, excitement: 30, minV2: 30, boostEnergy: 0,
+    pathLen: 4.14, excitement: 30, minV2: LOOP_MIN_V2, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathLoop,
   },

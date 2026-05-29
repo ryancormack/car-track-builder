@@ -54,16 +54,6 @@ export class Track {
     return this.pieces.reduce((sum, id) => sum + (PIECES[id]?.pathLen ?? 0), 0);
   }
 
-  countByCategory() {
-    const counts = {};
-    for (const id of this.pieces) {
-      const p = PIECES[id]; if (!p) continue;
-      counts[p.category] = (counts[p.category] ?? 0) + 1;
-      counts[id] = (counts[id] ?? 0) + 1;
-    }
-    return counts;
-  }
-
   toJSON() {
     return { dropHeight: this.dropHeight, pieces: [...this.pieces] };
   }

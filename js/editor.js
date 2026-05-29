@@ -98,9 +98,11 @@ export class Editor {
   }
 
   _refreshButtons() {
+    // Once a Finish line is placed, no more pieces can be added, so disable
+    // the whole palette. (Undo/Clear are separate controls, not in this list.)
     const finished = this.track.hasFinish();
     for (const b of this.buttons) {
-      b.disabled = !this.enabled || (finished && b.dataset.pieceId !== 'undo');
+      b.disabled = !this.enabled || finished;
     }
   }
 

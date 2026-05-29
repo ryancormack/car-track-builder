@@ -47,7 +47,8 @@ test('running off the end without a FINISH counts as failure', () => {
 });
 
 test('LOOP fails the run when the entry speed is too low', () => {
-  // Drop height 0 → v² = 0; loop requires minV2 = 30. Should fail at entry.
+  // Drop height 0 → v² = 0, which is below the loop's 5·g·R entry gate.
+  // Should fail at entry.
   const sim = new Simulator(trackOf(['LOOP', 'FINISH'], 0));
   sim.step(1 / 240); // first step triggers entry checks
   assert.equal(sim.failed, true);

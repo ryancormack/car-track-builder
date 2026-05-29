@@ -9,11 +9,10 @@
 // car is launched off the track and the run ends.
 
 import { PIECES, piecePathAtT } from './pieces/index.js';
+import { G, FRICTION, RAMP_FRICTION_MULT, DRAG } from './constants.js';
 
-export const G = 9.8;
-export const FRICTION = 0.55;   // energy lost per unit length of track
-export const RAMP_FRICTION_MULT = 1.1; // ramps slightly costlier
-export const DRAG = 0.0008;     // tiny v²-proportional drag, keeps things bounded
+// Re-exported for convenience (and backwards compatibility for importers/tests).
+export { G, FRICTION, RAMP_FRICTION_MULT, DRAG };
 
 export class Simulator {
   constructor(track) {
@@ -117,14 +116,22 @@ export class Simulator {
 
   // Sample current car world position and forward direction (grid-space coords).
   carSample() {
-    if (!this.isRunning() && !this.finished) {
-      // For visualization after fail, freeze at last position.
+    const n = this.track.pieces.length;
+    if (n === 0) return null;
+
+    // If we've run past the last piece (finished, or fell off the end), sit at
+    // the very end of the final piece rather than snapping back to its start.
+    let idx, t;
+    if (this.pieceIndex >= n) {
+      idx = n - 1;
+      t = 1;
+    } else {
+      idx = this.pieceIndex;
+      t = Math.min(Math.max(this.t, 0), 1);
     }
-    const idx = Math.min(this.pieceIndex, this.track.pieces.length - 1);
-    if (idx < 0) return null;
+
     const piece = PIECES[this.track.pieces[idx]];
     const entry = this.track.entryStateAt(idx);
-    const t = Math.min(Math.max(this.t, 0), 1);
     const here = piecePathAtT(piece, entry, t);
 
     // Tangent via finite difference.

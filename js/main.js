@@ -126,6 +126,7 @@ function switchMode(next) {
     els.modeBuild.classList.remove('active');
     els.modePlay.classList.add('active');
     editor.setEnabled(false);
+    els.drop.disabled = true; // drop height is a build-time setting
     sim = new Simulator(track);
     runResult = null;
     renderer.setCar(true, sim.carSample());
@@ -135,6 +136,7 @@ function switchMode(next) {
     els.modePlay.classList.remove('active');
     els.modeBuild.classList.add('active');
     editor.setEnabled(true);
+    els.drop.disabled = false;
     renderer.setCar(false);
     sim = null;
   }

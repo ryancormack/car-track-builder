@@ -27,6 +27,7 @@ npx serve .
 ```
 js/
 ├── main.js                    app entry; wires the modules together
+├── constants.js               shared physics constants (g, friction, drag, loop radius)
 ├── track.js                   linear sequence of pieces + start state
 ├── physics.js                 energy-based simulator (gravity / friction / loops)
 ├── scoring.js                 length + excitement + stunt-combo + bonuses
@@ -64,7 +65,7 @@ test/
 | Turn L/R  | 90° turn into the side cell             | Free turning, slight friction over arc length      |
 | Ramp Up   | +1 elevation                            | Costs energy — needs entry speed of √8             |
 | Ramp Down | −1 elevation                            | Trades altitude for speed                          |
-| Loop      | Vertical 360° loop                      | Needs `v² ≥ 5·g·R` (≈ 30) at entry, +30 excitement |
+| Loop      | Vertical 360° loop                      | Needs `v² ≥ 5·g·R` (≈ 24.5) at entry, +30 excitement |
 | Corkscrew | Barrel roll along the forward axis      | +18 excitement, decent speed required              |
 | Jump      | Parabolic arc over the cell             | Skips the rails through the apex                   |
 | Booster   | One-shot energy boost (+90 to v²)       | −15 from final score for each one used             |
