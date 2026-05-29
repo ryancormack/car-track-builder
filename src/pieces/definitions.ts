@@ -9,7 +9,7 @@ import {
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
 } from './paths.js';
-import { G, LOOP_RADIUS } from '../constants.js';
+import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS } from '../constants.js';
 import type { Piece, PieceId } from '../types.js';
 
 // Classic result for a vertical loop: to stay pinned to the track at the apex,
@@ -17,6 +17,20 @@ import type { Piece, PieceId } from '../types.js';
 // 24.5. The simulator sheds a little extra to friction on the way up, but stays
 // above the stall threshold, so this is genuinely passable at the gate value.
 const LOOP_MIN_V2 = 5 * G * LOOP_RADIUS;
+
+// Entry-speed gate for Ramp Up, derived from the same accounting the simulator
+// uses so the gate matches reality. Clearing the ramp costs the gravity climb
+// (2·g·rise) plus the friction toll along its length (2·μ·rampMult·len). We add
+// a small buffer so a car that *just* passes the gate crests with a little speed
+// to spare instead of stalling exactly at the top (which would otherwise fail
+// with a confusing "ran out of speed" mid-ramp rather than this gate's message).
+const RAMP_UP_RISE = 1;    // mirrors RAMP_UP.dz below
+const RAMP_UP_LEN = 1.5;   // mirrors RAMP_UP.pathLen below
+const RAMP_UP_CREST_BUFFER = 4;
+const RAMP_UP_MIN_V2 =
+  2 * G * RAMP_UP_RISE +
+  2 * FRICTION * RAMP_FRICTION_MULT * RAMP_UP_LEN +
+  RAMP_UP_CREST_BUFFER;
 
 export const PIECES: Record<PieceId, Piece> = {
   START: {
@@ -50,7 +64,7 @@ export const PIECES: Record<PieceId, Piece> = {
   RAMP_UP: {
     id: 'RAMP_UP', name: 'Ramp Up', icon: '⬈', category: 'elev',
     forward: 1, turn: 0, dz: 1,
-    pathLen: 1.5, excitement: 2, minV2: 8, boostEnergy: 0,
+    pathLen: 1.5, excitement: 2, minV2: RAMP_UP_MIN_V2, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathRampUp,
   },
