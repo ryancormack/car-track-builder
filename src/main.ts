@@ -1,4 +1,4 @@
-// main.js — App entry. Wires the renderer, editor, simulator, HUD, overlay,
+// main.ts — App entry. Wires the renderer, editor, simulator, HUD, overlay,
 // storage, and the run loop together. Most logic lives in dedicated modules.
 
 import { Track } from './track.js';
@@ -9,29 +9,44 @@ import { computeScore } from './scoring.js';
 import { Hud } from './app/hud.js';
 import { ResultOverlay } from './app/overlay.js';
 import { saveTrackJSON, loadTrackJSON } from './app/storage.js';
+import type { ScoreResult, UIElements } from './types.js';
 
-const els = {
-  canvas: document.getElementById('canvas'),
-  modeBuild: document.getElementById('mode-build'),
-  modePlay: document.getElementById('mode-play'),
-  hudSpeed: document.getElementById('hud-speed'),
-  hudScore: document.getElementById('hud-score'),
-  hudPieces: document.getElementById('hud-pieces'),
-  drop: document.getElementById('drop-height'),
-  dropVal: document.getElementById('drop-height-val'),
-  palette: document.getElementById('palette'),
-  status: document.getElementById('status'),
-  btnUndo: document.getElementById('btn-undo'),
-  btnClear: document.getElementById('btn-clear'),
-  btnSave: document.getElementById('btn-save'),
-  btnLoad: document.getElementById('btn-load'),
-  overlay: document.getElementById('overlay'),
-  overlayTitle: document.getElementById('overlay-title'),
-  overlayBody: document.getElementById('overlay-body'),
-  overlayScore: document.getElementById('overlay-score'),
-  overlayTop: document.getElementById('overlay-top'),
-  overlayLength: document.getElementById('overlay-length'),
-  overlayClose: document.getElementById('overlay-close'),
+type Mode = 'build' | 'play';
+
+interface RunResult {
+  score: ScoreResult;
+  sim: Simulator;
+}
+
+/** Look up a required element by id, narrowing to the expected element type. */
+function el<T extends HTMLElement = HTMLElement>(id: string): T {
+  const node = document.getElementById(id);
+  if (!node) throw new Error(`Missing required element #${id}`);
+  return node as T;
+}
+
+const els: UIElements = {
+  canvas: el<HTMLCanvasElement>('canvas'),
+  modeBuild: el('mode-build'),
+  modePlay: el('mode-play'),
+  hudSpeed: el('hud-speed'),
+  hudScore: el('hud-score'),
+  hudPieces: el('hud-pieces'),
+  drop: el<HTMLInputElement>('drop-height'),
+  dropVal: el('drop-height-val'),
+  palette: el('palette'),
+  status: el('status'),
+  btnUndo: el('btn-undo'),
+  btnClear: el('btn-clear'),
+  btnSave: el('btn-save'),
+  btnLoad: el('btn-load'),
+  overlay: el('overlay'),
+  overlayTitle: el('overlay-title'),
+  overlayBody: el('overlay-body'),
+  overlayScore: el('overlay-score'),
+  overlayTop: el('overlay-top'),
+  overlayLength: el('overlay-length'),
+  overlayClose: el('overlay-close'),
 };
 
 const track = new Track();
@@ -46,9 +61,9 @@ const editor = new Editor({
   onChange: () => refreshHud(),
 });
 
-let mode = 'build';        // 'build' | 'play'
-let sim = null;
-let runResult = null;
+let mode: Mode = 'build';
+let sim: Simulator | null = null;
+let runResult: RunResult | null = null;
 let lastFrameTime = performance.now();
 
 // ---------- Boot ----------
@@ -59,7 +74,7 @@ if (saved) {
 } else {
   // Demo seed so the canvas isn't empty on first load.
   ['STRAIGHT', 'STRAIGHT', 'CURVE_R', 'STRAIGHT', 'BOOSTER',
-   'STRAIGHT', 'LOOP', 'STRAIGHT', 'FINISH'].forEach((id) => track.addPiece(id));
+    'STRAIGHT', 'LOOP', 'STRAIGHT', 'FINISH'].forEach((id) => track.addPiece(id));
 }
 syncDropUi();
 renderer.rebuildTrack(track);
@@ -70,7 +85,7 @@ refreshHud();
 
 els.drop.addEventListener('input', () => {
   track.dropHeight = Number(els.drop.value);
-  els.dropVal.textContent = track.dropHeight;
+  els.dropVal.textContent = String(track.dropHeight);
   renderer.rebuildTrack(track);
 });
 
@@ -100,7 +115,7 @@ els.overlayClose.addEventListener('click', () => {
 });
 
 window.addEventListener('keydown', (e) => {
-  const tag = e.target?.tagName;
+  const tag = (e.target as HTMLElement | null)?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   if (e.code === 'Space') {
     e.preventDefault();
@@ -114,7 +129,7 @@ window.addEventListener('keydown', (e) => {
 
 // ---------- Mode handling ----------
 
-function switchMode(next) {
+function switchMode(next: Mode): void {
   if (next === mode) return;
   if (next === 'play') {
     if (track.pieces.length === 0) {
@@ -143,19 +158,19 @@ function switchMode(next) {
   refreshHud();
 }
 
-function refreshHud() {
+function refreshHud(): void {
   if (mode === 'play') hud.updateForPlay(track, sim, runResult);
   else hud.updateForBuild(track);
 }
 
-function syncDropUi() {
-  els.drop.value = track.dropHeight;
-  els.dropVal.textContent = track.dropHeight;
+function syncDropUi(): void {
+  els.drop.value = String(track.dropHeight);
+  els.dropVal.textContent = String(track.dropHeight);
 }
 
 // ---------- Run loop ----------
 
-function frame(now) {
+function frame(now: number): void {
   const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
   lastFrameTime = now;
 
@@ -168,10 +183,12 @@ function frame(now) {
       if (sample) renderer.setCar(true, sample);
       els.hudSpeed.textContent = sim.speed.toFixed(1);
     } else if (!runResult) {
-      runResult = { score: computeScore(track, sim), sim };
-      els.hudScore.textContent = runResult.score.total;
+      const s = sim;
+      const result: RunResult = { score: computeScore(track, s), sim: s };
+      runResult = result;
+      els.hudScore.textContent = String(result.score.total);
       setTimeout(() => {
-        if (mode === 'play') overlay.show(track, runResult.score, sim);
+        if (mode === 'play') overlay.show(track, result.score, s);
       }, 700);
     }
   }

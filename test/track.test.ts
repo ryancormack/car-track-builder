@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Track } from '../js/track.js';
+import { Track } from '../src/track.js';
 
 test('a fresh Track is empty with default drop height 3', () => {
   const t = new Track();

@@ -1,4 +1,4 @@
-// physics.js — Energy-based simulator. Car follows the parametric track path.
+// physics.ts — Energy-based simulator. Car follows the parametric track path.
 //
 // We work in v² (kinetic energy proxy) for clean conservation accounting.
 // At each step ds along the piece's path:
@@ -10,17 +10,32 @@
 
 import { PIECES, piecePathAtT } from './pieces/index.js';
 import { G, FRICTION, RAMP_FRICTION_MULT, DRAG } from './constants.js';
+import type { Track } from './track.js';
+import type { CarSample } from './types.js';
 
 // Re-exported for convenience (and backwards compatibility for importers/tests).
 export { G, FRICTION, RAMP_FRICTION_MULT, DRAG };
 
 export class Simulator {
-  constructor(track) {
+  track: Track;
+  pieceIndex = 0;
+  t = 0;
+  v2 = 0;
+  distanceTraveled = 0;
+  topSpeed = 0;
+  boostersUsed = 0;
+  failed = false;
+  failReason: string | null = null;
+  finished = false;
+  elapsed = 0;
+  private _enteredPiece = -1; // last piece index where we ran the entry check
+
+  constructor(track: Track) {
     this.track = track;
     this.reset();
   }
 
-  reset() {
+  reset(): void {
     this.pieceIndex = 0;
     this.t = 0;
     this.v2 = 2 * G * this.track.dropHeight; // initial kinetic from drop height
@@ -31,15 +46,15 @@ export class Simulator {
     this.failReason = null;
     this.finished = false;
     this.elapsed = 0;
-    this._enteredPiece = -1;     // last piece index where we ran the entry check
+    this._enteredPiece = -1;
   }
 
-  get speed() { return Math.sqrt(Math.max(this.v2, 0)); }
+  get speed(): number { return Math.sqrt(Math.max(this.v2, 0)); }
 
-  isRunning() { return !this.failed && !this.finished; }
+  isRunning(): boolean { return !this.failed && !this.finished; }
 
   // Advance simulation by dt seconds.
-  step(dt) {
+  step(dt: number): void {
     if (!this.isRunning()) return;
     this.elapsed += dt;
 
@@ -69,7 +84,7 @@ export class Simulator {
     const v = Math.sqrt(Math.max(this.v2, 0));
     if (v < 0.1) {
       this.failed = true;
-      this.failReason = "Car ran out of speed.";
+      this.failReason = 'Car ran out of speed.';
       return;
     }
 
@@ -109,19 +124,20 @@ export class Simulator {
       if (this.pieceIndex >= this.track.pieces.length) {
         // Ran off the end without a Finish piece — counts as falling off.
         this.failed = true;
-        this.failReason = "Track ended without a Finish line!";
+        this.failReason = 'Track ended without a Finish line!';
       }
     }
   }
 
   // Sample current car world position and forward direction (grid-space coords).
-  carSample() {
+  carSample(): CarSample | null {
     const n = this.track.pieces.length;
     if (n === 0) return null;
 
     // If we've run past the last piece (finished, or fell off the end), sit at
     // the very end of the final piece rather than snapping back to its start.
-    let idx, t;
+    let idx: number;
+    let t: number;
     if (this.pieceIndex >= n) {
       idx = n - 1;
       t = 1;

@@ -3,8 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DIRS, rightOf, applyPiece, localToWorld } from '../js/pieces/geometry.js';
-import { PIECES } from '../js/pieces/definitions.js';
+import { DIRS, rightOf, applyPiece, localToWorld } from '../src/pieces/geometry.js';
+import { PIECES } from '../src/pieces/definitions.js';
+import type { GridState } from '../src/types.js';
 
 test('DIRS has four unit vectors covering compass directions', () => {
   assert.equal(DIRS.length, 4);
@@ -22,27 +23,27 @@ test('rightOf rotates 90° clockwise', () => {
 });
 
 test('applyPiece(STRAIGHT) advances 1 cell in entry direction, dir unchanged', () => {
-  const start = { gx: 0, gy: 0, gz: 0, dir: 1 }; // facing East
+  const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // facing East
   const next = applyPiece(start, PIECES.STRAIGHT);
   assert.deepEqual(next, { gx: 1, gy: 0, gz: 0, dir: 1 });
 });
 
 test('applyPiece(CURVE_R) from East exits facing South, lands one cell south', () => {
-  const start = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
+  const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
   const next = applyPiece(start, PIECES.CURVE_R);
   assert.equal(next.dir, 2, 'should now face South');
   assert.deepEqual({ gx: next.gx, gy: next.gy, gz: next.gz }, { gx: 0, gy: 1, gz: 0 });
 });
 
 test('applyPiece(CURVE_L) from East exits facing North, lands one cell north', () => {
-  const start = { gx: 0, gy: 0, gz: 0, dir: 1 };
+  const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 };
   const next = applyPiece(start, PIECES.CURVE_L);
   assert.equal(next.dir, 0, 'should now face North');
   assert.deepEqual({ gx: next.gx, gy: next.gy, gz: next.gz }, { gx: 0, gy: -1, gz: 0 });
 });
 
 test('applyPiece(RAMP_UP) raises gz by 1 and keeps direction', () => {
-  const start = { gx: 5, gy: 5, gz: 2, dir: 2 }; // South
+  const start: GridState = { gx: 5, gy: 5, gz: 2, dir: 2 }; // South
   const next = applyPiece(start, PIECES.RAMP_UP);
   assert.equal(next.gz, 3);
   assert.equal(next.dir, 2);
@@ -50,12 +51,13 @@ test('applyPiece(RAMP_UP) raises gz by 1 and keeps direction', () => {
 });
 
 test('applyPiece(RAMP_DN) lowers gz by 1', () => {
-  const next = applyPiece({ gx: 0, gy: 0, gz: 5, dir: 3 }, PIECES.RAMP_DN);
+  const start: GridState = { gx: 0, gy: 0, gz: 5, dir: 3 };
+  const next = applyPiece(start, PIECES.RAMP_DN);
   assert.equal(next.gz, 4);
 });
 
 test('Four CURVE_R pieces from any direction return to the same direction', () => {
-  let s = { gx: 0, gy: 0, gz: 0, dir: 0 };
+  let s: GridState = { gx: 0, gy: 0, gz: 0, dir: 0 };
   for (let i = 0; i < 4; i++) s = applyPiece(s, PIECES.CURVE_R);
   assert.equal(s.dir, 0);
 });

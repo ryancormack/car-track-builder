@@ -1,17 +1,26 @@
-// renderer/meshes.js — mesh builders for each track piece, the ghost preview,
+// renderer/meshes.ts — mesh builders for each track piece, the ghost preview,
 // and the start tower. The track itself is built as TubeGeometry along each
 // piece's parametric path, so loops/corkscrews/jumps come out correctly in 3D.
 
 import * as THREE from 'three';
 import { piecePathAtT, samplePiecePath } from '../pieces/sampling.js';
 import { COLORS } from './colors.js';
+import type { GridState, Piece, WorldPoint } from '../types.js';
+
+interface TubeOpts {
+  segments?: number;
+  tubularSegments?: number;
+  radius?: number;
+  emissive?: number;
+  emissiveIntensity?: number;
+}
 
 /** Grid (gx, gy, gz) → Three.js (x, y=up, z) since Three uses y-up. */
-function v3(p) { return new THREE.Vector3(p.wx, p.wz, p.wy); }
+function v3(p: WorldPoint): THREE.Vector3 { return new THREE.Vector3(p.wx, p.wz, p.wy); }
 
 // ---------- Track tubes ----------
 
-function buildCenterTube(piece, entry, color, opts = {}) {
+function buildCenterTube(piece: Piece, entry: GridState, color: number, opts: TubeOpts = {}): THREE.Mesh {
   const samples = samplePiecePath(piece, entry, opts.segments ?? 36);
   const points = samples.map(v3);
   const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.0);
@@ -33,13 +42,14 @@ function buildCenterTube(piece, entry, color, opts = {}) {
  * Twin-rail look: a thin centre tube plus two rail tubes offset to either side
  * of the path. Banking is honoured for corkscrews so the rails twist with the car.
  */
-export function buildRailedTrack(piece, entry, color, opts = {}) {
+export function buildRailedTrack(piece: Piece, entry: GridState, color: number, opts: TubeOpts = {}): THREE.Group {
   const group = new THREE.Group();
   group.add(buildCenterTube(piece, entry, color, { ...opts, radius: 0.04 }));
 
   const segments = opts.segments ?? 28;
   const railOffset = 0.18;
-  const left = [], right = [];
+  const left: THREE.Vector3[] = [];
+  const right: THREE.Vector3[] = [];
 
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
@@ -55,10 +65,10 @@ export function buildRailedTrack(piece, entry, color, opts = {}) {
     tang.normalize();
 
     const worldUp = new THREE.Vector3(0, 1, 0);
-    let side = new THREE.Vector3().crossVectors(tang, worldUp);
+    const side = new THREE.Vector3().crossVectors(tang, worldUp);
     if (side.lengthSq() < 1e-6) side.set(0, 0, 1); // tangent vertical (e.g. side of loop)
     side.normalize();
-    let up = new THREE.Vector3().crossVectors(side, tang).normalize();
+    const up = new THREE.Vector3().crossVectors(side, tang).normalize();
 
     if (here.banking) {
       const q = new THREE.Quaternion().setFromAxisAngle(tang, here.banking);
@@ -93,7 +103,7 @@ export function buildRailedTrack(piece, entry, color, opts = {}) {
 
 // ---------- Special pieces ----------
 
-function buildBoosterPiece(piece, entry) {
+function buildBoosterPiece(piece: Piece, entry: GridState): THREE.Group {
   const group = buildRailedTrack(piece, entry, COLORS.booster, {
     emissive: COLORS.boosterEm,
     emissiveIntensity: 0.6,
@@ -117,15 +127,16 @@ function buildBoosterPiece(piece, entry) {
   return group;
 }
 
-function buildFinishPiece(piece, entry) {
+function buildFinishPiece(piece: Piece, entry: GridState): THREE.Group {
   const group = buildRailedTrack(piece, entry, COLORS.trackBlue);
   const samples = samplePiecePath(piece, entry, 4);
-  const start = samples[0], end = samples[samples.length - 1];
+  const start = samples[0];
+  const end = samples[samples.length - 1];
   const cx = (start.wx + end.wx) / 2;
   const cy = (start.wy + end.wy) / 2;
   const cz = (start.wz + end.wz) / 2;
 
-  const stripeMat = (c) => new THREE.MeshStandardMaterial({
+  const stripeMat = (c: number) => new THREE.MeshStandardMaterial({
     color: c, emissive: c, emissiveIntensity: 0.2,
   });
   for (let i = 0; i < 6; i++) {
@@ -147,7 +158,7 @@ function buildFinishPiece(piece, entry) {
 
 // ---------- Public dispatcher ----------
 
-export function buildPieceMesh(piece, entry) {
+export function buildPieceMesh(piece: Piece, entry: GridState): THREE.Group {
   if (piece.id === 'BOOSTER') return buildBoosterPiece(piece, entry);
   if (piece.id === 'FINISH') return buildFinishPiece(piece, entry);
   if (piece.id === 'LOOP' || piece.id === 'CORKSCREW') {
@@ -159,7 +170,7 @@ export function buildPieceMesh(piece, entry) {
   return buildRailedTrack(piece, entry, COLORS.trackOrange);
 }
 
-export function buildGhostPiece(piece, entry) {
+export function buildGhostPiece(piece: Piece, entry: GridState): THREE.Mesh {
   const samples = samplePiecePath(piece, entry, 24);
   const points = samples.map(v3);
   const curve = new THREE.CatmullRomCurve3(points);
@@ -172,7 +183,7 @@ export function buildGhostPiece(piece, entry) {
   return new THREE.Mesh(tube, mat);
 }
 
-export function buildStartTower(state, dropHeight) {
+export function buildStartTower(state: GridState, dropHeight: number): THREE.Group {
   const group = new THREE.Group();
   const baseHeight = Math.max(0.05, dropHeight);
   const post = new THREE.Mesh(
