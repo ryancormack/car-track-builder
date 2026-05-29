@@ -130,15 +130,15 @@ export class Renderer implements CameraControlHost {
     raycaster.setFromCamera(mouse, this.camera);
     const intersects = raycaster.intersectObjects(this.trackGroup.children, true);
     if (intersects.length === 0) return null;
-    // Find which top-level trackGroup child contains the intersected object
-    const hit = intersects[0].object;
-    for (let i = 0; i < this.trackGroup.children.length; i++) {
-      const child = this.trackGroup.children[i];
-      let found = false;
-      child.traverse((obj) => { if (obj === hit) found = true; });
-      if (found) return i;
+    // Walk up the parent chain from the hit object to find the direct child of trackGroup.
+    // This is O(depth) instead of O(n*m) traversal.
+    let obj: THREE.Object3D | null = intersects[0].object;
+    while (obj && obj.parent !== this.trackGroup) {
+      obj = obj.parent;
     }
-    return null;
+    if (!obj) return null;
+    const index = this.trackGroup.children.indexOf(obj);
+    return index >= 0 ? index : null;
   }
 
   highlightPiece(index: number | null): void {

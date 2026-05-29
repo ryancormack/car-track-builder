@@ -445,4 +445,5 @@ body.mode-play .sidebar .panel:not(.always) {
   opacity: 0.5;
   cursor: not-allowed;
   filter: saturate(0.4);
+  pointer-events: none;
 }
