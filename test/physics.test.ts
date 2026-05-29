@@ -3,17 +3,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Track } from '../js/track.js';
-import { Simulator, G } from '../js/physics.js';
+import { Track } from '../src/track.js';
+import { Simulator, G } from '../src/physics.js';
 
-function trackOf(ids, dropHeight = 3) {
+function trackOf(ids: string[], dropHeight = 3): Track {
   const t = new Track();
   t.dropHeight = dropHeight;
   for (const id of ids) t.addPiece(id);
   return t;
 }
 
-function runToCompletion(sim, maxSteps = 4000) {
+function runToCompletion(sim: Simulator, maxSteps = 4000): number {
   let steps = 0;
   while (sim.isRunning() && steps++ < maxSteps) sim.step(1 / 240);
   return steps;
@@ -93,8 +93,8 @@ test('carSample returns position + tangent + banking for the active piece', () =
   const sim = new Simulator(trackOf(['STRAIGHT', 'FINISH'], 3));
   const s = sim.carSample();
   assert.ok(s);
-  for (const k of ['wx', 'wy', 'wz']) assert.ok(Number.isFinite(s.pos[k]));
-  for (const k of ['dx', 'dy', 'dz']) assert.ok(Number.isFinite(s.tangent[k]));
+  for (const k of ['wx', 'wy', 'wz'] as const) assert.ok(Number.isFinite(s.pos[k]));
+  for (const k of ['dx', 'dy', 'dz'] as const) assert.ok(Number.isFinite(s.tangent[k]));
 });
 
 test('reset() restores the simulator to its initial state', () => {

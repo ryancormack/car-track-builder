@@ -1,9 +1,11 @@
-// pieces/geometry.js — direction vectors, frame transforms, and the
+// pieces/geometry.ts — direction vectors, frame transforms, and the
 // state-transition function applyPiece(). Pure functions, easy to unit-test.
 //
 // Direction encoding: 0=N(-y), 1=E(+x), 2=S(+y), 3=W(-x).
 
-export const DIRS = [
+import type { Dir, DirVec, GridState, Piece, WorldPoint } from '../types.js';
+
+export const DIRS: DirVec[] = [
   { dx: 0, dy: -1 }, // 0 N
   { dx: 1, dy: 0 },  // 1 E
   { dx: 0, dy: 1 },  // 2 S
@@ -11,7 +13,7 @@ export const DIRS = [
 ];
 
 /** 90° clockwise (screen-right) of the given direction. */
-export function rightOf(dir) {
+export function rightOf(dir: Dir): DirVec {
   return DIRS[(dir + 1) % 4];
 }
 
@@ -19,7 +21,7 @@ export function rightOf(dir) {
  * Map a piece-local point (lx forward, ly right, lz up) to world grid coords,
  * given the piece's entry state. The entry midpoint is at lx=0, ly=0.
  */
-export function localToWorld(state, lx, ly, lz) {
+export function localToWorld(state: GridState, lx: number, ly: number, lz: number): WorldPoint {
   const f = DIRS[state.dir];
   const r = rightOf(state.dir);
   return {
@@ -34,14 +36,14 @@ export function localToWorld(state, lx, ly, lz) {
  * and the piece being placed. Movement is along the EXIT direction (dir + turn),
  * which is what makes curves correctly land in the cell on the side of the turn.
  */
-export function applyPiece(state, piece) {
-  const newDir = (state.dir + (piece.turn ?? 0) + 4) % 4;
+export function applyPiece(state: GridState, piece: Piece): GridState {
+  const newDir = ((state.dir + piece.turn + 4) % 4) as Dir;
   const f = DIRS[newDir];
-  const fwd = piece.forward ?? 1;
+  const fwd = piece.forward;
   return {
     gx: state.gx + f.dx * fwd,
     gy: state.gy + f.dy * fwd,
-    gz: state.gz + (piece.dz ?? 0),
+    gz: state.gz + piece.dz,
     dir: newDir,
   };
 }

@@ -1,4 +1,4 @@
-// scoring.js — Computes a score from a track + simulation result.
+// scoring.ts — Computes a score from a track + simulation result.
 //
 // Components:
 //  • Length:     +5 per piece (encourages longer tracks)
@@ -10,15 +10,17 @@
 //  • Fail penalty: ×0.4 multiplier if the car failed mid-run
 
 import { PIECES } from './pieces/index.js';
+import type { Track } from './track.js';
+import type { ScoreResult, SimSummary } from './types.js';
 
-export function computeScore(track, sim) {
+export function computeScore(track: Track, sim: SimSummary | null | undefined): ScoreResult {
   let length = 0;
   let excitement = 0;
   let stuntCombo = 0;
   let stuntStreak = 0;
 
   for (const id of track.pieces) {
-    const p = PIECES[id]; if (!p) continue;
+    const p = PIECES[id];
     length += 5;
     excitement += p.excitement;
     if (p.category === 'stunt') {
@@ -53,10 +55,11 @@ export function computeScore(track, sim) {
 }
 
 // Quick "design score" used in build mode without a sim run yet.
-export function designScore(track) {
-  let length = 0, excitement = 0;
+export function designScore(track: Track): number {
+  let length = 0;
+  let excitement = 0;
   for (const id of track.pieces) {
-    const p = PIECES[id]; if (!p) continue;
+    const p = PIECES[id];
     length += 5;
     excitement += p.excitement;
   }

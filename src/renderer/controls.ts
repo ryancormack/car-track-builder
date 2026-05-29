@@ -1,14 +1,24 @@
-// renderer/controls.js — drag-to-pan, scroll-to-zoom, R-to-rotate.
-//
-// Operates on a host with the contract:
-//   { canvas, camera, cameraTarget, cameraAzimuth, cameraZoom, frustumSize,
-//     updateCamera(), _updateFrustum() }
+// renderer/controls.ts — drag-to-pan, scroll-to-zoom, R-to-rotate.
 
 import * as THREE from 'three';
 
-export function installCameraControls(host) {
+/** The slice of the Renderer that the camera controls read and mutate. */
+export interface CameraControlHost {
+  canvas: HTMLCanvasElement;
+  camera: THREE.Camera;
+  cameraTarget: THREE.Vector3;
+  cameraAzimuth: number;
+  cameraZoom: number;
+  frustumSize: number;
+  updateCamera(): void;
+  _updateFrustum(): void;
+}
+
+export function installCameraControls(host: CameraControlHost): void {
   const canvas = host.canvas;
-  let dragging = false, lastX = 0, lastY = 0;
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
 
   canvas.addEventListener('pointerdown', (e) => {
     dragging = true;
@@ -19,7 +29,7 @@ export function installCameraControls(host) {
 
   canvas.addEventListener('pointerup', (e) => {
     dragging = false;
-    try { canvas.releasePointerCapture(e.pointerId); } catch {}
+    try { canvas.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
   });
 
   canvas.addEventListener('pointermove', (e) => {
@@ -47,7 +57,7 @@ export function installCameraControls(host) {
   }, { passive: false });
 
   window.addEventListener('keydown', (e) => {
-    const tag = e.target?.tagName;
+    const tag = (e.target as HTMLElement | null)?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (e.key === 'r' || e.key === 'R') {
       host.cameraAzimuth += Math.PI / 8;

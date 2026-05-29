@@ -1,0 +1,11 @@
+{
+  // Type-checks the sources together with the test suite. Adds Node typings
+  // (for node:test / node:assert) and emits nothing.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["src", "test"]
+}

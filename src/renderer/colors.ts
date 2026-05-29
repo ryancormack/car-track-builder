@@ -1,4 +1,4 @@
-// renderer/colors.js — single source of truth for the visual palette.
+// renderer/colors.ts — single source of truth for the visual palette.
 // Hot Wheels-inspired oranges + cool cyan/blue accents on a dark navy stage.
 
 export const COLORS = {
@@ -24,4 +24,4 @@ export const COLORS = {
   startEm: 0x115533,
   sun: 0xfff5e0,
   rim: 0x3da9fc,
-};
+} as const;

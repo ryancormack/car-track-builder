@@ -1,4 +1,4 @@
-// pieces/definitions.js — the catalogue of all piece types and palette ordering.
+// pieces/definitions.ts — the catalogue of all piece types and palette ordering.
 //
 // The Loop's entry-speed gate is derived from the shared physics constants (see
 // LOOP_MIN_V2 below). The other stunt `minV2` values (ramps, corkscrew, jump)
@@ -10,6 +10,7 @@ import {
   pathLoop, pathCorkscrew, pathJump,
 } from './paths.js';
 import { G, LOOP_RADIUS } from '../constants.js';
+import type { Piece, PieceId } from '../types.js';
 
 // Classic result for a vertical loop: to stay pinned to the track at the apex,
 // the car needs v² ≥ 5·g·R at the bottom (entry). With g=9.8 and R=0.5 that's
@@ -17,7 +18,7 @@ import { G, LOOP_RADIUS } from '../constants.js';
 // above the stall threshold, so this is genuinely passable at the gate value.
 const LOOP_MIN_V2 = 5 * G * LOOP_RADIUS;
 
-export const PIECES = {
+export const PIECES: Record<PieceId, Piece> = {
   START: {
     id: 'START', name: 'Start', icon: '🚦', category: 'meta',
     forward: 1, turn: 0, dz: 0,
@@ -97,9 +98,14 @@ export const PIECES = {
   },
 };
 
-export const PALETTE_ORDER = [
+export const PALETTE_ORDER: PieceId[] = [
   'STRAIGHT', 'CURVE_L', 'CURVE_R',
   'RAMP_UP', 'RAMP_DN',
   'LOOP', 'CORKSCREW', 'JUMP',
   'BOOSTER', 'FINISH',
 ];
+
+/** Narrows an arbitrary string to a known PieceId (used at the JSON boundary). */
+export function isPieceId(id: string): id is PieceId {
+  return Object.prototype.hasOwnProperty.call(PIECES, id);
+}

@@ -1,9 +1,10 @@
-// renderer/car.js — car mesh and per-frame placement (position + orientation).
+// renderer/car.ts — car mesh and per-frame placement (position + orientation).
 
 import * as THREE from 'three';
 import { COLORS } from './colors.js';
+import type { CarSample } from '../types.js';
 
-export function buildCar() {
+export function buildCar(): THREE.Group {
   const group = new THREE.Group();
 
   const body = new THREE.Mesh(
@@ -28,7 +29,7 @@ export function buildCar() {
 
   const wheelMat = new THREE.MeshStandardMaterial({ color: COLORS.carWheel, roughness: 0.9 });
   const wheelGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.06, 12);
-  const positions = [
+  const positions: Array<[number, number, number]> = [
     [0.18, -0.07, 0.16], [0.18, -0.07, -0.16],
     [-0.18, -0.07, 0.16], [-0.18, -0.07, -0.16],
   ];
@@ -45,7 +46,7 @@ export function buildCar() {
  * Place the car at the supplied path sample. Builds an orthonormal basis from
  * the tangent, applies banking, hovers the car slightly above the rails.
  */
-export function placeCar(car, sample) {
+export function placeCar(car: THREE.Group, sample: CarSample): void {
   const { pos, tangent, banking } = sample;
   car.position.set(pos.wx, pos.wz + 0.12, pos.wy);
 
@@ -54,7 +55,7 @@ export function placeCar(car, sample) {
   tang.normalize();
 
   const up = new THREE.Vector3(0, 1, 0);
-  let side = new THREE.Vector3().crossVectors(up, tang);
+  const side = new THREE.Vector3().crossVectors(up, tang);
   if (side.lengthSq() < 1e-6) side.set(0, 0, 1);
   side.normalize();
   const localUp = new THREE.Vector3().crossVectors(tang, side).normalize();

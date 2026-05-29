@@ -3,10 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Track } from '../js/track.js';
-import { computeScore, designScore } from '../js/scoring.js';
+import { Track } from '../src/track.js';
+import { computeScore, designScore } from '../src/scoring.js';
+import type { SimSummary } from '../src/types.js';
 
-function trackOf(ids) {
+function trackOf(ids: string[]): Track {
   const t = new Track();
   for (const id of ids) t.addPiece(id);
   return t;
@@ -23,7 +24,7 @@ test('design score = 5·count + sum(excitement)', () => {
 
 test('completion bonus is applied on a finished + non-failed run', () => {
   const track = trackOf(['STRAIGHT', 'FINISH']);
-  const sim = { topSpeed: 10, boostersUsed: 0, finished: true, failed: false };
+  const sim: SimSummary = { topSpeed: 10, boostersUsed: 0, finished: true, failed: false };
   const a = computeScore(track, sim);
   const b = computeScore(track, { ...sim, finished: false });
   assert.ok(a.total - b.total >= 250, 'finishing should add at least the +250 bonus');
@@ -53,7 +54,7 @@ test('top-speed bonus scales with peak speed', () => {
 
 test('stunt combo gives a bonus for chaining 2+ stunts in a row', () => {
   const track = trackOf(['LOOP', 'CORKSCREW', 'JUMP', 'FINISH']);
-  const sim = { topSpeed: 12, boostersUsed: 0, finished: true, failed: false };
+  const sim: SimSummary = { topSpeed: 12, boostersUsed: 0, finished: true, failed: false };
   const r = computeScore(track, sim);
   assert.ok(r.breakdown.stuntCombo > 0);
 });
@@ -68,7 +69,7 @@ test('non-stunt piece between stunts breaks the combo streak', () => {
 
 test('total score is never negative', () => {
   const track = trackOf(['BOOSTER', 'BOOSTER', 'BOOSTER', 'BOOSTER', 'BOOSTER']);
-  const sim = { topSpeed: 0, boostersUsed: 5, finished: false, failed: true };
+  const sim: SimSummary = { topSpeed: 0, boostersUsed: 5, finished: false, failed: true };
   const r = computeScore(track, sim);
   assert.ok(r.total >= 0);
 });

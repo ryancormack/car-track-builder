@@ -1,16 +1,36 @@
-// renderer/index.js — Three.js Renderer that owns the scene, camera, lights,
+// renderer/index.ts — Three.js Renderer that owns the scene, camera, lights,
 // and the runtime track/car/ghost groups. Mesh construction is delegated to
 // the meshes/car/controls submodules.
 
 import * as THREE from 'three';
-import { PIECES } from '../pieces/index.js';
+import { PIECES, isPieceId } from '../pieces/index.js';
 import { COLORS } from './colors.js';
 import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
 import { installCameraControls } from './controls.js';
+import type { CameraControlHost } from './controls.js';
+import type { Track } from '../track.js';
+import type { CarSample } from '../types.js';
 
-export class Renderer {
-  constructor(canvas) {
+export class Renderer implements CameraControlHost {
+  canvas: HTMLCanvasElement;
+  scene: THREE.Scene;
+  renderer: THREE.WebGLRenderer;
+  camera: THREE.OrthographicCamera;
+
+  cameraTarget: THREE.Vector3;
+  cameraDistance: number;
+  cameraAzimuth: number;
+  cameraPolar: number;
+  cameraZoom: number;
+  frustumSize: number;
+
+  trackGroup: THREE.Group;
+  ghostGroup: THREE.Group;
+  startGroup: THREE.Group;
+  car: THREE.Group;
+
+  constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(COLORS.bg);
@@ -53,39 +73,38 @@ export class Renderer {
 
   // -------- public API --------
 
-  setCar(visible, sample = null) {
+  setCar(visible: boolean, sample: CarSample | null = null): void {
     this.car.visible = !!visible;
     if (visible && sample) placeCar(this.car, sample);
   }
 
-  rebuildTrack(track) {
+  rebuildTrack(track: Track): void {
     this._clearGroup(this.trackGroup);
     this._clearGroup(this.startGroup);
     this.startGroup.add(buildStartTower(track.startState, track.dropHeight));
     for (let i = 0; i < track.pieces.length; i++) {
       const id = track.pieces[i];
-      const p = PIECES[id]; if (!p) continue;
+      const p = PIECES[id];
       const entry = track.entryStateAt(i);
       this.trackGroup.add(buildPieceMesh(p, entry));
     }
     this._recenterCamera(track);
   }
 
-  rebuildGhost(track, pieceId) {
+  rebuildGhost(track: Track, pieceId: string | null): void {
     this._clearGroup(this.ghostGroup);
-    if (!pieceId) return;
-    const piece = PIECES[pieceId];
-    if (!piece || !track.canAdd(pieceId)) return;
-    this.ghostGroup.add(buildGhostPiece(piece, track.cursorState()));
+    if (!pieceId || !isPieceId(pieceId)) return;
+    if (!track.canAdd(pieceId)) return;
+    this.ghostGroup.add(buildGhostPiece(PIECES[pieceId], track.cursorState()));
   }
 
-  clearGhost() { this._clearGroup(this.ghostGroup); }
+  clearGhost(): void { this._clearGroup(this.ghostGroup); }
 
-  render() { this.renderer.render(this.scene, this.camera); }
+  render(): void { this.renderer.render(this.scene, this.camera); }
 
   // -------- camera helpers --------
 
-  updateCamera() {
+  updateCamera(): void {
     const r = this.cameraDistance;
     const az = this.cameraAzimuth, po = this.cameraPolar;
     const x = r * Math.cos(po) * Math.cos(az);
@@ -100,7 +119,7 @@ export class Renderer {
     this._updateFrustum();
   }
 
-  _updateFrustum() {
+  _updateFrustum(): void {
     const aspect = this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1);
     const f = this.frustumSize / this.cameraZoom;
     this.camera.left = -f * aspect;
@@ -110,7 +129,7 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
   }
 
-  _recenterCamera(track) {
+  private _recenterCamera(track: Track): void {
     if (track.pieces.length === 0) {
       this.cameraTarget.set(0, 0, 0);
     } else {
@@ -126,7 +145,7 @@ export class Renderer {
 
   // -------- internals --------
 
-  _addLights() {
+  private _addLights(): void {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     const sun = new THREE.DirectionalLight(COLORS.sun, 1.1);
     sun.position.set(8, 16, 6);
@@ -144,7 +163,7 @@ export class Renderer {
     this.scene.add(rim);
   }
 
-  _addGround() {
+  private _addGround(): void {
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(60, 60),
       new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.95 }),
@@ -159,29 +178,33 @@ export class Renderer {
     this.scene.add(grid);
   }
 
-  _clearGroup(group) {
+  private _clearGroup(group: THREE.Group): void {
     while (group.children.length) {
       const c = group.children.pop();
+      if (!c) break;
       group.remove(c);
-      c.traverse?.((obj) => {
-        obj.geometry?.dispose?.();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
+      c.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        mesh.geometry?.dispose?.();
+        const material = mesh.material;
+        if (material) {
+          if (Array.isArray(material)) material.forEach((m) => m.dispose());
+          else material.dispose();
         }
       });
     }
   }
 
-  _installResize() {
+  private _installResize(): void {
+    const parent = this.canvas.parentElement;
     const fit = () => {
-      const w = this.canvas.clientWidth || this.canvas.parentElement.clientWidth;
-      const h = this.canvas.clientHeight || this.canvas.parentElement.clientHeight;
+      const w = this.canvas.clientWidth || parent?.clientWidth || 0;
+      const h = this.canvas.clientHeight || parent?.clientHeight || 0;
       this.renderer.setSize(w, h, false);
       this._updateFrustum();
     };
     fit();
     window.addEventListener('resize', fit);
-    new ResizeObserver(fit).observe(this.canvas.parentElement);
+    if (parent) new ResizeObserver(fit).observe(parent);
   }
 }

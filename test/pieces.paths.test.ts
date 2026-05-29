@@ -7,7 +7,7 @@ import {
   pathStraight, pathCurveR, pathCurveL,
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
-} from '../js/pieces/paths.js';
+} from '../src/pieces/paths.js';
 
 const samplers = [pathStraight, pathCurveR, pathCurveL, pathRampUp, pathRampDown,
                   pathLoop, pathCorkscrew, pathJump];
@@ -16,7 +16,7 @@ test('every path sampler returns finite numeric coordinates across [0,1]', () =>
   for (const fn of samplers) {
     for (let t = 0; t <= 1; t += 0.05) {
       const p = fn(t);
-      for (const k of ['lx', 'ly', 'lz']) {
+      for (const k of ['lx', 'ly', 'lz'] as const) {
         assert.ok(Number.isFinite(p[k]), `${fn.name} sample at t=${t.toFixed(2)}: ${k}=${p[k]}`);
       }
     }

@@ -5,9 +5,18 @@
   "description": "Hot Wheels-style 2.5D car track builder for the browser.",
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "npm run typecheck && node --import tsx --test test/*.test.ts"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/three": "^0.162.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
   }
 }
