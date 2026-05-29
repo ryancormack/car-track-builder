@@ -51,7 +51,7 @@ const CORK_EASE = 0.3; // fraction of the piece spent easing in / out at each en
 function smoothstepArea(x: number): number { return x * x * x - 0.5 * x * x * x * x; }
 
 /** Eased progress in [0, 1]: smooth ease in/out at the ends, linear in the middle. */
-function easedProgress(t: number): number {
+export function easedProgress(t: number): number {
   const p = CORK_EASE;
   const area = 1 - p; // area under the trapezoidal (peak = 1) rate profile
   if (t < p) return (p * smoothstepArea(t / p)) / area;

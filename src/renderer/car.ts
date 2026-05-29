@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { COLORS } from './colors.js';
-import type { CarSample } from '../types.js';
+import type { TrackFrame } from '../pieces/frames.js';
 
 export function buildCar(): THREE.Group {
   const group = new THREE.Group();
@@ -68,29 +68,21 @@ export function buildCar(): THREE.Group {
 }
 
 /**
- * Place the car at the supplied path sample. Builds an orthonormal basis from
- * the tangent, applies banking, hovers the car slightly above the rails.
+ * Place the car using the shared track frame: sit it a fixed height *along the
+ * surface normal* (so it hugs loops and corkscrews instead of floating in world
+ * up), and orient it with the same {tangent, up, side} basis the rails use.
  */
-export function placeCar(car: THREE.Group, sample: CarSample): void {
-  const { pos, tangent, banking } = sample;
-  car.position.set(pos.wx, pos.wz + 0.12, pos.wy);
+const RIDE_HEIGHT = 0.12;
 
-  const tang = new THREE.Vector3(tangent.dx, tangent.dz, tangent.dy);
-  if (tang.lengthSq() < 1e-8) tang.set(1, 0, 0);
-  tang.normalize();
+export function placeCar(car: THREE.Group, frame: TrackFrame): void {
+  // Grid space (x=fwd, y=lateral, z=up) -> three.js (x, z, y).
+  const pos = new THREE.Vector3(frame.pos.x, frame.pos.z, frame.pos.y);
+  const tang = new THREE.Vector3(frame.tangent.x, frame.tangent.z, frame.tangent.y).normalize();
+  const up = new THREE.Vector3(frame.up.x, frame.up.z, frame.up.y).normalize();
+  // The grid->three map flips handedness, so derive `side` here to guarantee a
+  // right-handed (non-mirrored) basis: tang × up = side.
+  const side = new THREE.Vector3().crossVectors(tang, up).normalize();
 
-  const up = new THREE.Vector3(0, 1, 0);
-  const side = new THREE.Vector3().crossVectors(up, tang);
-  if (side.lengthSq() < 1e-6) side.set(0, 0, 1);
-  side.normalize();
-  const localUp = new THREE.Vector3().crossVectors(tang, side).normalize();
-
-  if (banking) {
-    const q = new THREE.Quaternion().setFromAxisAngle(tang, banking);
-    side.applyQuaternion(q);
-    localUp.applyQuaternion(q);
-  }
-
-  const m = new THREE.Matrix4().makeBasis(tang, localUp, side);
-  car.quaternion.setFromRotationMatrix(m);
+  car.position.copy(pos).addScaledVector(up, RIDE_HEIGHT);
+  car.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(tang, up, side));
 }

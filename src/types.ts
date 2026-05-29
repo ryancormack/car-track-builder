@@ -93,20 +93,6 @@ export interface Piece {
   isFinish?: boolean;
 }
 
-/** Forward tangent of the car along the path. */
-export interface Tangent {
-  dx: number;
-  dy: number;
-  dz: number;
-}
-
-/** Per-frame car placement produced by the simulator. */
-export interface CarSample {
-  pos: WorldSample;
-  tangent: Tangent;
-  banking: number;
-}
-
 /**
  * The subset of a simulation run that scoring needs. The full {@link Simulator}
  * satisfies this structurally, and tests can pass a plain object.

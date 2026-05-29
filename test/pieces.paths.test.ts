@@ -7,6 +7,7 @@ import {
   pathStraight, pathCurveR, pathCurveL,
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
+  easedProgress,
 } from '../src/pieces/paths.js';
 
 const samplers = [pathStraight, pathCurveR, pathCurveL, pathRampUp, pathRampDown,
@@ -74,19 +75,43 @@ test('pathLoop is continuous at both segment seams', () => {
   assert.ok(Math.abs(beforeDepart.lz - afterDepart.lz) < 1e-3);
 });
 
-test('pathCorkscrew advances forward while spinning around it', () => {
-  // lx must increase monotonically from 0 to 1.
+test('pathCorkscrew spans three cells, connects flat, and inverts at the apex', () => {
+  // lx must increase monotonically from 0 to 3 (three cells).
   let prev = -Infinity;
   for (let t = 0; t <= 1; t += 0.05) {
     const p = pathCorkscrew(t);
     assert.ok(p.lx >= prev - 1e-9, `corkscrew lx not monotonic at t=${t}`);
     prev = p.lx;
   }
-  // At t=0 and t=1 the helix returns to (lz, ly) ≈ same starting offset.
+  assert.ok(Math.abs(pathCorkscrew(1).lx - 3) < 1e-9, 'spans 3 cells');
+
+  // Connects flat and level at both seams: ly = lz = 0, banking 0 / 2π.
   const start = pathCorkscrew(0);
   const end = pathCorkscrew(1);
-  assert.ok(Math.abs(start.ly - end.ly) < 1e-6);
-  assert.ok(Math.abs(start.lz - end.lz) < 1e-6);
+  assert.ok(Math.abs(start.lx) < 1e-9 && Math.abs(start.ly) < 1e-9 && Math.abs(start.lz) < 1e-9);
+  assert.ok(Math.abs(start.banking) < 1e-9, 'starts unbanked');
+  assert.ok(Math.abs(end.ly) < 1e-9 && Math.abs(end.lz) < 1e-9, 'ends level');
+  assert.ok(Math.abs(end.banking - 2 * Math.PI) < 1e-6, 'ends after one full turn');
+
+  // Apex height = 2r = 0.8 at the midpoint (banking = π).
+  assert.ok(Math.abs(pathCorkscrew(0.5).lz - 0.8) < 1e-6, 'apex height 2r');
+});
+
+test('easedProgress eases at the ends but is uniform through the middle', () => {
+  assert.equal(easedProgress(0), 0);
+  assert.ok(Math.abs(easedProgress(1) - 1) < 1e-9);
+  assert.ok(Math.abs(easedProgress(0.5) - 0.5) < 1e-9, 'symmetric');
+
+  // Monotonic non-decreasing.
+  let prev = -Infinity;
+  for (let t = 0; t <= 1; t += 0.02) { const e = easedProgress(t); assert.ok(e >= prev - 1e-9); prev = e; }
+
+  // Rate ~0 at the seams (eased), but non-trivial through the middle (uniform).
+  const d = 1e-3;
+  const rateStart = (easedProgress(d) - easedProgress(0)) / d;
+  const rateMid = (easedProgress(0.5 + d) - easedProgress(0.5 - d)) / (2 * d);
+  assert.ok(rateStart < 0.05, `eased-in: start rate ~0 (got ${rateStart})`);
+  assert.ok(rateMid > 1.0, `uniform middle has real rate (got ${rateMid})`);
 });
 
 test('pathJump returns to ground at both ends and rises in the middle', () => {
