@@ -39,13 +39,21 @@ export const pathLoop: PathFn = (t) => {
 };
 
 export const pathCorkscrew: PathFn = (t) => {
-  // Barrel roll: lx advances 0->1 while car spins around the forward axis.
-  const a = 2 * Math.PI * t;
-  return { lx: t, ly: 0.3 * Math.sin(a), lz: 0.3 + 0.3 * Math.cos(a), banking: a };
+  // Barrel roll: the centreline traces a single helical loop (radius R) while
+  // advancing forward. The spin is eased with smootherstep so the piece enters
+  // and exits flat — ly = lz = 0 and banking = 0 at both ends — which makes it
+  // join cleanly onto neighbouring track instead of floating above it.
+  const s = t * t * t * (t * (t * 6 - 15) + 10); // smootherstep: S(0)=0, S(1)=1, S'=0 at ends
+  const a = 2 * Math.PI * s;
+  const R = 0.34;
+  return { lx: t, ly: R * Math.sin(a), lz: R * (1 - Math.cos(a)), banking: a };
 };
 
 export const pathJump: PathFn = (t) => {
-  // Parabolic arc: net dz = 0, rises to ~0.9 at the peak.
-  const lz = 0.9 * Math.sin(Math.PI * t);
-  return { lx: t, ly: 0, lz, banking: 0 };
+  // Spans two cells (lx: 0 -> 2): a take-off ramp, an airborne ballistic arc
+  // over a one-cell gap, then a landing ramp. Net dz = 0. The renderer omits
+  // the track over the middle so the gap reads as empty space.
+  const lx = 2 * t;
+  const lz = 1.15 * Math.sin(Math.PI * t);
+  return { lx, ly: 0, lz, banking: 0 };
 };

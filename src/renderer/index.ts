@@ -33,13 +33,17 @@ export class Renderer implements CameraControlHost {
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(COLORS.bg);
-    this.scene.fog = new THREE.Fog(COLORS.bg, 18, 45);
+    // No opaque background: the canvas is transparent so the CSS stage gradient
+    // shows through behind the scene. Fog fades distant geometry into it.
+    this.scene.fog = new THREE.Fog(COLORS.bg, 20, 54);
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setClearColor(0x000000, 0);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.25;
 
     // True isometric: 45° azimuth, atan(1/√2) ≈ 35.26° polar elevation.
     this.cameraTarget = new THREE.Vector3(0, 0, 0);
@@ -146,34 +150,43 @@ export class Renderer implements CameraControlHost {
   // -------- internals --------
 
   private _addLights(): void {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const sun = new THREE.DirectionalLight(COLORS.sun, 1.1);
-    sun.position.set(8, 16, 6);
+    // Hemisphere gives a soft sky/ground gradient; a low ambient lifts shadows.
+    this.scene.add(new THREE.HemisphereLight(COLORS.hemiSky, COLORS.hemiGround, 0.9));
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+
+    const sun = new THREE.DirectionalLight(COLORS.sun, 1.6);
+    sun.position.set(10, 18, 8);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.left = -16;
-    sun.shadow.camera.right = 16;
-    sun.shadow.camera.top = 16;
-    sun.shadow.camera.bottom = -16;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.radius = 3;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.camera.left = -18;
+    sun.shadow.camera.right = 18;
+    sun.shadow.camera.top = 18;
+    sun.shadow.camera.bottom = -18;
     sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 60;
+    sun.shadow.camera.far = 70;
     this.scene.add(sun);
-    const rim = new THREE.DirectionalLight(COLORS.rim, 0.35);
-    rim.position.set(-6, 4, -8);
+
+    const rim = new THREE.DirectionalLight(COLORS.rim, 0.5);
+    rim.position.set(-8, 5, -10);
     this.scene.add(rim);
   }
 
   private _addGround(): void {
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(60, 60),
-      new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.95 }),
+      new THREE.PlaneGeometry(120, 120),
+      new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 1.0, metalness: 0.0 }),
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.01;
+    ground.position.y = -0.02;
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    const grid = new THREE.GridHelper(60, 60, COLORS.grid, COLORS.grid);
+    const grid = new THREE.GridHelper(120, 120, COLORS.gridCenter, COLORS.grid);
+    const gridMat = grid.material as THREE.Material;
+    gridMat.transparent = true;
+    gridMat.opacity = 0.5;
     grid.position.y = 0;
     this.scene.add(grid);
   }

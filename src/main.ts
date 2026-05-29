@@ -72,8 +72,8 @@ const saved = loadTrackJSON();
 if (saved) {
   track.fromJSON(saved);
 } else {
-  // Demo seed so the canvas isn't empty on first load.
-  ['STRAIGHT', 'STRAIGHT', 'CURVE_R', 'STRAIGHT', 'BOOSTER',
+  // Demo seed so the canvas isn't empty on first load — showcases the stunts.
+  ['STRAIGHT', 'CORKSCREW', 'STRAIGHT', 'JUMP', 'STRAIGHT', 'BOOSTER',
     'STRAIGHT', 'LOOP', 'STRAIGHT', 'FINISH'].forEach((id) => track.addPiece(id));
 }
 syncDropUi();
