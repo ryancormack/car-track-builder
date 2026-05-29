@@ -36,6 +36,17 @@ export class Track {
     return true;
   }
 
+  removePieceAt(index: number): PieceId | undefined {
+    if (index < 0 || index >= this.pieces.length) return undefined;
+    return this.pieces.splice(index, 1)[0];
+  }
+
+  replacePieceAt(index: number, newId: PieceId): boolean {
+    if (index < 0 || index >= this.pieces.length) return false;
+    this.pieces[index] = newId;
+    return true;
+  }
+
   undo(): PieceId | undefined {
     return this.pieces.pop();
   }

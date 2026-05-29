@@ -31,6 +31,9 @@ export class Renderer implements CameraControlHost {
   startGroup: THREE.Group;
   car: THREE.Group;
 
+  private _highlightedIndex: number | null = null;
+  private _savedEmissives: Map<THREE.Mesh, { intensity: number; color: THREE.Color }> = new Map();
+
   private _launchAnim: {
     startTime: number;
     duration: number;
@@ -116,6 +119,58 @@ export class Renderer implements CameraControlHost {
   }
 
   clearGhost(): void { this._clearGroup(this.ghostGroup); }
+
+  pickPiece(event: MouseEvent): number | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, this.camera);
+    const intersects = raycaster.intersectObjects(this.trackGroup.children, true);
+    if (intersects.length === 0) return null;
+    // Find which top-level trackGroup child contains the intersected object
+    const hit = intersects[0].object;
+    for (let i = 0; i < this.trackGroup.children.length; i++) {
+      const child = this.trackGroup.children[i];
+      let found = false;
+      child.traverse((obj) => { if (obj === hit) found = true; });
+      if (found) return i;
+    }
+    return null;
+  }
+
+  highlightPiece(index: number | null): void {
+    // Restore previously highlighted piece
+    if (this._highlightedIndex !== null) {
+      for (const [mesh, saved] of this._savedEmissives) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = saved.intensity;
+        mat.emissive.copy(saved.color);
+      }
+      this._savedEmissives.clear();
+      this._highlightedIndex = null;
+    }
+    if (index === null || index < 0 || index >= this.trackGroup.children.length) return;
+    this._highlightedIndex = index;
+    const group = this.trackGroup.children[index];
+    group.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        const mat = mesh.material;
+        if (mat && !Array.isArray(mat) && (mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
+          const stdMat = mat as THREE.MeshStandardMaterial;
+          this._savedEmissives.set(mesh, {
+            intensity: stdMat.emissiveIntensity,
+            color: stdMat.emissive.clone(),
+          });
+          stdMat.emissiveIntensity = stdMat.emissiveIntensity + 0.6;
+          stdMat.emissive.set(0x44aaff);
+        }
+      }
+    });
+  }
 
   animateLauncher(): void {
     const plunger = this.startGroup.getObjectByName('plunger') as THREE.Mesh | undefined;

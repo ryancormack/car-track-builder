@@ -22,6 +22,7 @@ export class Editor {
   onChange: () => void;
   enabled = true;
   buttons: HTMLButtonElement[] = [];
+  selectedIndex: number | null = null;
   private _statusTimer?: ReturnType<typeof setTimeout>;
 
   constructor({ track, renderer, paletteEl, statusEl, onChange }: EditorOptions) {
@@ -78,6 +79,21 @@ export class Editor {
 
   private _add(id: PieceId): void {
     if (!this.enabled) return;
+    if (this.selectedIndex !== null) {
+      // Replace mode: swap the selected piece
+      const ok = this.track.replacePieceAt(this.selectedIndex, id);
+      if (!ok) {
+        this._setStatus('Cannot replace that piece.', 'err');
+        return;
+      }
+      this.renderer.rebuildTrack(this.track);
+      this.renderer.clearGhost();
+      this._setStatus(`Replaced with ${PIECES[id].name}.`, 'ok');
+      this.deselectPiece();
+      this._refreshButtons();
+      this.onChange();
+      return;
+    }
     if (!this.track.canAdd(id)) {
       this._setStatus('Track ends at the Finish line — undo to extend.', 'err');
       return;
@@ -90,7 +106,31 @@ export class Editor {
     this.onChange();
   }
 
+  selectPiece(index: number | null): void {
+    this.selectedIndex = index;
+    this.renderer.highlightPiece(index);
+  }
+
+  deselectPiece(): void {
+    this.selectedIndex = null;
+    this.renderer.highlightPiece(null);
+  }
+
+  deleteSelected(): void {
+    if (this.selectedIndex === null) return;
+    const removed = this.track.removePieceAt(this.selectedIndex);
+    this.renderer.rebuildTrack(this.track);
+    this.renderer.clearGhost();
+    if (removed) {
+      this._setStatus(`Deleted ${PIECES[removed].name}.`, 'ok');
+    }
+    this.deselectPiece();
+    this._refreshButtons();
+    this.onChange();
+  }
+
   undo(): void {
+    this.deselectPiece();
     const removed = this.track.undo();
     this.renderer.rebuildTrack(this.track);
     this.renderer.clearGhost();
@@ -104,6 +144,7 @@ export class Editor {
   }
 
   clear(): void {
+    this.deselectPiece();
     this.track.clear();
     this.renderer.rebuildTrack(this.track);
     this.renderer.clearGhost();
