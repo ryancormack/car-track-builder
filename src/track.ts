@@ -85,6 +85,18 @@ export class Track {
     return this.gapOriginals[index] !== null && this.pieces[index] !== this.gapOriginals[index];
   }
 
+  /**
+   * Whether a slot should render as a faint placeholder (truly empty gap that
+   * hasn't been filled or inserted). Filled gaps, inserted pieces, and normal
+   * pieces all render as solid track.
+   */
+  isUnfilledGap(index: number): boolean {
+    if (!this.isEmptyAt(index)) return false;
+    if (this.inserted[index]) return false;       // inserted = solid
+    if (this.isFilledGap(index)) return false;    // filled = solid
+    return true;
+  }
+
   /** Number of filled (non-gap) slots. */
   nonEmptyCount(): number {
     let n = 0;
