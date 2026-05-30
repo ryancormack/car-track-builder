@@ -30,35 +30,27 @@ export class Track {
 
   // Entry state for piece i (i.e., before piece i is applied).
   //
-  // Two modes depending on what we're computing FOR:
+  // For non-gap, non-inserted target pieces (original downstream), we use the
+  // frozen gapOriginals for any unfilled gap slots and skip inserted pieces, so
+  // the downstream stays put until Rejoin.
   //
-  // 1. If piece i is UNJOINED (gap/inserted): use actual piece ids for all j < i
-  //    so the new section chains correctly (e.g. a left bend → straight flows in
-  //    the right direction).
-  //
-  // 2. If piece i is a NON-GAP piece (original downstream): use gapOriginals for
-  //    any gap slots j < i, so the original downstream stays frozen until Rejoin.
-  //
-  // This means the new section you're building flows from one piece to the next,
-  // while the original track beyond it stays put.
+  // For gap/inserted target pieces (the new section being built), we use actual
+  // piece ids so the section chains correctly.
   entryStateAt(i: number): GridState {
-    const targetIsGap = i < this.pieces.length && this.empties[i];
+    const targetIsEditing = i < this.pieces.length && (this.empties[i] || this.inserted[i]);
     let s: GridState = { ...this.startState };
     for (let j = 0; j < i && j < this.pieces.length; j++) {
-      if (!targetIsGap && this.inserted[j]) {
-        // Computing entry for a non-gap piece: skip inserted pieces entirely
-        // (they didn't exist in the original track, so they shouldn't shift the
-        // frozen downstream).
+      if (!targetIsEditing && this.inserted[j]) {
+        // Computing entry for original downstream: skip inserted pieces entirely.
         continue;
       }
       let id: PieceId;
-      if (targetIsGap) {
-        // Computing entry for an unjoined piece: use actual pieces so the new
-        // section chains correctly.
+      if (targetIsEditing) {
+        // Computing entry for a piece in the edit region: use actual pieces.
         id = this.pieces[j];
       } else if (this.empties[j] && this.gapOriginals[j]) {
-        // Computing entry for a non-gap piece, and this slot is a gap: use the
-        // frozen original so downstream doesn't shift.
+        // Computing entry for original downstream, and this is an unfilled gap:
+        // use the frozen original.
         id = this.gapOriginals[j]!;
       } else {
         id = this.pieces[j];
@@ -79,21 +71,19 @@ export class Track {
   }
 
   /** Whether a gap slot has been filled with a new piece (but not yet rejoined). */
-  isFilledGap(index: number): boolean {
-    if (!this.isEmptyAt(index)) return false;
-    // A "filled gap" is one where the visible piece differs from the original.
-    return this.gapOriginals[index] !== null && this.pieces[index] !== this.gapOriginals[index];
+  isFilledGap(_index: number): boolean {
+    // Since replacePieceAt now clears empties immediately, filled gaps no longer
+    // exist as a separate state. This returns false always (kept for API compat).
+    return false;
   }
 
   /**
    * Whether a slot should render as a faint placeholder (truly empty gap that
-   * hasn't been filled or inserted). Filled gaps, inserted pieces, and normal
-   * pieces all render as solid track.
+   * hasn't been filled or inserted). Only unfilled gaps show as shadows.
    */
   isUnfilledGap(index: number): boolean {
     if (!this.isEmptyAt(index)) return false;
-    if (this.inserted[index]) return false;       // inserted = solid
-    if (this.isFilledGap(index)) return false;    // filled = solid
+    if (this.inserted[index]) return false;
     return true;
   }
 
@@ -109,11 +99,11 @@ export class Track {
     return this.empties.some((e) => e === true);
   }
 
-  /** Any edits pending that need a Rejoin (filled gaps, inserts, or unfilled gaps to remove)? */
+  /** Any edits pending that need a Rejoin (inserted pieces or unfilled gaps to remove)? */
   hasPendingFills(): boolean {
     for (let i = 0; i < this.pieces.length; i++) {
-      if (this.isFilledGap(i)) return true;
       if (this.inserted[i]) return true;
+      if (this.isUnfilledGap(i)) return true;
     }
     return false;
   }
@@ -156,21 +146,17 @@ export class Track {
     return this.pieces[index];
   }
 
-  // Replaces the *visible* piece at the given index. If the slot is a gap, it
-  // stays marked as a gap (the original footprint is still used for downstream
-  // geometry) until the user explicitly calls rejoin(). This means filling a gap
-  // does NOT reposition anything downstream — the user stays in control.
+  // Replaces the piece at the given index. If the slot was a gap, it becomes a
+  // normal filled piece immediately (no longer a gap/shadow). The downstream
+  // freeze is maintained by the remaining unfilled gap slots and the inserted[]
+  // flag — this slot itself is now fully committed.
   replacePieceAt(index: number, newId: PieceId): boolean {
     if (index < 0 || index >= this.pieces.length) return false;
     if (!isPieceId(newId)) return false;
     this.pieces[index] = newId;
-    // If this was NOT a gap, just swap the piece normally (joined track edit).
-    // If it IS a gap, keep it marked empty so downstream doesn't move yet.
-    if (!this.empties[index]) {
-      // Normal replace (not a gap): piece is immediately joined.
-      this.gapOriginals[index] = null;
-    }
-    // else: keep empties[index] = true and gapOriginals[index] intact.
+    // Clear gap state: this slot is now a real, solid piece.
+    this.empties[index] = false;
+    this.gapOriginals[index] = null;
     return true;
   }
 
