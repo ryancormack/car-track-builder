@@ -106,8 +106,12 @@ export class Editor {
         this._setStatus(`Replaced with ${PIECES[id].name}.`, 'ok');
       }
       // Set the insert cursor so the next palette click inserts AFTER this slot.
-      this.insertCursor = this.selectedIndex;
-      this.deselectPiece();
+      // We clear selectedIndex manually (not via deselectPiece which would also
+      // kill insertCursor) to transition into insert mode.
+      const cursorPos = this.selectedIndex;
+      this.selectedIndex = null;
+      this.renderer.highlightPiece(null);
+      this.insertCursor = cursorPos;
       this._refreshButtons();
       this.onChange();
       return;
