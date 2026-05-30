@@ -127,6 +127,8 @@ export interface TrackJSON {
   empties?: boolean[];
   /** Parallel to `pieces`: original piece id when a gap was created (for footprint). */
   gapOriginals?: (PieceId | undefined)[];
+  /** Parallel to `pieces`: true for slots that were inserted (brand new). */
+  inserted?: boolean[];
 }
 
 /** The DOM elements the app wires up at boot. */

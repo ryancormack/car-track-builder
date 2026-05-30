@@ -23,18 +23,46 @@ export class Track {
   // the user replaces the slot's visible piece but hasn't rejoined yet, the
   // original footprint is still what drives geometry.
   gapOriginals: (PieceId | null)[] = [];
+  // Parallel to `pieces`: true for slots that were INSERTED (brand new, didn't
+  // exist in the original track). These are skipped entirely when computing
+  // entry states for non-gap (original downstream) pieces.
+  inserted: boolean[] = [];
 
-  // Entry state for piece i (i.e., before piece i is applied). For gap slots we
-  // use the *original* piece's footprint so downstream geometry doesn't shift
-  // until an explicit rejoin().
+  // Entry state for piece i (i.e., before piece i is applied).
+  //
+  // Two modes depending on what we're computing FOR:
+  //
+  // 1. If piece i is UNJOINED (gap/inserted): use actual piece ids for all j < i
+  //    so the new section chains correctly (e.g. a left bend → straight flows in
+  //    the right direction).
+  //
+  // 2. If piece i is a NON-GAP piece (original downstream): use gapOriginals for
+  //    any gap slots j < i, so the original downstream stays frozen until Rejoin.
+  //
+  // This means the new section you're building flows from one piece to the next,
+  // while the original track beyond it stays put.
   entryStateAt(i: number): GridState {
+    const targetIsGap = i < this.pieces.length && this.empties[i];
     let s: GridState = { ...this.startState };
     for (let j = 0; j < i && j < this.pieces.length; j++) {
-      // If the slot is a gap (or filled-but-unjoined), use the original piece's
-      // geometry so everything downstream stays put.
-      const id = this.empties[j] && this.gapOriginals[j]
-        ? this.gapOriginals[j]!
-        : this.pieces[j];
+      if (!targetIsGap && this.inserted[j]) {
+        // Computing entry for a non-gap piece: skip inserted pieces entirely
+        // (they didn't exist in the original track, so they shouldn't shift the
+        // frozen downstream).
+        continue;
+      }
+      let id: PieceId;
+      if (targetIsGap) {
+        // Computing entry for an unjoined piece: use actual pieces so the new
+        // section chains correctly.
+        id = this.pieces[j];
+      } else if (this.empties[j] && this.gapOriginals[j]) {
+        // Computing entry for a non-gap piece, and this slot is a gap: use the
+        // frozen original so downstream doesn't shift.
+        id = this.gapOriginals[j]!;
+      } else {
+        id = this.pieces[j];
+      }
       const p = PIECES[id];
       s = applyPiece(s, p);
     }
@@ -88,6 +116,7 @@ export class Track {
     this.pieces.push(pieceId);
     this.empties.push(false);
     this.gapOriginals.push(null);
+    this.inserted.push(false);
     return true;
   }
 
@@ -97,6 +126,7 @@ export class Track {
     if (index < 0 || index >= this.pieces.length) return undefined;
     this.empties.splice(index, 1);
     this.gapOriginals.splice(index, 1);
+    this.inserted.splice(index, 1);
     return this.pieces.splice(index, 1)[0];
   }
 
@@ -143,11 +173,8 @@ export class Track {
     const insertAt = index + 1;
     this.pieces.splice(insertAt, 0, pieceId);
     this.empties.splice(insertAt, 0, true);
-    // Use a sentinel null for gapOriginals — this slot has no "original" piece
-    // since it's brand new. entryStateAt will fall through to using pieces[j]
-    // when gapOriginals[j] is null, which is what we want for the new piece's
-    // own rendering position. But downstream slots still use their own originals.
-    this.gapOriginals.splice(insertAt, 0, pieceId);
+    this.gapOriginals.splice(insertAt, 0, null);
+    this.inserted.splice(insertAt, 0, true);
     return true;
   }
 
@@ -161,12 +188,14 @@ export class Track {
     for (let i = 0; i < this.pieces.length; i++) {
       this.empties[i] = false;
       this.gapOriginals[i] = null;
+      this.inserted[i] = false;
     }
   }
 
   undo(): PieceId | undefined {
     this.empties.pop();
     this.gapOriginals.pop();
+    this.inserted.pop();
     return this.pieces.pop();
   }
 
@@ -174,6 +203,7 @@ export class Track {
     this.pieces.length = 0;
     this.empties.length = 0;
     this.gapOriginals.length = 0;
+    this.inserted.length = 0;
   }
 
   hasFinish(): boolean {
@@ -201,6 +231,7 @@ export class Track {
       pieces: [...this.pieces],
       empties: [...this.empties],
       gapOriginals: this.gapOriginals.map((g) => g ?? undefined),
+      inserted: [...this.inserted],
     };
   }
 
@@ -224,5 +255,10 @@ export class Track {
       const val = (rawOriginals as unknown[])[i];
       return typeof val === 'string' && isPieceId(val) ? val : null;
     });
+    // Restore inserted flags (tolerate missing).
+    const rawInserted = Array.isArray((obj as Record<string, unknown>).inserted)
+      ? (obj as Record<string, unknown>).inserted as unknown[]
+      : [];
+    this.inserted = this.pieces.map((_, i) => (rawInserted as unknown[])[i] === true);
   }
 }
