@@ -92,3 +92,82 @@ test('fromJSON ignores invalid piece ids and clamps drop height', () => {
   assert.equal(t.dropHeight, 6);
   assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP']);
 });
+
+// ---- removePieceAt ----
+
+test('removePieceAt returns undefined for out-of-bounds index', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  assert.equal(t.removePieceAt(-1), undefined);
+  assert.equal(t.removePieceAt(1), undefined);
+  assert.equal(t.removePieceAt(99), undefined);
+  assert.equal(t.pieces.length, 1);
+});
+
+test('removePieceAt returns undefined on empty track', () => {
+  const t = new Track();
+  assert.equal(t.removePieceAt(0), undefined);
+});
+
+test('removePieceAt removes mid-array piece and shifts subsequent pieces', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('CURVE_R');
+  t.addPiece('LOOP');
+  const removed = t.removePieceAt(1);
+  assert.equal(removed, 'CURVE_R');
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP']);
+});
+
+test('removePieceAt removes first piece', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('CURVE_R');
+  const removed = t.removePieceAt(0);
+  assert.equal(removed, 'STRAIGHT');
+  assert.deepEqual(t.pieces, ['CURVE_R']);
+});
+
+test('removePieceAt removes last piece', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('CURVE_R');
+  const removed = t.removePieceAt(1);
+  assert.equal(removed, 'CURVE_R');
+  assert.deepEqual(t.pieces, ['STRAIGHT']);
+});
+
+// ---- replacePieceAt ----
+
+test('replacePieceAt returns false for out-of-bounds index', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  assert.equal(t.replacePieceAt(-1, 'LOOP'), false);
+  assert.equal(t.replacePieceAt(1, 'LOOP'), false);
+  assert.equal(t.replacePieceAt(99, 'LOOP'), false);
+  assert.deepEqual(t.pieces, ['STRAIGHT']);
+});
+
+test('replacePieceAt returns false on empty track', () => {
+  const t = new Track();
+  assert.equal(t.replacePieceAt(0, 'LOOP'), false);
+});
+
+test('replacePieceAt changes the element at valid index', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('CURVE_R');
+  t.addPiece('LOOP');
+  const result = t.replacePieceAt(1, 'STRAIGHT');
+  assert.equal(result, true);
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'STRAIGHT', 'LOOP']);
+});
+
+test('replacePieceAt does not change array length', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('CURVE_R');
+  t.replacePieceAt(0, 'LOOP');
+  assert.equal(t.pieces.length, 2);
+  assert.deepEqual(t.pieces, ['LOOP', 'CURVE_R']);
+});

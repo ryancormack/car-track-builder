@@ -36,6 +36,23 @@ export class Track {
     return true;
   }
 
+  // Removes a piece at the given index without geometric validation. This is
+  // intentional: users may freely edit any piece (the renderer always reflects
+  // the current state, similar to sandbox-style track builders).
+  removePieceAt(index: number): PieceId | undefined {
+    if (index < 0 || index >= this.pieces.length) return undefined;
+    return this.pieces.splice(index, 1)[0];
+  }
+
+  // Replaces a piece at the given index without geometric validation. This is
+  // intentional: users may freely swap any piece for any other piece and the
+  // renderer will rebuild the track from the resulting sequence.
+  replacePieceAt(index: number, newId: PieceId): boolean {
+    if (index < 0 || index >= this.pieces.length) return false;
+    this.pieces[index] = newId;
+    return true;
+  }
+
   undo(): PieceId | undefined {
     return this.pieces.pop();
   }

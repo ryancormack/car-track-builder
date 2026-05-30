@@ -31,6 +31,16 @@ export class Renderer implements CameraControlHost {
   startGroup: THREE.Group;
   car: THREE.Group;
 
+  private _highlightedIndex: number | null = null;
+  private _savedEmissives: Map<THREE.Mesh, { intensity: number; color: THREE.Color }> = new Map();
+
+  private _launchAnim: {
+    startTime: number;
+    duration: number;
+    restPos: THREE.Vector3;
+    pushDir: THREE.Vector3;
+  } | null = null;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
@@ -109,6 +119,102 @@ export class Renderer implements CameraControlHost {
   }
 
   clearGhost(): void { this._clearGroup(this.ghostGroup); }
+
+  pickPiece(event: MouseEvent): number | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, this.camera);
+    const intersects = raycaster.intersectObjects(this.trackGroup.children, true);
+    if (intersects.length === 0) return null;
+    // Walk up the parent chain from the hit object to find the direct child of trackGroup.
+    // This is O(depth) instead of O(n*m) traversal.
+    let obj: THREE.Object3D | null = intersects[0].object;
+    while (obj && obj.parent !== this.trackGroup) {
+      obj = obj.parent;
+    }
+    if (!obj) return null;
+    const index = this.trackGroup.children.indexOf(obj);
+    return index >= 0 ? index : null;
+  }
+
+  highlightPiece(index: number | null): void {
+    // Restore previously highlighted piece
+    if (this._highlightedIndex !== null) {
+      for (const [mesh, saved] of this._savedEmissives) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = saved.intensity;
+        mat.emissive.copy(saved.color);
+      }
+      this._savedEmissives.clear();
+      this._highlightedIndex = null;
+    }
+    if (index === null || index < 0 || index >= this.trackGroup.children.length) return;
+    this._highlightedIndex = index;
+    const group = this.trackGroup.children[index];
+    group.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        const mat = mesh.material;
+        if (mat && !Array.isArray(mat) && (mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
+          const stdMat = mat as THREE.MeshStandardMaterial;
+          this._savedEmissives.set(mesh, {
+            intensity: stdMat.emissiveIntensity,
+            color: stdMat.emissive.clone(),
+          });
+          stdMat.emissiveIntensity = stdMat.emissiveIntensity + 0.6;
+          stdMat.emissive.set(0x44aaff);
+        }
+      }
+    });
+  }
+
+  animateLauncher(): void {
+    const plunger = this.startGroup.getObjectByName('plunger') as THREE.Mesh | undefined;
+    if (!plunger) return;
+    this._launchAnim = {
+      startTime: performance.now() / 1000,
+      duration: 0.4,
+      restPos: plunger.position.clone(),
+      pushDir: new THREE.Vector3(1, 0, 0), // East = +x in Three.js
+    };
+  }
+
+  updateAnimations(_dt: number): void {
+    if (!this._launchAnim) return;
+    const plunger = this.startGroup.getObjectByName('plunger') as THREE.Mesh | undefined;
+    if (!plunger) { this._launchAnim = null; return; }
+
+    const now = performance.now() / 1000;
+    const elapsed = now - this._launchAnim.startTime;
+    const { duration, restPos, pushDir } = this._launchAnim;
+
+    if (elapsed >= duration) {
+      // Animation complete: reset to rest position
+      plunger.position.copy(restPos);
+      this._launchAnim = null;
+      return;
+    }
+
+    const t = elapsed / duration;
+    const maxPush = 0.5;
+    // Ease-out push in first half, spring back in second half
+    let offset: number;
+    if (t < 0.5) {
+      // Push forward with ease-out: fast start, slow end
+      const p = t / 0.5; // 0..1 over first half
+      offset = maxPush * (1 - (1 - p) * (1 - p));
+    } else {
+      // Retract with ease-in: slow start, fast end
+      const p = (t - 0.5) / 0.5; // 0..1 over second half
+      offset = maxPush * (1 - p) * (1 - p);
+    }
+
+    plunger.position.copy(restPos).addScaledVector(pushDir, offset);
+  }
 
   render(): void { this.renderer.render(this.scene, this.camera); }
 

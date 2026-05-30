@@ -439,3 +439,11 @@ body.mode-play .sidebar .panel:not(.always) {
   filter: saturate(0.6);
   transition: opacity 0.25s, filter 0.25s;
 }
+
+/* Disabled play button (no Finish piece) */
+.mode-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: saturate(0.4);
+  pointer-events: none;
+}

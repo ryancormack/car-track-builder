@@ -65,6 +65,7 @@ let mode: Mode = 'build';
 let sim: Simulator | null = null;
 let runResult: RunResult | null = null;
 let lastFrameTime = performance.now();
+let mouseDownPos: { x: number; y: number } | null = null;
 
 // ---------- Boot ----------
 
@@ -114,6 +115,26 @@ els.overlayClose.addEventListener('click', () => {
   switchMode('build');
 });
 
+// Canvas click detection: distinguish click from drag
+els.canvas.addEventListener('mousedown', (e) => {
+  mouseDownPos = { x: e.clientX, y: e.clientY };
+});
+els.canvas.addEventListener('mouseup', (e) => {
+  if (!mouseDownPos) return;
+  const dx = e.clientX - mouseDownPos.x;
+  const dy = e.clientY - mouseDownPos.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  mouseDownPos = null;
+  if (dist >= 5) return; // was a drag, not a click
+  if (mode !== 'build') return;
+  const index = renderer.pickPiece(e);
+  if (index !== null) {
+    editor.selectPiece(index);
+  } else {
+    editor.deselectPiece();
+  }
+});
+
 window.addEventListener('keydown', (e) => {
   const tag = (e.target as HTMLElement | null)?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -125,6 +146,15 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     editor.undo();
   }
+  if (e.key === 'Escape' && mode === 'build') {
+    editor.deselectPiece();
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'build') {
+    if (editor.selectedIndex !== null) {
+      e.preventDefault();
+      editor.deleteSelected();
+    }
+  }
 });
 
 // ---------- Mode handling ----------
@@ -132,11 +162,12 @@ window.addEventListener('keydown', (e) => {
 function switchMode(next: Mode): void {
   if (next === mode) return;
   if (next === 'play') {
-    if (track.pieces.length === 0) {
-      hud.flashStatus('Add some pieces first!', 'err');
+    if (!track.hasFinish()) {
+      hud.flashStatus('Complete the track with a Finish piece to play!', 'err');
       return;
     }
     mode = 'play';
+    editor.deselectPiece();
     document.body.classList.add('mode-play');
     els.modeBuild.classList.remove('active');
     els.modePlay.classList.add('active');
@@ -145,6 +176,7 @@ function switchMode(next: Mode): void {
     sim = new Simulator(track);
     runResult = null;
     renderer.setCar(true, sim.carSample());
+    renderer.animateLauncher();
   } else {
     mode = 'build';
     document.body.classList.remove('mode-play');
@@ -161,6 +193,12 @@ function switchMode(next: Mode): void {
 function refreshHud(): void {
   if (mode === 'play') hud.updateForPlay(track, sim, runResult);
   else hud.updateForBuild(track);
+  // Visually disable play button when track has no Finish piece
+  if (track.hasFinish()) {
+    els.modePlay.classList.remove('disabled');
+  } else {
+    els.modePlay.classList.add('disabled');
+  }
 }
 
 function syncDropUi(): void {
@@ -193,6 +231,7 @@ function frame(now: number): void {
     }
   }
 
+  renderer.updateAnimations(dt);
   renderer.render();
   requestAnimationFrame(frame);
 }
