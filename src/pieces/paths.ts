@@ -5,11 +5,21 @@
 import type { PathFn } from '../types.js';
 
 /**
- * Smootherstep S(t) = 6t^5 - 15t^4 + 10t^3. Maps [0,1] -> [0,1] with zero first
- * AND second derivative at both ends, so curves built on it meet their
- * neighbours with no slope (and no curvature) discontinuity.
+ * Ramp height via a cubic Hermite that rises 0 -> dz over the piece with chosen
+ * end slopes. `easeIn`/`easeOut` pick whether each end is flat (slope 0, for
+ * meeting level track) or at full grade (slope dz, for continuing a run of
+ * ramps). A run of ramps therefore forms ONE straight constant-grade incline
+ * (the eased-off ends only appear where the run meets non-ramp track), while an
+ * isolated ramp rounds off at both ends. Net rise is always dz.
  */
-function smootherstep(t: number): number { return t * t * t * (t * (t * 6 - 15) + 10); }
+export function rampLz(t: number, dz: number, easeIn: boolean, easeOut: boolean): number {
+  const s0 = easeIn ? 0 : dz;   // grade entering the piece
+  const s1 = easeOut ? 0 : dz;  // grade leaving the piece
+  // Hermite basis for end values (0, dz) and end slopes (s0, s1):
+  return s0 * (t * t * t - 2 * t * t + t)
+       + dz * (-2 * t * t * t + 3 * t * t)
+       + s1 * (t * t * t - t * t);
+}
 
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
@@ -25,12 +35,12 @@ export const pathCurveL: PathFn = (t) => {
   return { lx: 0.5 * Math.cos(a), ly: -0.5 + 0.5 * Math.sin(a), lz: 0, banking: 0 };
 };
 
-// Ramps change elevation by one unit using a smootherstep height profile, so
-// the grade eases from flat (zero slope) at the entry, up through the middle,
-// and back to flat at the exit. That means they join straight track — and each
-// other — with no sharp crease, while still netting the full ±1 elevation change.
-export const pathRampUp: PathFn = (t) => ({ lx: t, ly: 0, lz: smootherstep(t), banking: 0 });
-export const pathRampDown: PathFn = (t) => ({ lx: t, ly: 0, lz: -smootherstep(t), banking: 0 });
+// Ramps change elevation by one unit. By DEFAULT (isolated / at the catalogue
+// level) they ease at both ends so they meet flat track smoothly. When chained,
+// resolvePiece() (pieces/context.ts) overrides the end slopes so a run of ramps
+// reads as one continuous incline rather than a flight of stairs.
+export const pathRampUp: PathFn = (t) => ({ lx: t, ly: 0, lz: rampLz(t, 1, true, true), banking: 0 });
+export const pathRampDown: PathFn = (t) => ({ lx: t, ly: 0, lz: rampLz(t, -1, true, true), banking: 0 });
 
 export const pathLoop: PathFn = (t) => {
   // Approach (0..0.1): straight from back edge to loop bottom (lx=0.5, lz=0).

@@ -7,7 +7,7 @@ import {
   pathStraight, pathCurveR, pathCurveL,
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
-  easedProgress,
+  easedProgress, rampLz,
 } from '../src/pieces/paths.js';
 
 const samplers = [pathStraight, pathCurveR, pathCurveL, pathRampUp, pathRampDown,
@@ -35,6 +35,21 @@ test('pathRampUp gains exactly 1 unit of altitude over the piece', () => {
 
 test('pathRampDown loses exactly 1 unit of altitude', () => {
   assert.equal(pathRampDown(1).lz - pathRampDown(0).lz, -1);
+});
+
+test('rampLz always nets dz, is linear when not eased, and flat-ended when eased', () => {
+  // Net rise is dz regardless of the end slopes.
+  for (const [easeIn, easeOut] of [[true, true], [true, false], [false, true], [false, false]] as const) {
+    assert.equal(rampLz(0, 1, easeIn, easeOut), 0);
+    assert.ok(Math.abs(rampLz(1, 1, easeIn, easeOut) - 1) < 1e-12);
+  }
+  // Not eased at all => constant grade (linear) — this is what makes a run of
+  // ramps a single straight incline instead of a staircase.
+  for (let t = 0; t <= 1; t += 0.1) assert.ok(Math.abs(rampLz(t, 1, false, false) - t) < 1e-12);
+  // Eased end => ~zero grade there.
+  const d = 1e-4;
+  assert.ok(Math.abs(rampLz(d, 1, true, false) - rampLz(0, 1, true, false)) / d < 0.02, 'eased-in grade ~0');
+  assert.ok(Math.abs(rampLz(1, 1, false, true) - rampLz(1 - d, 1, false, true)) / d < 0.02, 'eased-out grade ~0');
 });
 
 test('ramps join flat track smoothly: ~zero grade at both ends, monotonic climb', () => {

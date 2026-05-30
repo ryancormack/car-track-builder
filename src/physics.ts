@@ -8,7 +8,7 @@
 // require enough centripetal speed to stay on the track). Failing that, the
 // car is launched off the track and the run ends.
 
-import { PIECES, trackFrameAt } from './pieces/index.js';
+import { resolvePiece, trackFrameAt } from './pieces/index.js';
 import { G, FRICTION, RAMP_FRICTION_MULT, DRAG } from './constants.js';
 import type { Track } from './track.js';
 import type { TrackFrame } from './pieces/frames.js';
@@ -63,8 +63,7 @@ export class Simulator {
       return;
     }
 
-    const pieceId = this.track.pieces[this.pieceIndex];
-    const piece = PIECES[pieceId];
+    const piece = resolvePiece(this.track.pieces, this.pieceIndex);
 
     // Entry checks — once per piece.
     if (this._enteredPiece !== this.pieceIndex) {
@@ -148,7 +147,7 @@ export class Simulator {
       t = Math.min(Math.max(this.t, 0), 1);
     }
 
-    const piece = PIECES[this.track.pieces[idx]];
+    const piece = resolvePiece(this.track.pieces, idx);
     const entry = this.track.entryStateAt(idx);
     return trackFrameAt(piece, entry, t);
   }

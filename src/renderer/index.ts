@@ -3,7 +3,7 @@
 // the meshes/car/controls submodules.
 
 import * as THREE from 'three';
-import { PIECES, isPieceId } from '../pieces/index.js';
+import { isPieceId, resolvePiece } from '../pieces/index.js';
 import { COLORS } from './colors.js';
 import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
@@ -87,10 +87,9 @@ export class Renderer implements CameraControlHost {
     this._clearGroup(this.startGroup);
     this.startGroup.add(buildStartTower(track.startState, track.dropHeight));
     for (let i = 0; i < track.pieces.length; i++) {
-      const id = track.pieces[i];
-      const p = PIECES[id];
+      const piece = resolvePiece(track.pieces, i);
       const entry = track.entryStateAt(i);
-      this.trackGroup.add(buildPieceMesh(p, entry));
+      this.trackGroup.add(buildPieceMesh(piece, entry));
     }
     this._recenterCamera(track);
   }
@@ -99,7 +98,10 @@ export class Renderer implements CameraControlHost {
     this._clearGroup(this.ghostGroup);
     if (!pieceId || !isPieceId(pieceId)) return;
     if (!track.canAdd(pieceId)) return;
-    this.ghostGroup.add(buildGhostPiece(PIECES[pieceId], track.cursorState()));
+    // Resolve as if the piece were appended, so the ghost previews ramp-run
+    // continuation (a ramp after a ramp shows the continued grade, not an ease-in).
+    const resolved = resolvePiece([...track.pieces, pieceId], track.pieces.length);
+    this.ghostGroup.add(buildGhostPiece(resolved, track.cursorState()));
   }
 
   clearGhost(): void { this._clearGroup(this.ghostGroup); }
