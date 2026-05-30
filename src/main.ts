@@ -64,7 +64,7 @@ const editor = new Editor({
   renderer,
   paletteEl: els.palette,
   statusEl: els.status,
-  onChange: () => { refreshHud(); updateRejoinButton(); },
+  onChange: () => { refreshHud(); updateRejoinButton(); updateInsertModeUI(); },
   onSelectionChange: (sel) => updateSelectionBar(sel),
 });
 
@@ -108,6 +108,26 @@ function updateRejoinButton(): void {
     els.selBar.classList.remove('hidden');
   } else {
     els.selRejoin.classList.add('hidden');
+  }
+}
+
+/** Show insert-mode indicator when the user is building out a new section. */
+function updateInsertModeUI(): void {
+  if (editor.insertCursor !== null && editor.selectedIndex === null) {
+    // In insert mode: show the bar with a building hint.
+    els.selBar.classList.remove('hidden');
+    (els.selBar.querySelector('.selbar-label') as HTMLElement)?.classList.remove('hidden');
+    (els.selBar.querySelector('.selbar-hint') as HTMLElement)?.classList.remove('hidden');
+    els.selName.textContent = 'Building section';
+    const hintEl = els.selBar.querySelector('.selbar-hint') as HTMLElement;
+    if (hintEl) hintEl.textContent = 'click pieces to extend, Esc to stop';
+    els.selDeleteGap.classList.add('hidden');
+    els.selDeleteClose.classList.add('hidden');
+    els.selDeselect.classList.remove('hidden');
+  } else if (editor.selectedIndex === null) {
+    // Reset hint text for next time.
+    const hintEl = els.selBar.querySelector('.selbar-hint') as HTMLElement;
+    if (hintEl) hintEl.textContent = 'pick a palette piece to swap';
   }
 }
 

@@ -132,6 +132,26 @@ export class Track {
   }
 
   /**
+   * Insert a new piece after the given index, pushing subsequent pieces along.
+   * The new piece is marked as a gap (unjoined) so downstream geometry stays
+   * stable — the user must Rejoin when ready. This enables building out a new
+   * multi-piece section in the middle of the track.
+   */
+  insertPieceAfter(index: number, pieceId: PieceId): boolean {
+    if (index < -1 || index >= this.pieces.length) return false;
+    if (!isPieceId(pieceId)) return false;
+    const insertAt = index + 1;
+    this.pieces.splice(insertAt, 0, pieceId);
+    this.empties.splice(insertAt, 0, true);
+    // Use a sentinel null for gapOriginals — this slot has no "original" piece
+    // since it's brand new. entryStateAt will fall through to using pieces[j]
+    // when gapOriginals[j] is null, which is what we want for the new piece's
+    // own rendering position. But downstream slots still use their own originals.
+    this.gapOriginals.splice(insertAt, 0, pieceId);
+    return true;
+  }
+
+  /**
    * Rejoin the track: commit all pending gap-fills by clearing the empty flags
    * and gapOriginals. After this, `entryStateAt` will use the actual pieces
    * (including any new pieces placed in former gaps), which will reposition
