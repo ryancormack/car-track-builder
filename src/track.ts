@@ -1,11 +1,10 @@
-// track.ts — Track data model. Linear sequence of pieces from a fixed start state.
+// track.ts -- Track data model. Linear sequence of pieces from a fixed start state.
 //
-// Slots can be "emptied" (turned into a gap). An emptied slot preserves the
-// *original* piece's geometric footprint (forward / turn / dz) so the rest of
-// the track does NOT shift when a piece is deleted or replaced as a gap. The
-// renderer draws emptied slots as faint placeholders and filled-but-unjoined
-// slots with the new piece, but downstream geometry stays stable until the user
-// explicitly presses "Rejoin" (see rejoin()).
+// Editing model: when a piece is deleted or inserted, the track snapshots the
+// entry states of all downstream pieces ("frozen entries"). Downstream pieces
+// keep their visual positions until the user presses Rejoin, at which point
+// the frozen entries are cleared and everything recomputes from the actual
+// piece sequence. No shadows, no ghosts, no gap placeholders.
 
 import { PIECES, applyPiece, isPieceId } from './pieces/index.js';
 import type { GridState, PieceId, TrackJSON } from './types.js';
@@ -15,97 +14,65 @@ export class Track {
   // Start cell, elevation, and direction. Centred on origin so the camera frames it.
   startState: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // facing East
   pieces: PieceId[] = [];
-  // Parallel to `pieces`: true where a slot is an empty gap (or filled but not
-  // yet rejoined). Always kept the same length as `pieces` by every mutator.
-  empties: boolean[] = [];
-  // Parallel to `pieces`: when a slot becomes a gap, store the *original* piece
-  // id so `entryStateAt` can use its footprint (keeping downstream stable). When
-  // the user replaces the slot's visible piece but hasn't rejoined yet, the
-  // original footprint is still what drives geometry.
-  gapOriginals: (PieceId | null)[] = [];
-  // Parallel to `pieces`: true for slots that were INSERTED (brand new, didn't
-  // exist in the original track). These are skipped entirely when computing
-  // entry states for non-gap (original downstream) pieces.
-  inserted: boolean[] = [];
 
-  // Entry state for piece i (i.e., before piece i is applied).
-  //
-  // For non-gap, non-inserted target pieces (original downstream), we use the
-  // frozen gapOriginals for any unfilled gap slots and skip inserted pieces, so
-  // the downstream stays put until Rejoin.
-  //
-  // For gap/inserted target pieces (the new section being built), we use actual
-  // piece ids so the section chains correctly.
-  entryStateAt(i: number): GridState {
-    const targetIsEditing = i < this.pieces.length && (this.empties[i] || this.inserted[i]);
+  // Frozen entries: when an edit-mode operation happens, we snapshot the entry
+  // states for all pieces at or after the edit point. These frozen positions are
+  // used by the renderer for downstream pieces until Rejoin.
+  frozenEntries: GridState[] | null = null;
+  // The index where editing started. Pieces at indices >= editIndex that existed
+  // before the edit use their frozen entry state for rendering.
+  editIndex: number | null = null;
+  // How many pieces have been inserted/removed since editing started.
+  // Positive means net insertions, negative means net deletions.
+  private _editDelta = 0;
+
+  /** Compute entry state for piece i by chaining piece geometry from the start. */
+  computeEntryAt(i: number): GridState {
     let s: GridState = { ...this.startState };
     for (let j = 0; j < i && j < this.pieces.length; j++) {
-      if (!targetIsEditing && this.inserted[j]) {
-        // Computing entry for original downstream: skip inserted pieces entirely.
-        continue;
-      }
-      let id: PieceId;
-      if (targetIsEditing) {
-        // Computing entry for a piece in the edit region: use actual pieces.
-        id = this.pieces[j];
-      } else if (this.empties[j] && this.gapOriginals[j]) {
-        // Computing entry for original downstream, and this is an unfilled gap:
-        // use the frozen original.
-        id = this.gapOriginals[j]!;
-      } else {
-        id = this.pieces[j];
-      }
-      const p = PIECES[id];
+      const p = PIECES[this.pieces[j]];
       s = applyPiece(s, p);
     }
     return s;
   }
 
-  // State after all pieces — where the next piece would be placed.
-  cursorState(): GridState {
-    return this.entryStateAt(this.pieces.length);
-  }
-
-  isEmptyAt(index: number): boolean {
-    return index >= 0 && index < this.empties.length && this.empties[index] === true;
-  }
-
-  /** Whether a gap slot has been filled with a new piece (but not yet rejoined). */
-  isFilledGap(_index: number): boolean {
-    // Since replacePieceAt now clears empties immediately, filled gaps no longer
-    // exist as a separate state. This returns false always (kept for API compat).
-    return false;
-  }
-
   /**
-   * Whether a slot should render as a faint placeholder (truly empty gap that
-   * hasn't been filled or inserted). Only unfilled gaps show as shadows.
+   * Entry state for rendering piece i. If frozen entries exist and this piece
+   * is a "downstream original" (existed before the edit), return its frozen
+   * position. Otherwise compute normally.
    */
-  isUnfilledGap(index: number): boolean {
-    if (!this.isEmptyAt(index)) return false;
-    if (this.inserted[index]) return false;
-    return true;
-  }
-
-  /** Number of filled (non-gap) slots. */
-  nonEmptyCount(): number {
-    let n = 0;
-    for (let i = 0; i < this.pieces.length; i++) if (!this.empties[i]) n++;
-    return n;
-  }
-
-  /** Any empty gaps currently in the track? */
-  hasGaps(): boolean {
-    return this.empties.some((e) => e === true);
-  }
-
-  /** Any edits pending that need a Rejoin (inserted pieces or unfilled gaps to remove)? */
-  hasPendingFills(): boolean {
-    for (let i = 0; i < this.pieces.length; i++) {
-      if (this.inserted[i]) return true;
-      if (this.isUnfilledGap(i)) return true;
+  entryStateAt(i: number): GridState {
+    if (this.frozenEntries && this.editIndex !== null) {
+      // Pieces in the new/edited section (from editIndex up to editIndex + _editDelta - 1
+      // for insertions, or the replacement point) compute normally so they chain.
+      // Original downstream pieces (those that were at editIndex or later before
+      // the edit) use their frozen state.
+      const originalStart = this.editIndex + this._editDelta;
+      if (i >= originalStart && i < this.pieces.length) {
+        // Map this back to the frozen array. The frozen array was snapshotted
+        // starting at editIndex in the original track.
+        const frozenIdx = i - this._editDelta - this.editIndex;
+        if (frozenIdx >= 0 && frozenIdx < this.frozenEntries.length) {
+          return { ...this.frozenEntries[frozenIdx] };
+        }
+      }
     }
-    return false;
+    return this.computeEntryAt(i);
+  }
+
+  // State after all pieces -- where the next piece would be placed.
+  cursorState(): GridState {
+    return this.computeEntryAt(this.pieces.length);
+  }
+
+  /** Number of pieces in the track (all pieces are real). */
+  nonEmptyCount(): number {
+    return this.pieces.length;
+  }
+
+  /** Whether we are in editing mode (frozen entries active). */
+  isEditing(): boolean {
+    return this.frozenEntries !== null;
   }
 
   canAdd(pieceId: string): boolean {
@@ -117,118 +84,112 @@ export class Track {
   addPiece(pieceId: string): boolean {
     if (!isPieceId(pieceId) || !this.canAdd(pieceId)) return false;
     this.pieces.push(pieceId);
-    this.empties.push(false);
-    this.gapOriginals.push(null);
-    this.inserted.push(false);
-    return true;
-  }
-
-  // Removes a piece at the given index, splicing it out so the rest of the track
-  // shifts back to close the gap ("compress" delete).
-  removePieceAt(index: number): PieceId | undefined {
-    if (index < 0 || index >= this.pieces.length) return undefined;
-    this.empties.splice(index, 1);
-    this.gapOriginals.splice(index, 1);
-    this.inserted.splice(index, 1);
-    return this.pieces.splice(index, 1)[0];
-  }
-
-  // "Gap" delete: empties the slot in place, preserving its footprint so nothing
-  // downstream moves. Deleting the trailing slot (or an already-empty slot) has
-  // nothing to hold open, so it splices out instead.
-  emptyPieceAt(index: number): PieceId | undefined {
-    if (index < 0 || index >= this.pieces.length) return undefined;
-    if (index === this.pieces.length - 1 || this.empties[index]) {
-      return this.removePieceAt(index);
-    }
-    this.empties[index] = true;
-    this.gapOriginals[index] = this.pieces[index]; // store original for footprint
-    return this.pieces[index];
-  }
-
-  // Replaces the piece at the given index. If the slot was a gap, it becomes a
-  // normal filled piece immediately (no longer a gap/shadow). The downstream
-  // freeze is maintained by the remaining unfilled gap slots and the inserted[]
-  // flag — this slot itself is now fully committed.
-  replacePieceAt(index: number, newId: PieceId): boolean {
-    if (index < 0 || index >= this.pieces.length) return false;
-    if (!isPieceId(newId)) return false;
-    this.pieces[index] = newId;
-    // Clear gap state: this slot is now a real, solid piece.
-    this.empties[index] = false;
-    this.gapOriginals[index] = null;
     return true;
   }
 
   /**
-   * Insert a new piece after the given index, pushing subsequent pieces along.
-   * The new piece is marked as a gap (unjoined) so downstream geometry stays
-   * stable — the user must Rejoin when ready. This enables building out a new
-   * multi-piece section in the middle of the track.
+   * Snapshot downstream entry states starting at the given index.
+   * Only snapshots once per editing session (first edit wins).
    */
-  insertPieceAfter(index: number, pieceId: PieceId): boolean {
-    if (index < -1 || index >= this.pieces.length) return false;
+  private _snapshotDownstream(fromIndex: number): void {
+    if (this.frozenEntries !== null) return; // already editing
+    this.editIndex = fromIndex;
+    this._editDelta = 0;
+    // Snapshot entries for pieces from fromIndex to end.
+    const entries: GridState[] = [];
+    for (let i = fromIndex; i < this.pieces.length; i++) {
+      entries.push(this.computeEntryAt(i));
+    }
+    this.frozenEntries = entries;
+  }
+
+  /**
+   * Delete the piece at the given index. The piece is gone from the array.
+   * Downstream pieces keep their frozen visual positions until Rejoin.
+   */
+  deleteAt(index: number): PieceId | undefined {
+    if (index < 0 || index >= this.pieces.length) return undefined;
+    this._snapshotDownstream(index);
+    const removed = this.pieces.splice(index, 1)[0];
+    this._editDelta--;
+    return removed;
+  }
+
+  /**
+   * Insert a new piece at the given index. The piece is real and chains
+   * correctly from pieces before it. Downstream keeps frozen positions.
+   */
+  insertAt(index: number, pieceId: PieceId): boolean {
+    if (index < 0 || index > this.pieces.length) return false;
     if (!isPieceId(pieceId)) return false;
-    const insertAt = index + 1;
-    this.pieces.splice(insertAt, 0, pieceId);
-    this.empties.splice(insertAt, 0, true);
-    this.gapOriginals.splice(insertAt, 0, null);
-    this.inserted.splice(insertAt, 0, true);
+    this._snapshotDownstream(index);
+    this.pieces.splice(index, 0, pieceId);
+    this._editDelta++;
     return true;
   }
 
   /**
-   * Rejoin the track: remove any unfilled gaps (truly deleted pieces) and commit
-   * all remaining slots (filled gaps + inserted pieces) by clearing their flags.
-   * After this, `entryStateAt` will use the actual pieces for all slots, which
-   * will reposition downstream geometry to connect to the new section.
+   * Replace the piece at the given index. It becomes a real piece immediately.
+   * Downstream keeps frozen positions.
+   */
+  replaceAt(index: number, pieceId: PieceId): boolean {
+    if (index < 0 || index >= this.pieces.length) return false;
+    if (!isPieceId(pieceId)) return false;
+    this._snapshotDownstream(index);
+    this.pieces[index] = pieceId;
+    return true;
+  }
+
+  /**
+   * Rejoin: clear frozen entries. Everything recomputes from actual pieces.
+   * Downstream repositions to connect to the new section.
    */
   rejoin(): void {
-    // First pass: remove unfilled gaps (iterate backward to keep indices stable).
-    for (let i = this.pieces.length - 1; i >= 0; i--) {
-      if (this.isUnfilledGap(i)) {
-        this.pieces.splice(i, 1);
-        this.empties.splice(i, 1);
-        this.gapOriginals.splice(i, 1);
-        this.inserted.splice(i, 1);
-      }
-    }
-    // Second pass: commit all remaining slots.
-    for (let i = 0; i < this.pieces.length; i++) {
-      this.empties[i] = false;
-      this.gapOriginals[i] = null;
-      this.inserted[i] = false;
-    }
+    this.frozenEntries = null;
+    this.editIndex = null;
+    this._editDelta = 0;
+  }
+
+  // Legacy removePieceAt - now delegates to deleteAt
+  removePieceAt(index: number): PieceId | undefined {
+    return this.deleteAt(index);
+  }
+
+  // Legacy replacePieceAt - now delegates to replaceAt
+  replacePieceAt(index: number, newId: PieceId): boolean {
+    return this.replaceAt(index, newId);
+  }
+
+  // Legacy insertPieceAfter - now delegates to insertAt
+  insertPieceAfter(index: number, pieceId: PieceId): boolean {
+    if (index < -1 || index >= this.pieces.length) return false;
+    return this.insertAt(index + 1, pieceId);
   }
 
   undo(): PieceId | undefined {
-    this.empties.pop();
-    this.gapOriginals.pop();
-    this.inserted.pop();
     return this.pieces.pop();
   }
 
   clear(): void {
     this.pieces.length = 0;
-    this.empties.length = 0;
-    this.gapOriginals.length = 0;
-    this.inserted.length = 0;
+    this.frozenEntries = null;
+    this.editIndex = null;
+    this._editDelta = 0;
   }
 
   hasFinish(): boolean {
     const n = this.pieces.length;
-    return n > 0 && this.pieces[n - 1] === 'FINISH' && !this.empties[n - 1];
+    return n > 0 && this.pieces[n - 1] === 'FINISH';
   }
 
-  /** Track is playable: it has pieces, ends in a (filled) Finish, and no gaps. */
+  /** Track is playable: it has pieces, ends in Finish, and is not currently editing. */
   isComplete(): boolean {
-    return this.pieces.length > 0 && this.hasFinish() && !this.hasGaps();
+    return this.pieces.length > 0 && this.hasFinish() && !this.isEditing();
   }
 
   totalPathLength(): number {
     let sum = 0;
     for (let i = 0; i < this.pieces.length; i++) {
-      if (this.empties[i]) continue;
       sum += PIECES[this.pieces[i]].pathLen;
     }
     return sum;
@@ -238,9 +199,6 @@ export class Track {
     return {
       dropHeight: this.dropHeight,
       pieces: [...this.pieces],
-      empties: [...this.empties],
-      gapOriginals: this.gapOriginals.map((g) => g ?? undefined),
-      inserted: [...this.inserted],
     };
   }
 
@@ -253,21 +211,9 @@ export class Track {
     this.pieces = Array.isArray(rawPieces)
       ? rawPieces.filter((id): id is PieceId => typeof id === 'string' && isPieceId(id))
       : [];
-    // Re-derive empties parallel to the validated piece list.
-    const rawEmpties = Array.isArray(obj.empties) ? obj.empties : [];
-    this.empties = this.pieces.map((_, i) => rawEmpties[i] === true);
-    // Restore gapOriginals (tolerate missing/mismatched).
-    const rawOriginals = Array.isArray((obj as Record<string, unknown>).gapOriginals)
-      ? (obj as Record<string, unknown>).gapOriginals as unknown[]
-      : [];
-    this.gapOriginals = this.pieces.map((_, i) => {
-      const val = (rawOriginals as unknown[])[i];
-      return typeof val === 'string' && isPieceId(val) ? val : null;
-    });
-    // Restore inserted flags (tolerate missing).
-    const rawInserted = Array.isArray((obj as Record<string, unknown>).inserted)
-      ? (obj as Record<string, unknown>).inserted as unknown[]
-      : [];
-    this.inserted = this.pieces.map((_, i) => (rawInserted as unknown[])[i] === true);
+    // Clear any editing state on load.
+    this.frozenEntries = null;
+    this.editIndex = null;
+    this._editDelta = 0;
   }
 }

@@ -58,8 +58,7 @@
       <div id="selbar" class="selbar hidden">
         <span class="selbar-label">Editing <strong id="sel-name">—</strong></span>
         <span class="selbar-hint">pick a palette piece to swap</span>
-        <button id="sel-delete-gap" class="btn" title="Delete but keep the gap open so you can build something new here">🗑 Delete</button>
-        <button id="sel-delete-close" class="btn" title="Delete and close the gap (the rest of the track shifts back)">✂ Delete &amp; Close</button>
+        <button id="sel-delete" class="btn" title="Delete this piece (downstream stays in place until Rejoin)">🗑 Delete</button>
         <button id="sel-rejoin" class="btn primary hidden" title="Commit changes and rejoin the track (downstream will reposition to connect)">🔗 Rejoin Track</button>
         <button id="sel-deselect" class="btn ghost" title="Deselect (Esc)">✕</button>
       </div>
@@ -79,7 +78,7 @@
   </main>
 
   <footer class="footer">
-    <span>Drag to pan · Scroll to zoom · <kbd>R</kbd> rotate · <kbd>Space</kbd> play · Click a piece to edit · <kbd>Del</kbd> gap · <kbd>Shift</kbd>+<kbd>Del</kbd> close</span>
+    <span>Drag to pan · Scroll to zoom · <kbd>R</kbd> rotate · <kbd>Space</kbd> play · Click a piece to edit · <kbd>Del</kbd> delete</span>
   </footer>
 
   <script type="importmap">
