@@ -1,4 +1,4 @@
-// main.ts — App entry. Wires the renderer, editor, simulator, HUD, overlay,
+// main.ts -- App entry. Wires the renderer, editor, simulator, HUD, overlay,
 // storage, and the run loop together. Most logic lives in dedicated modules.
 
 import { Track } from './track.js';
@@ -49,8 +49,7 @@ const els: UIElements = {
   overlayClose: el('overlay-close'),
   selBar: el('selbar'),
   selName: el('sel-name'),
-  selDeleteGap: el('sel-delete-gap'),
-  selDeleteClose: el('sel-delete-close'),
+  selDelete: el('sel-delete'),
   selDeselect: el('sel-deselect'),
   selRejoin: el('sel-rejoin'),
 };
@@ -69,12 +68,11 @@ const editor = new Editor({
 });
 
 /** Show/hide the floating selection toolbar over the stage. */
-function updateSelectionBar(sel: { index: number; name: string; isGap: boolean } | null): void {
+function updateSelectionBar(sel: { index: number; name: string } | null): void {
   if (!sel) {
     // Hide the selection-specific parts but keep bar visible if rejoin is needed.
-    els.selName.textContent = '—';
-    els.selDeleteGap.classList.add('hidden');
-    els.selDeleteClose.classList.add('hidden');
+    els.selName.textContent = '';
+    els.selDelete.classList.add('hidden');
     els.selDeselect.classList.add('hidden');
     (els.selBar.querySelector('.selbar-label') as HTMLElement)?.classList.add('hidden');
     (els.selBar.querySelector('.selbar-hint') as HTMLElement)?.classList.add('hidden');
@@ -87,22 +85,14 @@ function updateSelectionBar(sel: { index: number; name: string; isGap: boolean }
   (els.selBar.querySelector('.selbar-label') as HTMLElement)?.classList.remove('hidden');
   (els.selBar.querySelector('.selbar-hint') as HTMLElement)?.classList.remove('hidden');
   els.selDeselect.classList.remove('hidden');
-  if (sel.isGap) {
-    els.selDeleteGap.textContent = '🗑 Remove gap';
-    els.selDeleteGap.classList.remove('hidden');
-    els.selDeleteClose.classList.add('hidden');
-  } else {
-    els.selDeleteGap.textContent = '🗑 Delete';
-    els.selDeleteGap.classList.remove('hidden');
-    els.selDeleteClose.classList.remove('hidden');
-  }
+  els.selDelete.classList.remove('hidden');
   els.selBar.classList.remove('hidden');
   updateRejoinButton();
 }
 
-/** Show the Rejoin button when there are filled-but-unjoined gaps. */
+/** Show the Rejoin button when the track is in editing mode. */
 function updateRejoinButton(): void {
-  if (track.hasPendingFills()) {
+  if (track.isEditing()) {
     els.selRejoin.classList.remove('hidden');
     // Ensure the bar is visible so the user can access the rejoin button.
     els.selBar.classList.remove('hidden');
@@ -121,8 +111,7 @@ function updateInsertModeUI(): void {
     els.selName.textContent = 'Building section';
     const hintEl = els.selBar.querySelector('.selbar-hint') as HTMLElement;
     if (hintEl) hintEl.textContent = 'click pieces to extend, Esc to stop';
-    els.selDeleteGap.classList.add('hidden');
-    els.selDeleteClose.classList.add('hidden');
+    els.selDelete.classList.add('hidden');
     els.selDeselect.classList.remove('hidden');
   } else if (editor.selectedIndex === null) {
     // Reset hint text for next time.
@@ -143,7 +132,7 @@ const saved = loadTrackJSON();
 if (saved) {
   track.fromJSON(saved);
 } else {
-  // Demo seed so the canvas isn't empty on first load — showcases the stunts.
+  // Demo seed so the canvas isn't empty on first load -- showcases the stunts.
   ['STRAIGHT', 'CORKSCREW', 'STRAIGHT', 'JUMP', 'STRAIGHT', 'BOOSTER',
     'STRAIGHT', 'LOOP', 'STRAIGHT', 'FINISH'].forEach((id) => track.addPiece(id));
 }
@@ -186,8 +175,7 @@ els.overlayClose.addEventListener('click', () => {
 });
 
 // Selection toolbar
-els.selDeleteGap.addEventListener('click', () => editor.deleteSelected(false));
-els.selDeleteClose.addEventListener('click', () => editor.deleteSelected(true));
+els.selDelete.addEventListener('click', () => editor.deleteSelected());
 els.selDeselect.addEventListener('click', () => editor.deselectPiece());
 els.selRejoin.addEventListener('click', () => {
   track.rejoin();
@@ -195,6 +183,7 @@ els.selRejoin.addEventListener('click', () => {
   editor.deselectPiece();
   hud.flashStatus('Track rejoined!', 'ok');
   refreshHud();
+  updateRejoinButton();
 });
 
 // Canvas click detection: distinguish click from drag
@@ -234,8 +223,7 @@ window.addEventListener('keydown', (e) => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'build') {
     if (editor.selectedIndex !== null) {
       e.preventDefault();
-      // Shift closes the gap (compress); plain Delete leaves a gap in place.
-      editor.deleteSelected(e.shiftKey);
+      editor.deleteSelected();
     }
   }
 });
@@ -247,10 +235,8 @@ function switchMode(next: Mode): void {
   if (next === 'play') {
     if (!track.isComplete()) {
       let msg: string;
-      if (track.hasPendingFills()) {
+      if (track.isEditing()) {
         msg = 'Rejoin the track before playing!';
-      } else if (track.hasGaps()) {
-        msg = 'Fill the gaps in your track before playing!';
       } else {
         msg = 'Complete the track with a Finish piece to play!';
       }
@@ -285,8 +271,7 @@ function switchMode(next: Mode): void {
 function refreshHud(): void {
   if (mode === 'play') hud.updateForPlay(track, sim, runResult);
   else hud.updateForBuild(track);
-  // Visually disable play button unless the track is complete (ends in Finish,
-  // and has no open gaps).
+  // Visually disable play button unless the track is complete.
   if (track.isComplete()) {
     els.modePlay.classList.remove('disabled');
   } else {
