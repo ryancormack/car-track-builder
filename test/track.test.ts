@@ -227,20 +227,16 @@ test('emptyPieceAt twice on the same slot closes the gap', () => {
   assert.equal(t.hasGaps(), false);
 });
 
-test('replacePieceAt on a gap changes the piece but keeps it marked empty until rejoin', () => {
+test('replacePieceAt on a gap clears the gap state immediately', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
   t.emptyPieceAt(1);
   assert.equal(t.isEmptyAt(1), true);
   t.replacePieceAt(1, 'LOOP');
-  // The visible piece is now LOOP, but the slot is still "unjoined" (empty flag stays).
-  assert.equal(t.isEmptyAt(1), true);
-  assert.equal(t.isFilledGap(1), true);
-  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
-  // After rejoin, empty flag is cleared.
-  t.rejoin();
+  // The slot is now a normal piece — no longer a gap.
   assert.equal(t.isEmptyAt(1), false);
-  assert.equal(t.isFilledGap(1), false);
+  assert.equal(t.isUnfilledGap(1), false);
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
 });
 
 test('nonEmptyCount ignores gaps', () => {
@@ -295,7 +291,7 @@ test('hasFinish is false when the Finish slot is emptied', () => {
   assert.equal(t.hasFinish(), false);
 });
 
-test('isComplete requires a Finish and no gaps (including filled-but-unjoined)', () => {
+test('isComplete requires a Finish, no unfilled gaps, and no inserts', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); // 0
   t.addPiece('STRAIGHT'); // 1
@@ -304,11 +300,8 @@ test('isComplete requires a Finish and no gaps (including filled-but-unjoined)',
   t.emptyPieceAt(1);      // open a gap in the middle
   assert.equal(t.isComplete(), false);
   assert.equal(t.hasGaps(), true);
-  t.replacePieceAt(1, 'LOOP'); // fill it — but still unjoined
-  assert.equal(t.isComplete(), false); // not complete until rejoined
-  assert.equal(t.hasPendingFills(), true);
-  t.rejoin();
-  assert.equal(t.isComplete(), true);
+  t.replacePieceAt(1, 'LOOP'); // fill it — now it's a normal piece
+  assert.equal(t.isComplete(), true); // complete immediately since gap is filled
 });
 
 test('isComplete is false without a Finish', () => {
@@ -346,34 +339,30 @@ test('fromJSON tolerates a missing empties array', () => {
 
 // ---- rejoin behaviour ----
 
-test('rejoin clears all empties and gapOriginals', () => {
+test('rejoin removes unfilled gaps and commits inserts', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.emptyPieceAt(0);
-  t.emptyPieceAt(1);
-  t.replacePieceAt(0, 'LOOP');
-  t.replacePieceAt(1, 'BOOSTER');
-  assert.equal(t.hasGaps(), true);
+  t.emptyPieceAt(1); // gap the middle one
+  t.insertPieceAfter(0, 'LOOP'); // insert after index 0
+  // Now: [S, LOOP(inserted), S(gap), S]
   assert.equal(t.hasPendingFills(), true);
   t.rejoin();
+  // The unfilled gap is removed, the insert is committed.
   assert.equal(t.hasGaps(), false);
   assert.equal(t.hasPendingFills(), false);
-  assert.deepEqual(t.pieces, ['LOOP', 'BOOSTER', 'STRAIGHT']);
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
 });
 
-test('filling a gap does NOT move downstream geometry until rejoin', () => {
+test('filling a gap moves downstream immediately (piece is now real)', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
   const beforeCursor = t.cursorState();
   t.emptyPieceAt(1);
-  // Downstream unchanged after gap creation.
+  // Downstream unchanged after gap creation (original footprint preserved).
   assert.deepEqual(t.cursorState(), beforeCursor);
-  // Fill the gap with a CURVE_R (different footprint).
+  // Fill the gap with a CURVE_R (different footprint) — now it's a real piece.
   t.replacePieceAt(1, 'CURVE_R');
-  // Downstream STILL unchanged because the gap original footprint is used.
-  assert.deepEqual(t.cursorState(), beforeCursor);
-  // After rejoin, the new piece's geometry takes effect and downstream shifts.
-  t.rejoin();
+  // Downstream shifts immediately because the piece is now fully committed.
   assert.notDeepEqual(t.cursorState(), beforeCursor);
 });
 
