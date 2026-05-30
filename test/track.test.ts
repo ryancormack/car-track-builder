@@ -171,3 +171,166 @@ test('replacePieceAt does not change array length', () => {
   assert.equal(t.pieces.length, 2);
   assert.deepEqual(t.pieces, ['LOOP', 'CURVE_R']);
 });
+
+
+// ---- empties / gap delete ----
+
+test('addPiece keeps empties parallel and all false', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('LOOP');
+  assert.equal(t.empties.length, t.pieces.length);
+  assert.equal(t.isEmptyAt(0), false);
+  assert.equal(t.isEmptyAt(1), false);
+});
+
+test('emptyPieceAt marks a mid-track slot as a gap without shifting pieces', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); // 0
+  t.addPiece('STRAIGHT'); // 1
+  t.addPiece('STRAIGHT'); // 2
+  const id = t.emptyPieceAt(1);
+  assert.equal(id, 'STRAIGHT');
+  assert.equal(t.pieces.length, 3);          // not spliced
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'STRAIGHT', 'STRAIGHT']);
+  assert.equal(t.isEmptyAt(1), true);
+  assert.equal(t.hasGaps(), true);
+});
+
+test('emptyPieceAt preserves downstream geometry (no compression)', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  const before = t.cursorState();
+  t.emptyPieceAt(1); // gap the middle straight
+  // The end of the track should not move, because the gap keeps the footprint.
+  assert.deepEqual(t.cursorState(), before);
+});
+
+test('emptyPieceAt on the trailing slot removes it instead of leaving a gap', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('CURVE_R');
+  const id = t.emptyPieceAt(1);
+  assert.equal(id, 'CURVE_R');
+  assert.equal(t.pieces.length, 1);
+  assert.equal(t.hasGaps(), false);
+});
+
+test('emptyPieceAt twice on the same slot closes the gap', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.emptyPieceAt(1);              // first: leaves a gap
+  assert.equal(t.isEmptyAt(1), true);
+  const id = t.emptyPieceAt(1);   // second: splices it out
+  assert.equal(id, 'STRAIGHT');
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'STRAIGHT']);
+  assert.equal(t.hasGaps(), false);
+});
+
+test('replacePieceAt fills a gap and clears the empty flag', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.emptyPieceAt(1);
+  assert.equal(t.isEmptyAt(1), true);
+  t.replacePieceAt(1, 'LOOP');
+  assert.equal(t.isEmptyAt(1), false);
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
+});
+
+test('nonEmptyCount ignores gaps', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.emptyPieceAt(1);
+  assert.equal(t.nonEmptyCount(), 2);
+  assert.equal(t.pieces.length, 3);
+});
+
+test('removePieceAt keeps empties aligned when closing a gap before it', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); // 0
+  t.addPiece('CURVE_R');  // 1
+  t.addPiece('LOOP');     // 2
+  t.emptyPieceAt(2 - 1);  // gap the CURVE_R at index 1 (not trailing)
+  assert.equal(t.isEmptyAt(1), true);
+  t.removePieceAt(0);     // compress-remove the first straight
+  // The gap should now travel with its piece to index 0.
+  assert.deepEqual(t.pieces, ['CURVE_R', 'LOOP']);
+  assert.equal(t.isEmptyAt(0), true);
+  assert.equal(t.isEmptyAt(1), false);
+});
+
+test('undo pops both pieces and empties', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('LOOP');
+  t.undo();
+  assert.equal(t.pieces.length, 1);
+  assert.equal(t.empties.length, 1);
+});
+
+test('clear resets empties too', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.emptyPieceAt(1);
+  t.clear();
+  assert.equal(t.pieces.length, 0);
+  assert.equal(t.empties.length, 0);
+  assert.equal(t.hasGaps(), false);
+});
+
+// ---- hasFinish / isComplete with gaps ----
+
+test('hasFinish is false when the Finish slot is emptied', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  t.addPiece('FINISH');
+  // Force the finish slot to be a gap (bypassing the trailing-splice nicety).
+  t.empties[1] = true;
+  assert.equal(t.hasFinish(), false);
+});
+
+test('isComplete requires a Finish and no gaps', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); // 0
+  t.addPiece('STRAIGHT'); // 1
+  t.addPiece('FINISH');   // 2
+  assert.equal(t.isComplete(), true);
+  t.emptyPieceAt(1);      // open a gap in the middle
+  assert.equal(t.isComplete(), false);
+  assert.equal(t.hasGaps(), true);
+  t.replacePieceAt(1, 'LOOP'); // fill it
+  assert.equal(t.isComplete(), true);
+});
+
+test('isComplete is false without a Finish', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('LOOP');
+  assert.equal(t.isComplete(), false);
+});
+
+test('totalPathLength skips gaps', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); // 1.0
+  t.addPiece('LOOP');     // 4.14
+  t.addPiece('STRAIGHT'); // 1.0
+  t.emptyPieceAt(1);      // gap the loop
+  assert.ok(Math.abs(t.totalPathLength() - 2.0) < 1e-6);
+});
+
+test('toJSON / fromJSON round-trip preserves gaps', () => {
+  const a = new Track();
+  ['STRAIGHT', 'STRAIGHT', 'STRAIGHT', 'FINISH'].forEach((id) => a.addPiece(id));
+  a.emptyPieceAt(1);
+  const b = new Track();
+  b.fromJSON(a.toJSON());
+  assert.deepEqual(b.pieces, ['STRAIGHT', 'STRAIGHT', 'STRAIGHT', 'FINISH']);
+  assert.equal(b.isEmptyAt(1), true);
+  assert.equal(b.nonEmptyCount(), 3);
+});
+
+test('fromJSON tolerates a missing empties array', () => {
+  const t = new Track();
+  t.fromJSON({ dropHeight: 3, pieces: ['STRAIGHT', 'LOOP'] });
+  assert.equal(t.empties.length, 2);
+  assert.equal(t.hasGaps(), false);
+});

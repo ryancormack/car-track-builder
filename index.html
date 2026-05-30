@@ -55,6 +55,13 @@
 
     <section class="stage">
       <canvas id="canvas"></canvas>
+      <div id="selbar" class="selbar hidden">
+        <span class="selbar-label">Editing <strong id="sel-name">—</strong></span>
+        <span class="selbar-hint">pick a palette piece to swap</span>
+        <button id="sel-delete-gap" class="btn" title="Delete but keep the gap open so you can build something new here">🗑 Delete</button>
+        <button id="sel-delete-close" class="btn" title="Delete and close the gap (the rest of the track shifts back)">✂ Delete &amp; Close</button>
+        <button id="sel-deselect" class="btn ghost" title="Deselect (Esc)">✕</button>
+      </div>
       <div id="overlay" class="overlay hidden">
         <div class="overlay-card">
           <h2 id="overlay-title">Run complete</h2>
@@ -71,7 +78,7 @@
   </main>
 
   <footer class="footer">
-    <span>Drag to pan · Scroll to zoom · <kbd>R</kbd> rotate camera · <kbd>Space</kbd> play/pause</span>
+    <span>Drag to pan · Scroll to zoom · <kbd>R</kbd> rotate · <kbd>Space</kbd> play · Click a piece to edit · <kbd>Del</kbd> gap · <kbd>Shift</kbd>+<kbd>Del</kbd> close</span>
   </footer>
 
   <script type="importmap">

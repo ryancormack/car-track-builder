@@ -187,6 +187,9 @@ export function buildRailedTrack(path: PathFn, entry: GridState, color: number, 
   }
 
   // --- Road surface ---
+  // DoubleSide so the road stays visible where the track banks past vertical
+  // (loops, corkscrews); otherwise the back faces get culled and the surface
+  // appears to vanish through those sections.
   const roadGeom = buildRibbonGeometry(leftVerts, rightVerts, upVecs);
   const roadMat = new THREE.MeshStandardMaterial({
     color,
@@ -194,6 +197,7 @@ export function buildRailedTrack(path: PathFn, entry: GridState, color: number, 
     roughness: 0.72,
     emissive: opts.emissive ?? 0x000000,
     emissiveIntensity: opts.emissiveIntensity ?? 0,
+    side: THREE.DoubleSide,
   });
   const roadMesh = new THREE.Mesh(roadGeom, roadMat);
   roadMesh.castShadow = true;
@@ -242,6 +246,7 @@ export function buildRailedTrack(path: PathFn, entry: GridState, color: number, 
     roughness: 0.6,
     emissive: 0xffffff,
     emissiveIntensity: 0.15,
+    side: THREE.DoubleSide,
   });
   const centerMesh = new THREE.Mesh(centerGeom, centerMat);
   centerMesh.castShadow = false;
@@ -363,56 +368,93 @@ export function buildGhostPiece(path: PathFn, entry: GridState): THREE.Mesh {
   return new THREE.Mesh(tube, mat);
 }
 
+/**
+ * An emptied slot ("gap"): the road's footprint is preserved (so downstream
+ * geometry doesn't move) but it's drawn as a faint, see-through placeholder the
+ * player can click to fill with a new piece. Uses standard materials so the
+ * selection highlight (emissive bump) still works.
+ */
+export function buildGapPiece(path: PathFn, entry: GridState): THREE.Group {
+  const group = buildRailedTrack(path, entry, COLORS.gap, { segments: 32 });
+  group.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    const mat = mesh.material;
+    if (!mat || Array.isArray(mat)) return;
+    const stdMat = mat as THREE.MeshStandardMaterial;
+    stdMat.color.set(COLORS.gap);
+    stdMat.emissive.set(COLORS.gap);
+    stdMat.emissiveIntensity = 0.15;
+    stdMat.transparent = true;
+    stdMat.opacity = 0.16;
+    stdMat.depthWrite = false;
+  });
+  return group;
+}
+
 export function buildStartTower(state: GridState, dropHeight: number): THREE.Group {
   const group = new THREE.Group();
   const baseHeight = Math.max(0.05, dropHeight);
-  const post = new THREE.Mesh(
-    new THREE.BoxGeometry(0.4, baseHeight, 0.4),
-    new THREE.MeshStandardMaterial({
-      color: COLORS.start, emissive: COLORS.startEm, emissiveIntensity: 0.5,
-      metalness: 0.3, roughness: 0.5,
-    }),
-  );
-  post.position.set(state.gx - 0.5, baseHeight / 2, state.gy);
-  post.castShadow = true;
-  group.add(post);
+  const baseX = state.gx - 0.5;
 
-  const top = new THREE.Mesh(
-    new THREE.BoxGeometry(0.7, 0.08, 0.5),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.3, roughness: 0.4 }),
-  );
-  top.position.set(state.gx - 0.5, baseHeight + 0.04, state.gy);
-  top.castShadow = true;
-  group.add(top);
-
+  // Static orange base plate sitting on the ground — the plunger compresses
+  // down into this.
   const ring = new THREE.Mesh(
-    new THREE.BoxGeometry(0.45, 0.08, 0.45),
+    new THREE.BoxGeometry(0.6, 0.1, 0.6),
     new THREE.MeshStandardMaterial({
       color: COLORS.trackOrange,
       emissive: COLORS.trackOrange,
       emissiveIntensity: 0.4,
+      metalness: 0.3,
+      roughness: 0.5,
     }),
   );
-  ring.position.set(state.gx - 0.5, 0.04, state.gy);
+  ring.position.set(baseX, 0.05, state.gy);
+  ring.castShadow = true;
+  ring.receiveShadow = true;
   group.add(ring);
 
-  // Plunger: sits behind the car's start position (behind = -x in Three.js
-  // since the track starts facing East / +x). The plunger is a cylinder
-  // oriented along the x-axis so it can push forward.
-  const plunger = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.1, 0.1, 0.35, 16),
+  // ---- Plunger ----
+  // The whole green tower IS the spring-loaded plunger. Its parts are built in a
+  // sub-group whose origin sits on the base plate (y = 0) so that scaling the
+  // group along Y compresses it straight down toward the base (and springs back)
+  // when the launch animation plays. See Renderer.animateLauncher().
+  const plunger = new THREE.Group();
+  plunger.name = 'plunger';
+  plunger.position.set(baseX, 0.1, state.gy);
+
+  const postMat = new THREE.MeshStandardMaterial({
+    color: COLORS.start, emissive: COLORS.startEm, emissiveIntensity: 0.5,
+    metalness: 0.3, roughness: 0.5,
+  });
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.34, baseHeight, 0.34), postMat);
+  post.position.set(0, baseHeight / 2, 0); // bottom at the group origin
+  post.castShadow = true;
+  plunger.add(post);
+
+  // White cap at the top of the post.
+  const top = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.09, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.3, roughness: 0.4 }),
+  );
+  top.position.set(0, baseHeight + 0.045, 0);
+  top.castShadow = true;
+  plunger.add(top);
+
+  // Green knob on top so the tower reads as something you press down.
+  const knob = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.13, 0.15, 0.16, 16),
     new THREE.MeshStandardMaterial({
-      color: COLORS.start, emissive: COLORS.startEm, emissiveIntensity: 0.6,
-      metalness: 0.3, roughness: 0.4,
+      color: COLORS.start, emissive: COLORS.startEm, emissiveIntensity: 0.7,
+      metalness: 0.35, roughness: 0.4,
     }),
   );
-  // Rotate cylinder so its axis aligns with x (push direction)
-  plunger.rotation.z = Math.PI / 2;
-  // Position behind the start: car starts at (state.gx, dropHeight, state.gy).
-  // Place plunger behind it along -x.
-  plunger.position.set(state.gx - 0.5 - 0.3, dropHeight, state.gy);
-  plunger.castShadow = true;
-  plunger.name = 'plunger';
+  knob.position.set(0, baseHeight + 0.17, 0);
+  knob.castShadow = true;
+  plunger.add(knob);
+
   group.add(plunger);
 
   return group;
