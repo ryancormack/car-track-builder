@@ -19,8 +19,9 @@ export function computeScore(track: Track, sim: SimSummary | null | undefined): 
   let stuntCombo = 0;
   let stuntStreak = 0;
 
-  for (const id of track.pieces) {
-    const p = PIECES[id];
+  for (let i = 0; i < track.pieces.length; i++) {
+    if (track.isEmptyAt(i)) continue; // gaps don't score (defensive; Play is gated on isComplete)
+    const p = PIECES[track.pieces[i]];
     length += 5;
     excitement += p.excitement;
     if (p.category === 'stunt') {
@@ -58,8 +59,9 @@ export function computeScore(track: Track, sim: SimSummary | null | undefined): 
 export function designScore(track: Track): number {
   let length = 0;
   let excitement = 0;
-  for (const id of track.pieces) {
-    const p = PIECES[id];
+  for (let i = 0; i < track.pieces.length; i++) {
+    if (track.isEmptyAt(i)) continue; // gaps don't score
+    const p = PIECES[track.pieces[i]];
     length += 5;
     excitement += p.excitement;
   }

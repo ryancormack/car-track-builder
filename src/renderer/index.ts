@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
-import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
+import { buildPieceMesh, buildGhostPiece, buildStartTower, buildGapPiece } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
@@ -37,8 +37,6 @@ export class Renderer implements CameraControlHost {
   private _launchAnim: {
     startTime: number;
     duration: number;
-    restPos: THREE.Vector3;
-    pushDir: THREE.Vector3;
   } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -102,7 +100,12 @@ export class Renderer implements CameraControlHost {
       const p = PIECES[id];
       const entry = track.entryStateAt(i);
       const resolvedPath = resolvePathLocal(track.pieces, i);
-      this.trackGroup.add(buildPieceMesh(p, entry, resolvedPath));
+      // One group per slot so picking indices line up with track.pieces. Emptied
+      // slots render as faint gap placeholders but still occupy their footprint.
+      const mesh = track.isEmptyAt(i)
+        ? buildGapPiece(resolvedPath, entry)
+        : buildPieceMesh(p, entry, resolvedPath);
+      this.trackGroup.add(mesh);
     }
     this._recenterCamera(track);
   }
@@ -173,47 +176,56 @@ export class Renderer implements CameraControlHost {
   }
 
   animateLauncher(): void {
-    const plunger = this.startGroup.getObjectByName('plunger') as THREE.Mesh | undefined;
+    const plunger = this.startGroup.getObjectByName('plunger');
     if (!plunger) return;
+    plunger.scale.y = 1;
     this._launchAnim = {
       startTime: performance.now() / 1000,
-      duration: 0.4,
-      restPos: plunger.position.clone(),
-      pushDir: new THREE.Vector3(1, 0, 0), // East = +x in Three.js
+      duration: 0.5,
     };
+  }
+
+  /** Cancel any in-progress launch animation and reset the plunger to rest. */
+  stopLauncher(): void {
+    this._launchAnim = null;
+    const plunger = this.startGroup.getObjectByName('plunger');
+    if (plunger) plunger.scale.y = 1;
   }
 
   updateAnimations(_dt: number): void {
     if (!this._launchAnim) return;
-    const plunger = this.startGroup.getObjectByName('plunger') as THREE.Mesh | undefined;
+    const plunger = this.startGroup.getObjectByName('plunger');
     if (!plunger) { this._launchAnim = null; return; }
 
     const now = performance.now() / 1000;
     const elapsed = now - this._launchAnim.startTime;
-    const { duration, restPos, pushDir } = this._launchAnim;
+    const { duration } = this._launchAnim;
 
     if (elapsed >= duration) {
-      // Animation complete: reset to rest position
-      plunger.position.copy(restPos);
+      plunger.scale.y = 1; // settle fully extended
       this._launchAnim = null;
       return;
     }
 
+    // The green tower is a spring-loaded plunger: it presses straight down
+    // (compress) then springs back up with a slight overshoot (the launch).
     const t = elapsed / duration;
-    const maxPush = 0.5;
-    // Ease-out push in first half, spring back in second half
-    let offset: number;
-    if (t < 0.5) {
-      // Push forward with ease-out: fast start, slow end
-      const p = t / 0.5; // 0..1 over first half
-      offset = maxPush * (1 - (1 - p) * (1 - p));
+    const pressFrac = 0.34;     // portion of the timeline spent pressing down
+    const minScale = 0.4;       // how far it compresses
+    let scaleY: number;
+    if (t < pressFrac) {
+      // Fast ease-in press downward.
+      const p = t / pressFrac;
+      const eased = p * p; // ease-in
+      scaleY = 1 - (1 - minScale) * eased;
     } else {
-      // Retract with ease-in: slow start, fast end
-      const p = (t - 0.5) / 0.5; // 0..1 over second half
-      offset = maxPush * (1 - p) * (1 - p);
+      // Spring back up past 1 (overshoot), then settle to 1.
+      const p = (t - pressFrac) / (1 - pressFrac); // 0..1
+      // Damped sine overshoot: 0 at p=0, decays to 0 at p=1.
+      const overshoot = Math.sin(p * Math.PI) * (1 - p) * 0.18;
+      scaleY = minScale + (1 - minScale) * p + overshoot;
     }
-
-    plunger.position.copy(restPos).addScaledVector(pushDir, offset);
+    plunger.scale.y = scaleY;
   }
 
   render(): void { this.renderer.render(this.scene, this.camera); }

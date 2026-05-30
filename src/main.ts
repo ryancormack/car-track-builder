@@ -47,6 +47,11 @@ const els: UIElements = {
   overlayTop: el('overlay-top'),
   overlayLength: el('overlay-length'),
   overlayClose: el('overlay-close'),
+  selBar: el('selbar'),
+  selName: el('sel-name'),
+  selDeleteGap: el('sel-delete-gap'),
+  selDeleteClose: el('sel-delete-close'),
+  selDeselect: el('sel-deselect'),
 };
 
 const track = new Track();
@@ -59,7 +64,27 @@ const editor = new Editor({
   paletteEl: els.palette,
   statusEl: els.status,
   onChange: () => refreshHud(),
+  onSelectionChange: (sel) => updateSelectionBar(sel),
 });
+
+/** Show/hide the floating selection toolbar over the stage. */
+function updateSelectionBar(sel: { index: number; name: string; isGap: boolean } | null): void {
+  if (!sel) {
+    els.selBar.classList.add('hidden');
+    return;
+  }
+  els.selName.textContent = sel.name;
+  if (sel.isGap) {
+    // A gap has nothing to "keep open" — both actions would just remove it, so
+    // collapse to a single Remove action.
+    els.selDeleteGap.textContent = '🗑 Remove gap';
+    els.selDeleteClose.classList.add('hidden');
+  } else {
+    els.selDeleteGap.textContent = '🗑 Delete';
+    els.selDeleteClose.classList.remove('hidden');
+  }
+  els.selBar.classList.remove('hidden');
+}
 
 let mode: Mode = 'build';
 let sim: Simulator | null = null;
@@ -115,6 +140,11 @@ els.overlayClose.addEventListener('click', () => {
   switchMode('build');
 });
 
+// Selection toolbar
+els.selDeleteGap.addEventListener('click', () => editor.deleteSelected(false));
+els.selDeleteClose.addEventListener('click', () => editor.deleteSelected(true));
+els.selDeselect.addEventListener('click', () => editor.deselectPiece());
+
 // Canvas click detection: distinguish click from drag
 els.canvas.addEventListener('mousedown', (e) => {
   mouseDownPos = { x: e.clientX, y: e.clientY };
@@ -152,7 +182,8 @@ window.addEventListener('keydown', (e) => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'build') {
     if (editor.selectedIndex !== null) {
       e.preventDefault();
-      editor.deleteSelected();
+      // Shift closes the gap (compress); plain Delete leaves a gap in place.
+      editor.deleteSelected(e.shiftKey);
     }
   }
 });
@@ -162,8 +193,11 @@ window.addEventListener('keydown', (e) => {
 function switchMode(next: Mode): void {
   if (next === mode) return;
   if (next === 'play') {
-    if (!track.hasFinish()) {
-      hud.flashStatus('Complete the track with a Finish piece to play!', 'err');
+    if (!track.isComplete()) {
+      const msg = track.hasGaps()
+        ? 'Fill the gaps in your track before playing!'
+        : 'Complete the track with a Finish piece to play!';
+      hud.flashStatus(msg, 'err');
       return;
     }
     mode = 'play';
@@ -185,6 +219,7 @@ function switchMode(next: Mode): void {
     editor.setEnabled(true);
     els.drop.disabled = false;
     renderer.setCar(false);
+    renderer.stopLauncher();
     sim = null;
   }
   refreshHud();
@@ -193,8 +228,9 @@ function switchMode(next: Mode): void {
 function refreshHud(): void {
   if (mode === 'play') hud.updateForPlay(track, sim, runResult);
   else hud.updateForBuild(track);
-  // Visually disable play button when track has no Finish piece
-  if (track.hasFinish()) {
+  // Visually disable play button unless the track is complete (ends in Finish,
+  // and has no open gaps).
+  if (track.isComplete()) {
     els.modePlay.classList.remove('disabled');
   } else {
     els.modePlay.classList.add('disabled');

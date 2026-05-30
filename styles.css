@@ -447,3 +447,40 @@ body.mode-play .sidebar .panel:not(.always) {
   filter: saturate(0.4);
   pointer-events: none;
 }
+
+/* ---- Selection toolbar (floating over the stage when a piece is selected) ---- */
+.selbar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 16px;
+  background: linear-gradient(180deg, rgba(18, 35, 63, 0.97), rgba(14, 28, 51, 0.97));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+  z-index: 8;
+  animation: selbar-in 0.18s ease;
+}
+@keyframes selbar-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.selbar.hidden { display: none; }
+.selbar-label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.selbar-label strong { color: var(--cyan); }
+.selbar-hint {
+  font-size: 11px;
+  color: var(--muted-dim);
+  white-space: nowrap;
+  padding-right: 4px;
+  border-right: 1px solid var(--line-soft);
+}
+.selbar .btn {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.selbar .btn.ghost { padding: 7px 10px; }
+.selbar .btn.hidden { display: none; }

@@ -14,13 +14,13 @@ export class Hud {
   constructor(els: UIElements) { this.els = els; }
 
   updateForBuild(track: Track): void {
-    this.els.hudPieces.textContent = String(track.pieces.length);
+    this.els.hudPieces.textContent = String(track.nonEmptyCount());
     this.els.hudSpeed.textContent = '0';
     this.els.hudScore.textContent = String(designScore(track));
   }
 
   updateForPlay(track: Track, sim: Simulator | null, runResult: { score: ScoreResult } | null): void {
-    this.els.hudPieces.textContent = String(track.pieces.length);
+    this.els.hudPieces.textContent = String(track.nonEmptyCount());
     this.els.hudSpeed.textContent = sim ? sim.speed.toFixed(1) : '0';
     this.els.hudScore.textContent = runResult ? String(runResult.score.total) : '—';
   }

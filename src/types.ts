@@ -123,6 +123,8 @@ export interface ScoreResult {
 export interface TrackJSON {
   dropHeight: number;
   pieces: PieceId[];
+  /** Parallel to `pieces`: which slots are empty gaps (kept but not filled). */
+  empties?: boolean[];
 }
 
 /** The DOM elements the app wires up at boot. */
@@ -148,4 +150,9 @@ export interface UIElements {
   overlayTop: HTMLElement;
   overlayLength: HTMLElement;
   overlayClose: HTMLElement;
+  selBar: HTMLElement;
+  selName: HTMLElement;
+  selDeleteGap: HTMLElement;
+  selDeleteClose: HTMLElement;
+  selDeselect: HTMLElement;
 }

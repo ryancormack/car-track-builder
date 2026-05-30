@@ -20,6 +20,7 @@ export const COLORS = {
   finishAlt: 0x111111,
   finishPost: 0xddddee,
   ghost: 0x3da9fc,
+  gap: 0x7488a6,
   car: 0x00ffd5,
   carEm: 0x004455,
   carAccent: 0xff3c00,
