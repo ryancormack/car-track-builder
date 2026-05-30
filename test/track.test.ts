@@ -396,3 +396,51 @@ test('replacePieceAt on a non-gap slot still works immediately (no gap state)', 
   assert.equal(t.isFilledGap(1), false);
   assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
 });
+
+// ---- insertPieceAfter ----
+
+test('insertPieceAfter splices a new piece and marks it as unjoined', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  const ok = t.insertPieceAfter(0, 'LOOP');
+  assert.equal(ok, true);
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT', 'STRAIGHT']);
+  assert.equal(t.isEmptyAt(1), true); // new piece is unjoined
+  assert.equal(t.pieces.length, 4);
+  assert.equal(t.empties.length, 4);
+  assert.equal(t.gapOriginals.length, 4);
+});
+
+test('insertPieceAfter does not shift downstream geometry', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.insertPieceAfter(0, 'CURVE_L');
+  // The new piece is unjoined; the original last piece is now at index 3.
+  assert.equal(t.pieces[3], 'STRAIGHT');
+  // Original pieces at 0 and 2 (formerly 1) are still non-empty.
+  assert.equal(t.isEmptyAt(0), false);
+  assert.equal(t.isEmptyAt(2), false);
+});
+
+test('insertPieceAfter allows chaining multiple inserts', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('FINISH');
+  t.insertPieceAfter(0, 'CURVE_L');
+  t.insertPieceAfter(1, 'CURVE_R');
+  t.insertPieceAfter(2, 'LOOP');
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'CURVE_L', 'CURVE_R', 'LOOP', 'FINISH']);
+  // All inserted pieces are unjoined.
+  assert.equal(t.isEmptyAt(1), true);
+  assert.equal(t.isEmptyAt(2), true);
+  assert.equal(t.isEmptyAt(3), true);
+  // After rejoin, all are cleared.
+  t.rejoin();
+  assert.equal(t.hasGaps(), false);
+});
+
+test('insertPieceAfter returns false for out-of-bounds index', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT');
+  assert.equal(t.insertPieceAfter(5, 'LOOP'), false);
+  assert.equal(t.insertPieceAfter(-2, 'LOOP'), false);
+});

@@ -26,6 +26,12 @@ export class Editor {
   enabled = true;
   buttons: HTMLButtonElement[] = [];
   selectedIndex: number | null = null;
+  /**
+   * When building out a new section in the middle of the track, this tracks
+   * the index of the last piece we inserted/replaced so the next palette click
+   * inserts *after* it (chaining). Reset on deselect or mode change.
+   */
+  insertCursor: number | null = null;
   private _statusTimer?: ReturnType<typeof setTimeout>;
 
   constructor({ track, renderer, paletteEl, statusEl, onChange, onSelectionChange }: EditorOptions) {
@@ -95,11 +101,29 @@ export class Editor {
       this.renderer.rebuildTrack(this.track);
       this.renderer.clearGhost();
       if (wasGap) {
-        this._setStatus(`Placed ${PIECES[id].name} — press Rejoin when ready to connect.`, 'ok');
+        this._setStatus(`Placed ${PIECES[id].name} — keep clicking to build, or Rejoin when done.`, 'ok');
       } else {
         this._setStatus(`Replaced with ${PIECES[id].name}.`, 'ok');
       }
+      // Set the insert cursor so the next palette click inserts AFTER this slot.
+      this.insertCursor = this.selectedIndex;
       this.deselectPiece();
+      this._refreshButtons();
+      this.onChange();
+      return;
+    }
+    if (this.insertCursor !== null) {
+      // Insert mode: user is building out a new section from the insert cursor.
+      const ok = this.track.insertPieceAfter(this.insertCursor, id);
+      if (!ok) {
+        this._setStatus('Cannot insert here.', 'err');
+        return;
+      }
+      // Advance the cursor to the newly inserted piece.
+      this.insertCursor = this.insertCursor + 1;
+      this.renderer.rebuildTrack(this.track);
+      this.renderer.clearGhost();
+      this._setStatus(`Inserted ${PIECES[id].name} — keep clicking to extend, or Rejoin.`, 'ok');
       this._refreshButtons();
       this.onChange();
       return;
@@ -122,15 +146,19 @@ export class Editor {
       return;
     }
     this.selectedIndex = index;
+    this.insertCursor = null; // selecting a new piece exits insert mode
     this.renderer.highlightPiece(index);
     this._refreshButtons();
     const isGap = this.track.isEmptyAt(index);
-    const name = isGap ? 'Gap' : PIECES[this.track.pieces[index]].name;
+    const name = isGap
+      ? (this.track.isFilledGap(index) ? PIECES[this.track.pieces[index]].name + ' (unjoined)' : 'Gap')
+      : PIECES[this.track.pieces[index]].name;
     this.onSelectionChange({ index, name, isGap });
   }
 
   deselectPiece(): void {
     this.selectedIndex = null;
+    this.insertCursor = null;
     this.renderer.highlightPiece(null);
     this._refreshButtons();
     this.onSelectionChange(null);
@@ -200,12 +228,12 @@ export class Editor {
 
   private _refreshButtons(): void {
     // Once a Finish line is placed, no more pieces can be appended, so the
-    // palette is locked — UNLESS a slot is selected, in which case clicking a
-    // palette piece *replaces* (or fills) that slot, which is always allowed.
+    // palette is locked — UNLESS a slot is selected (replace mode) or the insert
+    // cursor is active (building out a section), in which case palette is enabled.
     const lockAppend = this.track.hasFinish();
-    const replacing = this.selectedIndex !== null;
+    const editing = this.selectedIndex !== null || this.insertCursor !== null;
     for (const b of this.buttons) {
-      b.disabled = !this.enabled || (lockAppend && !replacing);
+      b.disabled = !this.enabled || (lockAppend && !editing);
     }
   }
 
