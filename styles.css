@@ -484,3 +484,6 @@ body.mode-play .sidebar .panel:not(.always) {
 }
 .selbar .btn.ghost { padding: 7px 10px; }
 .selbar .btn.hidden { display: none; }
+.selbar .selbar-label.hidden,
+.selbar .selbar-hint.hidden { display: none; }
+.selbar .btn.ghost.hidden { display: none; }

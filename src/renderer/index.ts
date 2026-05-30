@@ -101,10 +101,15 @@ export class Renderer implements CameraControlHost {
       const entry = track.entryStateAt(i);
       const resolvedPath = resolvePathLocal(track.pieces, i);
       // One group per slot so picking indices line up with track.pieces. Emptied
-      // slots render as faint gap placeholders but still occupy their footprint.
-      const mesh = track.isEmptyAt(i)
-        ? buildGapPiece(resolvedPath, entry)
-        : buildPieceMesh(p, entry, resolvedPath);
+      // slots render as faint gap placeholders; filled-but-unjoined gaps render
+      // the new piece normally (at the old position, since entryStateAt uses the
+      // original footprint); fully joined slots render as normal.
+      let mesh: THREE.Group;
+      if (track.isEmptyAt(i) && !track.isFilledGap(i)) {
+        mesh = buildGapPiece(resolvedPath, entry);
+      } else {
+        mesh = buildPieceMesh(p, entry, resolvedPath);
+      }
       this.trackGroup.add(mesh);
     }
     this._recenterCamera(track);
