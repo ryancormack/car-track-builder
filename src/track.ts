@@ -109,10 +109,11 @@ export class Track {
     return this.empties.some((e) => e === true);
   }
 
-  /** Any gaps that have been filled but not yet rejoined? */
+  /** Any edits pending that need a Rejoin (filled gaps, inserts, or unfilled gaps to remove)? */
   hasPendingFills(): boolean {
     for (let i = 0; i < this.pieces.length; i++) {
       if (this.isFilledGap(i)) return true;
+      if (this.inserted[i]) return true;
     }
     return false;
   }
@@ -191,12 +192,22 @@ export class Track {
   }
 
   /**
-   * Rejoin the track: commit all pending gap-fills by clearing the empty flags
-   * and gapOriginals. After this, `entryStateAt` will use the actual pieces
-   * (including any new pieces placed in former gaps), which will reposition
-   * downstream geometry as needed.
+   * Rejoin the track: remove any unfilled gaps (truly deleted pieces) and commit
+   * all remaining slots (filled gaps + inserted pieces) by clearing their flags.
+   * After this, `entryStateAt` will use the actual pieces for all slots, which
+   * will reposition downstream geometry to connect to the new section.
    */
   rejoin(): void {
+    // First pass: remove unfilled gaps (iterate backward to keep indices stable).
+    for (let i = this.pieces.length - 1; i >= 0; i--) {
+      if (this.isUnfilledGap(i)) {
+        this.pieces.splice(i, 1);
+        this.empties.splice(i, 1);
+        this.gapOriginals.splice(i, 1);
+        this.inserted.splice(i, 1);
+      }
+    }
+    // Second pass: commit all remaining slots.
     for (let i = 0; i < this.pieces.length; i++) {
       this.empties[i] = false;
       this.gapOriginals[i] = null;
