@@ -227,14 +227,20 @@ test('emptyPieceAt twice on the same slot closes the gap', () => {
   assert.equal(t.hasGaps(), false);
 });
 
-test('replacePieceAt fills a gap and clears the empty flag', () => {
+test('replacePieceAt on a gap changes the piece but keeps it marked empty until rejoin', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
   t.emptyPieceAt(1);
   assert.equal(t.isEmptyAt(1), true);
   t.replacePieceAt(1, 'LOOP');
-  assert.equal(t.isEmptyAt(1), false);
+  // The visible piece is now LOOP, but the slot is still "unjoined" (empty flag stays).
+  assert.equal(t.isEmptyAt(1), true);
+  assert.equal(t.isFilledGap(1), true);
   assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
+  // After rejoin, empty flag is cleared.
+  t.rejoin();
+  assert.equal(t.isEmptyAt(1), false);
+  assert.equal(t.isFilledGap(1), false);
 });
 
 test('nonEmptyCount ignores gaps', () => {
@@ -289,7 +295,7 @@ test('hasFinish is false when the Finish slot is emptied', () => {
   assert.equal(t.hasFinish(), false);
 });
 
-test('isComplete requires a Finish and no gaps', () => {
+test('isComplete requires a Finish and no gaps (including filled-but-unjoined)', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); // 0
   t.addPiece('STRAIGHT'); // 1
@@ -298,7 +304,10 @@ test('isComplete requires a Finish and no gaps', () => {
   t.emptyPieceAt(1);      // open a gap in the middle
   assert.equal(t.isComplete(), false);
   assert.equal(t.hasGaps(), true);
-  t.replacePieceAt(1, 'LOOP'); // fill it
+  t.replacePieceAt(1, 'LOOP'); // fill it — but still unjoined
+  assert.equal(t.isComplete(), false); // not complete until rejoined
+  assert.equal(t.hasPendingFills(), true);
+  t.rejoin();
   assert.equal(t.isComplete(), true);
 });
 
@@ -333,4 +342,57 @@ test('fromJSON tolerates a missing empties array', () => {
   t.fromJSON({ dropHeight: 3, pieces: ['STRAIGHT', 'LOOP'] });
   assert.equal(t.empties.length, 2);
   assert.equal(t.hasGaps(), false);
+});
+
+// ---- rejoin behaviour ----
+
+test('rejoin clears all empties and gapOriginals', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.emptyPieceAt(0);
+  t.emptyPieceAt(1);
+  t.replacePieceAt(0, 'LOOP');
+  t.replacePieceAt(1, 'BOOSTER');
+  assert.equal(t.hasGaps(), true);
+  assert.equal(t.hasPendingFills(), true);
+  t.rejoin();
+  assert.equal(t.hasGaps(), false);
+  assert.equal(t.hasPendingFills(), false);
+  assert.deepEqual(t.pieces, ['LOOP', 'BOOSTER', 'STRAIGHT']);
+});
+
+test('filling a gap does NOT move downstream geometry until rejoin', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  const beforeCursor = t.cursorState();
+  t.emptyPieceAt(1);
+  // Downstream unchanged after gap creation.
+  assert.deepEqual(t.cursorState(), beforeCursor);
+  // Fill the gap with a CURVE_R (different footprint).
+  t.replacePieceAt(1, 'CURVE_R');
+  // Downstream STILL unchanged because the gap original footprint is used.
+  assert.deepEqual(t.cursorState(), beforeCursor);
+  // After rejoin, the new piece's geometry takes effect and downstream shifts.
+  t.rejoin();
+  assert.notDeepEqual(t.cursorState(), beforeCursor);
+});
+
+test('hasPendingFills is false when gap piece matches original', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.emptyPieceAt(1);
+  // Replace with the same piece — not really a "pending fill" conceptually.
+  t.replacePieceAt(1, 'STRAIGHT');
+  // The implementation checks pieces[i] !== gapOriginals[i], so same-id means no pending fill.
+  assert.equal(t.isFilledGap(1), false);
+  assert.equal(t.hasPendingFills(), false);
+});
+
+test('replacePieceAt on a non-gap slot still works immediately (no gap state)', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.replacePieceAt(1, 'LOOP');
+  assert.equal(t.isEmptyAt(1), false);
+  assert.equal(t.isFilledGap(1), false);
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
 });

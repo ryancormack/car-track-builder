@@ -94,7 +94,11 @@ export class Editor {
       }
       this.renderer.rebuildTrack(this.track);
       this.renderer.clearGhost();
-      this._setStatus(`${wasGap ? 'Filled gap with' : 'Replaced with'} ${PIECES[id].name}.`, 'ok');
+      if (wasGap) {
+        this._setStatus(`Placed ${PIECES[id].name} — press Rejoin when ready to connect.`, 'ok');
+      } else {
+        this._setStatus(`Replaced with ${PIECES[id].name}.`, 'ok');
+      }
       this.deselectPiece();
       this._refreshButtons();
       this.onChange();

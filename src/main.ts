@@ -52,6 +52,7 @@ const els: UIElements = {
   selDeleteGap: el('sel-delete-gap'),
   selDeleteClose: el('sel-delete-close'),
   selDeselect: el('sel-deselect'),
+  selRejoin: el('sel-rejoin'),
 };
 
 const track = new Track();
@@ -63,27 +64,51 @@ const editor = new Editor({
   renderer,
   paletteEl: els.palette,
   statusEl: els.status,
-  onChange: () => refreshHud(),
+  onChange: () => { refreshHud(); updateRejoinButton(); },
   onSelectionChange: (sel) => updateSelectionBar(sel),
 });
 
 /** Show/hide the floating selection toolbar over the stage. */
 function updateSelectionBar(sel: { index: number; name: string; isGap: boolean } | null): void {
   if (!sel) {
+    // Hide the selection-specific parts but keep bar visible if rejoin is needed.
+    els.selName.textContent = '—';
+    els.selDeleteGap.classList.add('hidden');
+    els.selDeleteClose.classList.add('hidden');
+    els.selDeselect.classList.add('hidden');
+    (els.selBar.querySelector('.selbar-label') as HTMLElement)?.classList.add('hidden');
+    (els.selBar.querySelector('.selbar-hint') as HTMLElement)?.classList.add('hidden');
     els.selBar.classList.add('hidden');
+    updateRejoinButton();
     return;
   }
   els.selName.textContent = sel.name;
+  // Show selection-specific controls.
+  (els.selBar.querySelector('.selbar-label') as HTMLElement)?.classList.remove('hidden');
+  (els.selBar.querySelector('.selbar-hint') as HTMLElement)?.classList.remove('hidden');
+  els.selDeselect.classList.remove('hidden');
   if (sel.isGap) {
-    // A gap has nothing to "keep open" — both actions would just remove it, so
-    // collapse to a single Remove action.
     els.selDeleteGap.textContent = '🗑 Remove gap';
+    els.selDeleteGap.classList.remove('hidden');
     els.selDeleteClose.classList.add('hidden');
   } else {
     els.selDeleteGap.textContent = '🗑 Delete';
+    els.selDeleteGap.classList.remove('hidden');
     els.selDeleteClose.classList.remove('hidden');
   }
   els.selBar.classList.remove('hidden');
+  updateRejoinButton();
+}
+
+/** Show the Rejoin button when there are filled-but-unjoined gaps. */
+function updateRejoinButton(): void {
+  if (track.hasPendingFills()) {
+    els.selRejoin.classList.remove('hidden');
+    // Ensure the bar is visible so the user can access the rejoin button.
+    els.selBar.classList.remove('hidden');
+  } else {
+    els.selRejoin.classList.add('hidden');
+  }
 }
 
 let mode: Mode = 'build';
@@ -144,6 +169,13 @@ els.overlayClose.addEventListener('click', () => {
 els.selDeleteGap.addEventListener('click', () => editor.deleteSelected(false));
 els.selDeleteClose.addEventListener('click', () => editor.deleteSelected(true));
 els.selDeselect.addEventListener('click', () => editor.deselectPiece());
+els.selRejoin.addEventListener('click', () => {
+  track.rejoin();
+  renderer.rebuildTrack(track);
+  editor.deselectPiece();
+  hud.flashStatus('Track rejoined!', 'ok');
+  refreshHud();
+});
 
 // Canvas click detection: distinguish click from drag
 els.canvas.addEventListener('mousedown', (e) => {
@@ -194,9 +226,14 @@ function switchMode(next: Mode): void {
   if (next === mode) return;
   if (next === 'play') {
     if (!track.isComplete()) {
-      const msg = track.hasGaps()
-        ? 'Fill the gaps in your track before playing!'
-        : 'Complete the track with a Finish piece to play!';
+      let msg: string;
+      if (track.hasPendingFills()) {
+        msg = 'Rejoin the track before playing!';
+      } else if (track.hasGaps()) {
+        msg = 'Fill the gaps in your track before playing!';
+      } else {
+        msg = 'Complete the track with a Finish piece to play!';
+      }
       hud.flashStatus(msg, 'err');
       return;
     }

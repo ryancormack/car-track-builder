@@ -125,6 +125,8 @@ export interface TrackJSON {
   pieces: PieceId[];
   /** Parallel to `pieces`: which slots are empty gaps (kept but not filled). */
   empties?: boolean[];
+  /** Parallel to `pieces`: original piece id when a gap was created (for footprint). */
+  gapOriginals?: (PieceId | undefined)[];
 }
 
 /** The DOM elements the app wires up at boot. */
@@ -155,4 +157,5 @@ export interface UIElements {
   selDeleteGap: HTMLElement;
   selDeleteClose: HTMLElement;
   selDeselect: HTMLElement;
+  selRejoin: HTMLElement;
 }
