@@ -120,7 +120,7 @@ export const pathSpiral: PathFn = (t) => {
     return { lx: 1.9 + u * 0.1, ly: 0, lz: -2, banking: 4 * Math.PI };
   }
   const u = (t - 0.05) / 0.9; // 0..1 over the helix portion
-  const theta = 4 * Math.PI * u; // 2 full turns = 4*PI
+  const theta = 4 * Math.PI * easedProgress(u); // 2 full turns = 4*PI, eased for tangent continuity
   return {
     lx: 0.1 + u * 1.8,
     ly: R * Math.sin(theta),

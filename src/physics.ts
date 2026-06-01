@@ -104,7 +104,7 @@ export class Simulator {
 
     // Substep so very fast cars don't tunnel through pieces.
     const v = Math.sqrt(Math.max(this.v2, 0));
-    if (pieceId === 'RAMP_UP' && this.v2 < 2.0 && this.v2 > 0.01 && this.t > 0.3) {
+    if ((pieceId === 'RAMP_UP' || pieceId === 'STEEP_HILL') && this.v2 < 2.0 && this.v2 > 0.01 && this.t > 0.3) {
       this.failed = true;
       this.failReason = 'Not enough speed! The car rolls back down the hill...';
       this.failType = 'rollback';

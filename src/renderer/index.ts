@@ -45,10 +45,12 @@ export class Renderer implements CameraControlHost {
     elapsed: number;
     duration: number;
     startPos: THREE.Vector3;
-    startQuat: THREE.Quaternion;
     velocity: THREE.Vector3;
     particles: THREE.Mesh[];
   } | null = null;
+
+  private _particleGeom: THREE.SphereGeometry;
+  private _particleMat: THREE.MeshStandardMaterial;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -90,6 +92,13 @@ export class Renderer implements CameraControlHost {
     this.car = buildCar();
     this.car.visible = false;
     this.scene.add(this.car);
+
+    this._particleGeom = new THREE.SphereGeometry(0.05, 6, 6);
+    this._particleMat = new THREE.MeshStandardMaterial({
+      color: 0xff8800,
+      emissive: 0xff6600,
+      emissiveIntensity: 0.8,
+    });
 
     installCameraControls(this);
     this._installResize();
@@ -202,7 +211,6 @@ export class Renderer implements CameraControlHost {
   startWipeoutAnimation(failType: FailType, frame: TrackFrame | null): void {
     this.cleanupWipeout();
     const startPos = this.car.position.clone();
-    const startQuat = this.car.quaternion.clone();
     let duration: number;
     let velocity: THREE.Vector3;
 
@@ -241,14 +249,8 @@ export class Renderer implements CameraControlHost {
 
     const particles: THREE.Mesh[] = [];
     if (failType === 'overspeed_corner') {
-      const geom = new THREE.SphereGeometry(0.05, 6, 6);
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0xff8800,
-        emissive: 0xff6600,
-        emissiveIntensity: 0.8,
-      });
       for (let i = 0; i < 10; i++) {
-        const p = new THREE.Mesh(geom, mat.clone());
+        const p = new THREE.Mesh(this._particleGeom, this._particleMat.clone());
         p.position.copy(startPos);
         this.scene.add(p);
         particles.push(p);
@@ -260,7 +262,6 @@ export class Renderer implements CameraControlHost {
       elapsed: 0,
       duration,
       startPos,
-      startQuat,
       velocity,
       particles,
     };
@@ -338,7 +339,6 @@ export class Renderer implements CameraControlHost {
   private _removeParticles(particles: THREE.Mesh[]): void {
     for (const p of particles) {
       this.scene.remove(p);
-      p.geometry.dispose();
       (p.material as THREE.Material).dispose();
     }
     particles.length = 0;
