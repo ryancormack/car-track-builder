@@ -1,4 +1,4 @@
-// editor.ts — Build-mode UI: palette buttons, hover ghost preview, undo/clear.
+// editor.ts -- Build-mode UI: palette buttons, hover ghost preview, undo/clear.
 
 import { PIECES, PALETTE_ORDER } from './pieces/index.js';
 import type { Track } from './track.js';
@@ -13,7 +13,7 @@ export interface EditorOptions {
   statusEl: HTMLElement | null;
   onChange?: () => void;
   /** Called whenever the selected slot changes (null when nothing is selected). */
-  onSelectionChange?: (sel: { index: number; name: string; isGap: boolean } | null) => void;
+  onSelectionChange?: (sel: { index: number; name: string } | null) => void;
 }
 
 export class Editor {
@@ -22,7 +22,7 @@ export class Editor {
   paletteEl: HTMLElement;
   statusEl: HTMLElement | null;
   onChange: () => void;
-  onSelectionChange: (sel: { index: number; name: string; isGap: boolean } | null) => void;
+  onSelectionChange: (sel: { index: number; name: string } | null) => void;
   enabled = true;
   buttons: HTMLButtonElement[] = [];
   selectedIndex: number | null = null;
@@ -91,23 +91,16 @@ export class Editor {
   private _add(id: PieceId): void {
     if (!this.enabled) return;
     if (this.selectedIndex !== null) {
-      // Replace mode: swap (or fill) the selected slot.
-      const wasGap = this.track.isEmptyAt(this.selectedIndex);
-      const ok = this.track.replacePieceAt(this.selectedIndex, id);
+      // Replace mode: swap the selected piece.
+      const ok = this.track.replaceAt(this.selectedIndex, id);
       if (!ok) {
         this._setStatus('Cannot replace that piece.', 'err');
         return;
       }
       this.renderer.rebuildTrack(this.track);
       this.renderer.clearGhost();
-      if (wasGap) {
-        this._setStatus(`Placed ${PIECES[id].name} — keep clicking to build, or Rejoin when done.`, 'ok');
-      } else {
-        this._setStatus(`Replaced with ${PIECES[id].name}.`, 'ok');
-      }
+      this._setStatus(`Replaced with ${PIECES[id].name}.`, 'ok');
       // Set the insert cursor so the next palette click inserts AFTER this slot.
-      // We clear selectedIndex manually (not via deselectPiece which would also
-      // kill insertCursor) to transition into insert mode.
       const cursorPos = this.selectedIndex;
       this.selectedIndex = null;
       this.renderer.highlightPiece(null);
@@ -118,22 +111,23 @@ export class Editor {
     }
     if (this.insertCursor !== null) {
       // Insert mode: user is building out a new section from the insert cursor.
-      const ok = this.track.insertPieceAfter(this.insertCursor, id);
+      const insertIdx = this.insertCursor + 1;
+      const ok = this.track.insertAt(insertIdx, id);
       if (!ok) {
         this._setStatus('Cannot insert here.', 'err');
         return;
       }
       // Advance the cursor to the newly inserted piece.
-      this.insertCursor = this.insertCursor + 1;
+      this.insertCursor = insertIdx;
       this.renderer.rebuildTrack(this.track);
       this.renderer.clearGhost();
-      this._setStatus(`Inserted ${PIECES[id].name} — keep clicking to extend, or Rejoin.`, 'ok');
+      this._setStatus(`Inserted ${PIECES[id].name} - keep clicking to extend, or Rejoin.`, 'ok');
       this._refreshButtons();
       this.onChange();
       return;
     }
     if (!this.track.canAdd(id)) {
-      this._setStatus('Track ends at the Finish line — undo to extend.', 'err');
+      this._setStatus('Track ends at the Finish line - undo to extend.', 'err');
       return;
     }
     this.track.addPiece(id);
@@ -153,11 +147,8 @@ export class Editor {
     this.insertCursor = null; // selecting a new piece exits insert mode
     this.renderer.highlightPiece(index);
     this._refreshButtons();
-    const isGap = this.track.isEmptyAt(index);
-    const name = isGap
-      ? (this.track.isFilledGap(index) ? PIECES[this.track.pieces[index]].name + ' (unjoined)' : 'Gap')
-      : PIECES[this.track.pieces[index]].name;
-    this.onSelectionChange({ index, name, isGap });
+    const name = PIECES[this.track.pieces[index]].name;
+    this.onSelectionChange({ index, name });
   }
 
   deselectPiece(): void {
@@ -169,32 +160,18 @@ export class Editor {
   }
 
   /**
-   * Delete the selected slot. By default this leaves a gap in place (the rest of
-   * the track stays put) so the player can build something new there. With
-   * closeGap=true it splices the slot out and the track compresses back.
-   *
-   * Note: emptyPieceAt() compresses anyway for a trailing or already-empty slot
-   * (there's nothing to hold open), so we report the *actual* outcome rather
-   * than assuming a gap was left.
+   * Delete the selected piece. The piece is removed from the track entirely.
+   * Downstream keeps its frozen visual positions until Rejoin.
    */
-  deleteSelected(closeGap = false): void {
+  deleteSelected(): void {
     if (this.selectedIndex === null) return;
     const index = this.selectedIndex;
-    let removed: PieceId | undefined;
-    let leftGap = false;
-    if (closeGap) {
-      removed = this.track.removePieceAt(index);
-    } else {
-      const wasEmpty = this.track.isEmptyAt(index);
-      const trailing = index === this.track.pieces.length - 1;
-      removed = this.track.emptyPieceAt(index);
-      leftGap = !wasEmpty && !trailing;
-    }
+    const removed = this.track.deleteAt(index);
     this.renderer.rebuildTrack(this.track);
     this.renderer.clearGhost();
     if (removed) {
       const name = PIECES[removed].name;
-      this._setStatus(leftGap ? `Cleared ${name} — fill the gap or play needs it complete.` : `Removed ${name}.`, 'ok');
+      this._setStatus(`Removed ${name}.`, 'ok');
     }
     this.deselectPiece();
     this._refreshButtons();
@@ -232,7 +209,7 @@ export class Editor {
 
   private _refreshButtons(): void {
     // Once a Finish line is placed, no more pieces can be appended, so the
-    // palette is locked — UNLESS a slot is selected (replace mode) or the insert
+    // palette is locked -- UNLESS a slot is selected (replace mode) or the insert
     // cursor is active (building out a section), in which case palette is enabled.
     const lockAppend = this.track.hasFinish();
     const editing = this.selectedIndex !== null || this.insertCursor !== null;

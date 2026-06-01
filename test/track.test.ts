@@ -93,215 +93,162 @@ test('fromJSON ignores invalid piece ids and clamps drop height', () => {
   assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP']);
 });
 
-// ---- removePieceAt ----
+// ---- deleteAt (removePieceAt) ----
 
-test('removePieceAt returns undefined for out-of-bounds index', () => {
+test('deleteAt returns undefined for out-of-bounds index', () => {
   const t = new Track();
   t.addPiece('STRAIGHT');
-  assert.equal(t.removePieceAt(-1), undefined);
-  assert.equal(t.removePieceAt(1), undefined);
-  assert.equal(t.removePieceAt(99), undefined);
+  assert.equal(t.deleteAt(-1), undefined);
+  assert.equal(t.deleteAt(1), undefined);
+  assert.equal(t.deleteAt(99), undefined);
   assert.equal(t.pieces.length, 1);
 });
 
-test('removePieceAt returns undefined on empty track', () => {
+test('deleteAt returns undefined on empty track', () => {
   const t = new Track();
-  assert.equal(t.removePieceAt(0), undefined);
+  assert.equal(t.deleteAt(0), undefined);
 });
 
-test('removePieceAt removes mid-array piece and shifts subsequent pieces', () => {
+test('deleteAt removes mid-array piece and shifts subsequent pieces', () => {
   const t = new Track();
   t.addPiece('STRAIGHT');
   t.addPiece('CURVE_R');
   t.addPiece('LOOP');
-  const removed = t.removePieceAt(1);
+  const removed = t.deleteAt(1);
   assert.equal(removed, 'CURVE_R');
   assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP']);
 });
 
-test('removePieceAt removes first piece', () => {
+test('deleteAt removes first piece', () => {
   const t = new Track();
   t.addPiece('STRAIGHT');
   t.addPiece('CURVE_R');
-  const removed = t.removePieceAt(0);
+  const removed = t.deleteAt(0);
   assert.equal(removed, 'STRAIGHT');
   assert.deepEqual(t.pieces, ['CURVE_R']);
 });
 
-test('removePieceAt removes last piece', () => {
+test('deleteAt removes last piece', () => {
   const t = new Track();
   t.addPiece('STRAIGHT');
   t.addPiece('CURVE_R');
-  const removed = t.removePieceAt(1);
+  const removed = t.deleteAt(1);
   assert.equal(removed, 'CURVE_R');
   assert.deepEqual(t.pieces, ['STRAIGHT']);
 });
 
-// ---- replacePieceAt ----
+// ---- replaceAt (replacePieceAt) ----
 
-test('replacePieceAt returns false for out-of-bounds index', () => {
+test('replaceAt returns false for out-of-bounds index', () => {
   const t = new Track();
   t.addPiece('STRAIGHT');
-  assert.equal(t.replacePieceAt(-1, 'LOOP'), false);
-  assert.equal(t.replacePieceAt(1, 'LOOP'), false);
-  assert.equal(t.replacePieceAt(99, 'LOOP'), false);
+  assert.equal(t.replaceAt(-1, 'LOOP'), false);
+  assert.equal(t.replaceAt(1, 'LOOP'), false);
+  assert.equal(t.replaceAt(99, 'LOOP'), false);
   assert.deepEqual(t.pieces, ['STRAIGHT']);
 });
 
-test('replacePieceAt returns false on empty track', () => {
+test('replaceAt returns false on empty track', () => {
   const t = new Track();
-  assert.equal(t.replacePieceAt(0, 'LOOP'), false);
+  assert.equal(t.replaceAt(0, 'LOOP'), false);
 });
 
-test('replacePieceAt changes the element at valid index', () => {
+test('replaceAt changes the element at valid index', () => {
   const t = new Track();
   t.addPiece('STRAIGHT');
   t.addPiece('CURVE_R');
   t.addPiece('LOOP');
-  const result = t.replacePieceAt(1, 'STRAIGHT');
+  const result = t.replaceAt(1, 'STRAIGHT');
   assert.equal(result, true);
   assert.deepEqual(t.pieces, ['STRAIGHT', 'STRAIGHT', 'LOOP']);
 });
 
-test('replacePieceAt does not change array length', () => {
+test('replaceAt does not change array length', () => {
   const t = new Track();
   t.addPiece('STRAIGHT');
   t.addPiece('CURVE_R');
-  t.replacePieceAt(0, 'LOOP');
+  t.replaceAt(0, 'LOOP');
   assert.equal(t.pieces.length, 2);
   assert.deepEqual(t.pieces, ['LOOP', 'CURVE_R']);
 });
 
+// ---- frozen entries (editing mode) ----
 
-// ---- empties / gap delete ----
-
-test('addPiece keeps empties parallel and all false', () => {
+test('deleteAt snapshots downstream positions (frozenEntries becomes non-null)', () => {
   const t = new Track();
-  t.addPiece('STRAIGHT');
-  t.addPiece('LOOP');
-  assert.equal(t.empties.length, t.pieces.length);
-  assert.equal(t.isEmptyAt(0), false);
-  assert.equal(t.isEmptyAt(1), false);
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  assert.equal(t.isEditing(), false);
+  t.deleteAt(1);
+  assert.equal(t.isEditing(), true);
+  assert.notEqual(t.frozenEntries, null);
 });
 
-test('emptyPieceAt marks a mid-track slot as a gap without shifting pieces', () => {
+test('downstream pieces keep frozen positions after deleteAt', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); // 0: (0,0,0,E) -> (1,0,0,E)
+  t.addPiece('CURVE_R');  // 1: (1,0,0,E) -> (1,1,0,S)
+  t.addPiece('STRAIGHT'); // 2: (1,1,0,S) -> (1,2,0,S)
+  t.addPiece('STRAIGHT'); // 3: (1,2,0,S)
+  // Entry for piece 2 before delete:
+  const entryBefore = t.computeEntryAt(2);
+  // Delete CURVE_R at index 1. Now pieces = [S, S, S]
+  t.deleteAt(1);
+  // Piece at index 1 now is what was at index 2 (first STRAIGHT after the curve).
+  // Its rendered entry should still be the frozen position.
+  const entryAfter = t.entryStateAt(1);
+  assert.deepEqual(entryAfter, entryBefore);
+});
+
+test('insertAt creates a real piece that chains correctly', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); // index 0
+  t.addPiece('STRAIGHT'); // index 1
+  t.addPiece('STRAIGHT'); // index 2
+  t.insertAt(1, 'CURVE_R');
+  // pieces = [S, CURVE_R, S, S]
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'CURVE_R', 'STRAIGHT', 'STRAIGHT']);
+  // The inserted CURVE_R should chain from the first STRAIGHT
+  const insertedEntry = t.entryStateAt(1);
+  assert.deepEqual(insertedEntry, { gx: 1, gy: 0, gz: 0, dir: 1 });
+});
+
+test('insertAt keeps downstream frozen', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); // 0
   t.addPiece('STRAIGHT'); // 1
   t.addPiece('STRAIGHT'); // 2
-  const id = t.emptyPieceAt(1);
-  assert.equal(id, 'STRAIGHT');
-  assert.equal(t.pieces.length, 3);          // not spliced
-  assert.deepEqual(t.pieces, ['STRAIGHT', 'STRAIGHT', 'STRAIGHT']);
-  assert.equal(t.isEmptyAt(1), true);
-  assert.equal(t.hasGaps(), true);
+  // Entry for piece 1 before insert:
+  const entry1Before = t.computeEntryAt(1);
+  t.insertAt(1, 'CURVE_R');
+  // Piece that was at index 1 is now at index 2. Its render position is frozen.
+  const entry2After = t.entryStateAt(2);
+  assert.deepEqual(entry2After, entry1Before);
 });
 
-test('emptyPieceAt preserves downstream geometry (no compression)', () => {
+test('rejoin clears frozen entries and recomputes downstream', () => {
   const t = new Track();
-  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  const before = t.cursorState();
-  t.emptyPieceAt(1); // gap the middle straight
-  // The end of the track should not move, because the gap keeps the footprint.
-  assert.deepEqual(t.cursorState(), before);
+  t.addPiece('STRAIGHT'); t.addPiece('CURVE_R'); t.addPiece('STRAIGHT');
+  t.deleteAt(1); // delete CURVE_R, now [S, S]
+  assert.equal(t.isEditing(), true);
+  t.rejoin();
+  assert.equal(t.isEditing(), false);
+  // After rejoin, entry for piece 1 recomputes from actual pieces [S, S]
+  const entry1 = t.entryStateAt(1);
+  assert.deepEqual(entry1, { gx: 1, gy: 0, gz: 0, dir: 1 });
 });
 
-test('emptyPieceAt on the trailing slot removes it instead of leaving a gap', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT');
-  t.addPiece('CURVE_R');
-  const id = t.emptyPieceAt(1);
-  assert.equal(id, 'CURVE_R');
-  assert.equal(t.pieces.length, 1);
-  assert.equal(t.hasGaps(), false);
-});
-
-test('emptyPieceAt twice on the same slot closes the gap', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.emptyPieceAt(1);              // first: leaves a gap
-  assert.equal(t.isEmptyAt(1), true);
-  const id = t.emptyPieceAt(1);   // second: splices it out
-  assert.equal(id, 'STRAIGHT');
-  assert.deepEqual(t.pieces, ['STRAIGHT', 'STRAIGHT']);
-  assert.equal(t.hasGaps(), false);
-});
-
-test('replacePieceAt on a gap clears the gap state immediately', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.emptyPieceAt(1);
-  assert.equal(t.isEmptyAt(1), true);
-  t.replacePieceAt(1, 'LOOP');
-  // The slot is now a normal piece — no longer a gap.
-  assert.equal(t.isEmptyAt(1), false);
-  assert.equal(t.isUnfilledGap(1), false);
-  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
-});
-
-test('nonEmptyCount ignores gaps', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.emptyPieceAt(1);
-  assert.equal(t.nonEmptyCount(), 2);
-  assert.equal(t.pieces.length, 3);
-});
-
-test('removePieceAt keeps empties aligned when closing a gap before it', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT'); // 0
-  t.addPiece('CURVE_R');  // 1
-  t.addPiece('LOOP');     // 2
-  t.emptyPieceAt(2 - 1);  // gap the CURVE_R at index 1 (not trailing)
-  assert.equal(t.isEmptyAt(1), true);
-  t.removePieceAt(0);     // compress-remove the first straight
-  // The gap should now travel with its piece to index 0.
-  assert.deepEqual(t.pieces, ['CURVE_R', 'LOOP']);
-  assert.equal(t.isEmptyAt(0), true);
-  assert.equal(t.isEmptyAt(1), false);
-});
-
-test('undo pops both pieces and empties', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT');
-  t.addPiece('LOOP');
-  t.undo();
-  assert.equal(t.pieces.length, 1);
-  assert.equal(t.empties.length, 1);
-});
-
-test('clear resets empties too', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.emptyPieceAt(1);
-  t.clear();
-  assert.equal(t.pieces.length, 0);
-  assert.equal(t.empties.length, 0);
-  assert.equal(t.hasGaps(), false);
-});
-
-// ---- hasFinish / isComplete with gaps ----
-
-test('hasFinish is false when the Finish slot is emptied', () => {
+test('isComplete requires Finish and not editing', () => {
   const t = new Track();
   t.addPiece('STRAIGHT');
   t.addPiece('FINISH');
-  // Force the finish slot to be a gap (bypassing the trailing-splice nicety).
-  t.empties[1] = true;
-  assert.equal(t.hasFinish(), false);
-});
-
-test('isComplete requires a Finish, no unfilled gaps, and no inserts', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT'); // 0
-  t.addPiece('STRAIGHT'); // 1
-  t.addPiece('FINISH');   // 2
   assert.equal(t.isComplete(), true);
-  t.emptyPieceAt(1);      // open a gap in the middle
+  // Now edit - delete and re-add to enter editing mode
+  t.deleteAt(0);
+  assert.equal(t.isEditing(), true);
   assert.equal(t.isComplete(), false);
-  assert.equal(t.hasGaps(), true);
-  t.replacePieceAt(1, 'LOOP'); // fill it — now it's a normal piece
-  assert.equal(t.isComplete(), true); // complete immediately since gap is filled
+  t.rejoin();
+  // After rejoin, just FINISH remains
+  assert.equal(t.isComplete(), true);
 });
 
 test('isComplete is false without a Finish', () => {
@@ -310,105 +257,67 @@ test('isComplete is false without a Finish', () => {
   assert.equal(t.isComplete(), false);
 });
 
-test('totalPathLength skips gaps', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT'); // 1.0
-  t.addPiece('LOOP');     // 4.14
-  t.addPiece('STRAIGHT'); // 1.0
-  t.emptyPieceAt(1);      // gap the loop
-  assert.ok(Math.abs(t.totalPathLength() - 2.0) < 1e-6);
-});
-
-test('toJSON / fromJSON round-trip preserves gaps', () => {
-  const a = new Track();
-  ['STRAIGHT', 'STRAIGHT', 'STRAIGHT', 'FINISH'].forEach((id) => a.addPiece(id));
-  a.emptyPieceAt(1);
-  const b = new Track();
-  b.fromJSON(a.toJSON());
-  assert.deepEqual(b.pieces, ['STRAIGHT', 'STRAIGHT', 'STRAIGHT', 'FINISH']);
-  assert.equal(b.isEmptyAt(1), true);
-  assert.equal(b.nonEmptyCount(), 3);
-});
-
-test('fromJSON tolerates a missing empties array', () => {
-  const t = new Track();
-  t.fromJSON({ dropHeight: 3, pieces: ['STRAIGHT', 'LOOP'] });
-  assert.equal(t.empties.length, 2);
-  assert.equal(t.hasGaps(), false);
-});
-
-// ---- rejoin behaviour ----
-
-test('rejoin removes unfilled gaps and commits inserts', () => {
+test('replaceAt enters editing mode and snapshots downstream', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.emptyPieceAt(1); // gap the middle one
-  t.insertPieceAfter(0, 'LOOP'); // insert after index 0
-  // Now: [S, LOOP(inserted), S(gap), S]
-  assert.equal(t.hasPendingFills(), true);
-  t.rejoin();
-  // The unfilled gap is removed, the insert is committed.
-  assert.equal(t.hasGaps(), false);
-  assert.equal(t.hasPendingFills(), false);
-  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
+  const entryBefore = t.computeEntryAt(2);
+  t.replaceAt(1, 'CURVE_R');
+  assert.equal(t.isEditing(), true);
+  // Downstream (piece 2) keeps its frozen position
+  const entryAfter = t.entryStateAt(2);
+  assert.deepEqual(entryAfter, entryBefore);
 });
 
-test('filling a gap moves downstream immediately (piece is now real)', () => {
+test('multiple edits in same session share one snapshot', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  const beforeCursor = t.cursorState();
-  t.emptyPieceAt(1);
-  // Downstream unchanged after gap creation (original footprint preserved).
-  assert.deepEqual(t.cursorState(), beforeCursor);
-  // Fill the gap with a CURVE_R (different footprint) — now it's a real piece.
-  t.replacePieceAt(1, 'CURVE_R');
-  // Downstream shifts immediately because the piece is now fully committed.
-  assert.notDeepEqual(t.cursorState(), beforeCursor);
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  const entryLast = t.computeEntryAt(4);
+  // First edit
+  t.deleteAt(1);
+  // Second edit
+  t.insertAt(1, 'LOOP');
+  // The frozen snapshot was taken on first edit; last piece stays frozen
+  const lastEntry = t.entryStateAt(t.pieces.length - 1);
+  assert.deepEqual(lastEntry, entryLast);
 });
 
-test('hasPendingFills is false when gap piece matches original', () => {
+test('nonEmptyCount returns pieces.length (all pieces are real)', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('LOOP'); t.addPiece('STRAIGHT');
+  assert.equal(t.nonEmptyCount(), 3);
+  t.deleteAt(1);
+  assert.equal(t.nonEmptyCount(), 2);
+});
+
+test('clear resets editing state', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.emptyPieceAt(1);
-  // Replace with the same piece — not really a "pending fill" conceptually.
-  t.replacePieceAt(1, 'STRAIGHT');
-  // The implementation checks pieces[i] !== gapOriginals[i], so same-id means no pending fill.
-  assert.equal(t.isFilledGap(1), false);
-  assert.equal(t.hasPendingFills(), false);
+  t.deleteAt(1);
+  assert.equal(t.isEditing(), true);
+  t.clear();
+  assert.equal(t.pieces.length, 0);
+  assert.equal(t.isEditing(), false);
 });
 
-test('replacePieceAt on a non-gap slot still works immediately (no gap state)', () => {
+test('fromJSON clears editing state', () => {
   const t = new Track();
-  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.replacePieceAt(1, 'LOOP');
-  assert.equal(t.isEmptyAt(1), false);
-  assert.equal(t.isFilledGap(1), false);
-  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT']);
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.deleteAt(0);
+  assert.equal(t.isEditing(), true);
+  t.fromJSON({ dropHeight: 3, pieces: ['LOOP', 'FINISH'] });
+  assert.equal(t.isEditing(), false);
+  assert.deepEqual(t.pieces, ['LOOP', 'FINISH']);
 });
 
-// ---- insertPieceAfter ----
+// ---- insertPieceAfter (legacy compat) ----
 
-test('insertPieceAfter splices a new piece and marks it as unjoined', () => {
+test('insertPieceAfter splices a new piece after the given index', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
   const ok = t.insertPieceAfter(0, 'LOOP');
   assert.equal(ok, true);
   assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP', 'STRAIGHT', 'STRAIGHT']);
-  assert.equal(t.isEmptyAt(1), true); // new piece is unjoined
-  assert.equal(t.pieces.length, 4);
-  assert.equal(t.empties.length, 4);
-  assert.equal(t.gapOriginals.length, 4);
-});
-
-test('insertPieceAfter does not shift downstream geometry', () => {
-  const t = new Track();
-  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
-  t.insertPieceAfter(0, 'CURVE_L');
-  // The new piece is unjoined; the original last piece is now at index 3.
-  assert.equal(t.pieces[3], 'STRAIGHT');
-  // Original pieces at 0 and 2 (formerly 1) are still non-empty.
-  assert.equal(t.isEmptyAt(0), false);
-  assert.equal(t.isEmptyAt(2), false);
 });
 
 test('insertPieceAfter allows chaining multiple inserts', () => {
@@ -418,13 +327,6 @@ test('insertPieceAfter allows chaining multiple inserts', () => {
   t.insertPieceAfter(1, 'CURVE_R');
   t.insertPieceAfter(2, 'LOOP');
   assert.deepEqual(t.pieces, ['STRAIGHT', 'CURVE_L', 'CURVE_R', 'LOOP', 'FINISH']);
-  // All inserted pieces are unjoined.
-  assert.equal(t.isEmptyAt(1), true);
-  assert.equal(t.isEmptyAt(2), true);
-  assert.equal(t.isEmptyAt(3), true);
-  // After rejoin, all are cleared.
-  t.rejoin();
-  assert.equal(t.hasGaps(), false);
 });
 
 test('insertPieceAfter returns false for out-of-bounds index', () => {
@@ -432,4 +334,23 @@ test('insertPieceAfter returns false for out-of-bounds index', () => {
   t.addPiece('STRAIGHT');
   assert.equal(t.insertPieceAfter(5, 'LOOP'), false);
   assert.equal(t.insertPieceAfter(-2, 'LOOP'), false);
+});
+
+// ---- toJSON / fromJSON with the new model ----
+
+test('toJSON does not include empties or gapOriginals', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('LOOP'); t.addPiece('FINISH');
+  const json = t.toJSON();
+  assert.equal('empties' in json, false);
+  assert.equal('gapOriginals' in json, false);
+  assert.equal('inserted' in json, false);
+});
+
+test('fromJSON tolerates legacy data with empties field', () => {
+  const t = new Track();
+  t.fromJSON({ dropHeight: 3, pieces: ['STRAIGHT', 'LOOP'], empties: [false, true] });
+  // Legacy empties are ignored - all pieces are real
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP']);
+  assert.equal(t.isEditing(), false);
 });

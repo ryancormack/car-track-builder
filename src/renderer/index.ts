@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
-import { buildPieceMesh, buildGhostPiece, buildStartTower, buildGapPiece } from './meshes.js';
+import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
@@ -100,15 +100,7 @@ export class Renderer implements CameraControlHost {
       const p = PIECES[id];
       const entry = track.entryStateAt(i);
       const resolvedPath = resolvePathLocal(track.pieces, i);
-      // One group per slot so picking indices line up with track.pieces. Only
-      // truly unfilled gaps render as faint placeholders; filled gaps and
-      // inserted pieces render as normal solid track.
-      let mesh: THREE.Group;
-      if (track.isUnfilledGap(i)) {
-        mesh = buildGapPiece(resolvedPath, entry);
-      } else {
-        mesh = buildPieceMesh(p, entry, resolvedPath);
-      }
+      const mesh = buildPieceMesh(p, entry, resolvedPath);
       this.trackGroup.add(mesh);
     }
     this._recenterCamera(track);
