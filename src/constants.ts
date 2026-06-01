@@ -21,6 +21,10 @@ export const SPIRAL_RADIUS = 0.6;
 // Radius of the circular helix (parking-garage style) in local grid units.
 export const HELIX_RADIUS = 1.0;
 
+// Radius of the tall multi-coil spiral tower (grid units). The tower spreads its
+// turns over 4 forward cells so consecutive coils have room to separate.
+export const SPIRAL_TOWER_RADIUS = 0.85;
+
 // Scale factor applied to simulation time in the run loop (main.ts).
 // A value < 1 makes the car traverse the track more slowly, giving a more
 // dramatic and watchable run without altering the underlying physics.

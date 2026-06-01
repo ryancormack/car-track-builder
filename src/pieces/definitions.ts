@@ -9,7 +9,7 @@ import {
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
   pathSpiral, pathSteepHill,
-  pathHelixUp, pathHelixDown,
+  pathHelixUp, pathHelixDown, pathSpiralTower,
 } from './paths.js';
 import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS } from '../constants.js';
 import type { Piece, PieceId } from '../types.js';
@@ -51,6 +51,10 @@ const HELIX_UP_MIN_V2 =
   2 * G * HELIX_UP_RISE +
   2 * FRICTION * RAMP_FRICTION_MULT * HELIX_UP_LEN +
   6;
+
+// Arc length of the Spiral Tower (2 turns, r=0.85, over 4 cells), measured
+// numerically. It descends, so no climb gate is needed (gravity assists).
+const SPIRAL_TOWER_LEN = 12.18;
 
 export const PIECES: Record<PieceId, Piece> = {
   START: {
@@ -130,6 +134,13 @@ export const PIECES: Record<PieceId, Piece> = {
     color: '#3da9fc',
     pathLocal: pathSpiral,
   },
+  SPIRAL_TOWER: {
+    id: 'SPIRAL_TOWER', name: 'Spiral Tower', icon: '🌀', category: 'stunt', featured: true,
+    forward: 4, turn: 0, dz: -4,
+    pathLen: SPIRAL_TOWER_LEN, excitement: 40, minV2: 12, boostEnergy: 0,
+    color: '#3da9fc',
+    pathLocal: pathSpiralTower,
+  },
   STEEP_HILL: {
     id: 'STEEP_HILL', name: 'Steep Hill', icon: '⛰', category: 'stunt', featured: true,
     forward: 2, turn: 0, dz: 0,
@@ -164,7 +175,7 @@ export const PALETTE_ORDER: PieceId[] = [
   'STRAIGHT', 'CURVE_L', 'CURVE_R',
   'RAMP_UP', 'RAMP_DN',
   'LOOP', 'CORKSCREW', 'JUMP',
-  'SPIRAL', 'HELIX_UP', 'HELIX_DN', 'STEEP_HILL',
+  'SPIRAL', 'SPIRAL_TOWER', 'HELIX_UP', 'HELIX_DN', 'STEEP_HILL',
   'BOOSTER', 'FINISH',
 ];
 

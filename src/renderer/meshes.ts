@@ -365,6 +365,13 @@ export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): TH
       segments: 128,
     });
   }
+  if (piece.id === 'SPIRAL_TOWER') {
+    return buildRailedTrack(path, entry, COLORS.trackBlue, {
+      emissive: COLORS.trackBlue,
+      emissiveIntensity: 0.12,
+      segments: 256,
+    });
+  }
   if (piece.id === 'LOOP' || piece.id === 'CORKSCREW') {
     return buildRailedTrack(path, entry, COLORS.trackBlue, {
       emissive: COLORS.trackBlue,
