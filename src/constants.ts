@@ -13,8 +13,10 @@ export const DRAG = 0.0008;              // tiny v²-proportional drag, keeps th
 // (pieces/paths.ts): the loop apex sits at 2·R = 1.0.
 export const LOOP_RADIUS = 0.5;
 
-// Radius of the spiral helix in the horizontal plane (grid units).
-export const SPIRAL_RADIUS = 0.35;
+// Radius of the spiral coil (grid units). Sized proportionally to the helix
+// (~0.3 of the piece's forward span) so the single descending loop reads as a
+// full, open coil rather than a thin, cramped twist.
+export const SPIRAL_RADIUS = 0.6;
 
 // Radius of the circular helix (parking-garage style) in local grid units.
 export const HELIX_RADIUS = 1.0;

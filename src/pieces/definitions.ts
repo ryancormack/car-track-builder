@@ -126,7 +126,7 @@ export const PIECES: Record<PieceId, Piece> = {
   SPIRAL: {
     id: 'SPIRAL', name: 'Spiral', icon: '🔽', category: 'stunt', featured: true,
     forward: 2, turn: 0, dz: -2,
-    pathLen: 5.26, excitement: 25, minV2: 12, boostEnergy: 0,
+    pathLen: 4.72, excitement: 25, minV2: 12, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathSpiral,
   },
