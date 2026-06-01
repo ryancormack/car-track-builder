@@ -160,8 +160,10 @@ body {
   flex-direction: column;
   gap: var(--gap);
 }
-/* Start + Track control panels stay pinned; only the pieces palette scrolls. */
-.sidebar > .panel { flex: 0 0 auto; }
+/* Start + Track control panels stay pinned; only the pieces palette scrolls.
+   Exclude the pieces panel here so this rule doesn't out-specify the
+   .panel-pieces flex:1 rule below (both are single-class otherwise). */
+.sidebar > .panel:not(.panel-pieces) { flex: 0 0 auto; }
 
 /* The Track Pieces panel takes the remaining height; its palette scrolls. */
 .panel-pieces {
