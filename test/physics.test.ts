@@ -110,3 +110,34 @@ test('reset() restores the simulator to its initial state', () => {
   assert.equal(sim.elapsed, 0);
   assert.ok(Math.abs(sim.v2 - 2 * G * sim.track.dropHeight) < 1e-9);
 });
+
+// ---------- Failure type tests ----------
+
+test('CURVE_R triggers overspeed_corner when v2 > 120', () => {
+  // Booster gives +90 v2, plus drop height gives well above 120
+  const sim = new Simulator(trackOf(['BOOSTER', 'CURVE_R', 'FINISH'], 5));
+  runToCompletion(sim);
+  assert.equal(sim.failed, true);
+  assert.equal(sim.failType, 'overspeed_corner');
+  assert.ok(sim.failReason?.includes('fast'));
+});
+
+test('CURVE_R does not trigger overspeed at normal speeds', () => {
+  const sim = new Simulator(trackOf(['CURVE_R', 'STRAIGHT', 'FINISH'], 3));
+  runToCompletion(sim);
+  assert.equal(sim.failType, null);
+  assert.equal(sim.finished, true);
+});
+
+test('failType is speed_gate for minV2 failures', () => {
+  const sim = new Simulator(trackOf(['LOOP', 'FINISH'], 0));
+  sim.step(1 / 240);
+  assert.equal(sim.failType, 'speed_gate');
+});
+
+test('failPieceIndex is set correctly on failure', () => {
+  const sim = new Simulator(trackOf(['STRAIGHT', 'LOOP', 'FINISH'], 1));
+  runToCompletion(sim);
+  assert.equal(sim.failed, true);
+  assert.equal(sim.failPieceIndex, 1);
+});

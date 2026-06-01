@@ -12,6 +12,7 @@ import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
 import type { PieceId } from '../types.js';
 import type { TrackFrame } from '../pieces/frames.js';
+import type { FailType } from '../physics.js';
 
 export class Renderer implements CameraControlHost {
   canvas: HTMLCanvasElement;
@@ -37,6 +38,16 @@ export class Renderer implements CameraControlHost {
   private _launchAnim: {
     startTime: number;
     duration: number;
+  } | null = null;
+
+  private _wipeout: {
+    type: FailType;
+    elapsed: number;
+    duration: number;
+    startPos: THREE.Vector3;
+    startQuat: THREE.Quaternion;
+    velocity: THREE.Vector3;
+    particles: THREE.Mesh[];
   } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -186,6 +197,151 @@ export class Renderer implements CameraControlHost {
     this._launchAnim = null;
     const plunger = this.startGroup.getObjectByName('plunger');
     if (plunger) plunger.scale.y = 1;
+  }
+
+  startWipeoutAnimation(failType: FailType, frame: TrackFrame | null): void {
+    this.cleanupWipeout();
+    const startPos = this.car.position.clone();
+    const startQuat = this.car.quaternion.clone();
+    let duration: number;
+    let velocity: THREE.Vector3;
+
+    switch (failType) {
+      case 'rollback':
+        duration = 2.0;
+        if (frame) {
+          velocity = new THREE.Vector3(frame.tangent.x, frame.tangent.y, frame.tangent.z).multiplyScalar(-1.5);
+        } else {
+          velocity = new THREE.Vector3(0, 0, -1.5);
+        }
+        break;
+      case 'overspeed_corner':
+        duration = 1.5;
+        if (frame) {
+          velocity = new THREE.Vector3(frame.side.x, frame.side.y, frame.side.z).multiplyScalar(3);
+          velocity.y += 1.5;
+        } else {
+          velocity = new THREE.Vector3(3, 1.5, 0);
+        }
+        break;
+      case 'fly_off':
+        duration = 2.0;
+        if (frame) {
+          velocity = new THREE.Vector3(frame.tangent.x, frame.tangent.y, frame.tangent.z).multiplyScalar(2);
+          velocity.y += 4;
+        } else {
+          velocity = new THREE.Vector3(0, 4, 2);
+        }
+        break;
+      default: // stall, speed_gate
+        duration = 1.0;
+        velocity = new THREE.Vector3(0, 0.5, 0);
+        break;
+    }
+
+    const particles: THREE.Mesh[] = [];
+    if (failType === 'overspeed_corner') {
+      const geom = new THREE.SphereGeometry(0.05, 6, 6);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xff8800,
+        emissive: 0xff6600,
+        emissiveIntensity: 0.8,
+      });
+      for (let i = 0; i < 10; i++) {
+        const p = new THREE.Mesh(geom, mat.clone());
+        p.position.copy(startPos);
+        this.scene.add(p);
+        particles.push(p);
+      }
+    }
+
+    this._wipeout = {
+      type: failType,
+      elapsed: 0,
+      duration,
+      startPos,
+      startQuat,
+      velocity,
+      particles,
+    };
+  }
+
+  updateWipeoutAnimation(dt: number): boolean {
+    if (!this._wipeout) return false;
+    const w = this._wipeout;
+    w.elapsed += dt;
+
+    if (w.elapsed >= w.duration) {
+      this._removeParticles(w.particles);
+      this._wipeout = null;
+      return false;
+    }
+
+    const progress = w.elapsed / w.duration;
+
+    switch (w.type) {
+      case 'rollback': {
+        // Slide backward and slow down, no gravity
+        const slowdown = 1 - progress;
+        const offset = w.velocity.clone().multiplyScalar(w.elapsed * slowdown);
+        this.car.position.copy(w.startPos).add(offset);
+        break;
+      }
+      case 'overspeed_corner': {
+        // Apply gravity to velocity
+        w.velocity.y -= 9.8 * dt;
+        this.car.position.add(w.velocity.clone().multiplyScalar(dt));
+        // Spin car
+        this.car.rotateY(dt * 8);
+        // Move particles outward and fade them
+        for (let i = 0; i < w.particles.length; i++) {
+          const p = w.particles[i];
+          const angle = (i / w.particles.length) * Math.PI * 2;
+          const spread = progress * 2;
+          p.position.set(
+            w.startPos.x + Math.cos(angle) * spread,
+            w.startPos.y + (1 - progress) * 0.5,
+            w.startPos.z + Math.sin(angle) * spread,
+          );
+          const scale = 1 - progress;
+          p.scale.setScalar(Math.max(scale, 0.01));
+        }
+        break;
+      }
+      case 'fly_off': {
+        // Ballistic arc with gravity
+        w.velocity.y -= 9.8 * dt;
+        this.car.position.add(w.velocity.clone().multiplyScalar(dt));
+        // Slight spin
+        this.car.rotateZ(dt * 2);
+        break;
+      }
+      default: {
+        // stall / speed_gate: small bounce up then settle
+        const bounceHeight = Math.sin(progress * Math.PI) * 0.3;
+        this.car.position.copy(w.startPos);
+        this.car.position.y += bounceHeight;
+        break;
+      }
+    }
+
+    return true;
+  }
+
+  cleanupWipeout(): void {
+    if (this._wipeout) {
+      this._removeParticles(this._wipeout.particles);
+      this._wipeout = null;
+    }
+  }
+
+  private _removeParticles(particles: THREE.Mesh[]): void {
+    for (const p of particles) {
+      this.scene.remove(p);
+      p.geometry.dispose();
+      (p.material as THREE.Material).dispose();
+    }
+    particles.length = 0;
   }
 
   updateAnimations(_dt: number): void {
