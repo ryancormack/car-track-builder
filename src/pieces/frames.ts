@@ -48,44 +48,21 @@ function tangentAt(path: PathFn, entry: GridState, t: number): Vec3 {
   return lenSq(d) > 1e-12 ? normalize(d) : { x: 1, y: 0, z: 0 };
 }
 
-function buildFrame(path: PathFn, entry: GridState, t: number, prevSide: Vec3 | null, prevBanking: number): TrackFrame {
+function buildFrame(path: PathFn, entry: GridState, t: number, prevSide: Vec3 | null): TrackFrame {
   const h = piecePathAtT(path, entry, t);
   const pos: Vec3 = { x: h.wx, y: h.wy, z: h.wz };
   const tangent = tangentAt(path, entry, t);
 
-  // Compute the side vector by rotating the natural (unbanked) reference frame
-  // around the tangent axis by the banking angle. The natural frame uses
-  // world-up projected perpendicular to the tangent (Gram-Schmidt). This avoids
-  // the degeneracy of cross(tangent, normal) when the tangent aligns with the
-  // banking-derived normal, which occurs in multi-rotation helical paths like
-  // the spiral where the tangent has significant yz components.
-  const worldUp: Vec3 = { x: 0, y: 0, z: 1 };
-  let naturalUp = sub(worldUp, scale(tangent, dot(worldUp, tangent)));
-  const nuMagSq = lenSq(naturalUp);
-
-  if (nuMagSq < 1e-8) {
-    // Tangent is vertical (loop apex). Use previous side to derive the up.
-    naturalUp = prevSide ? normalize(cross(tangent, prevSide)) : { x: 0, y: 1, z: 0 };
-  } else {
-    naturalUp = normalize(naturalUp);
-  }
-
-  const naturalSide = normalize(cross(tangent, naturalUp));
-
-  // Rotate the natural side by the banking angle around the tangent.
-  const cb = Math.cos(h.banking);
-  const sb = Math.sin(h.banking);
-  let side: Vec3 = normalize({
-    x: naturalSide.x * cb + naturalUp.x * sb,
-    y: naturalSide.y * cb + naturalUp.y * sb,
-    z: naturalSide.z * cb + naturalUp.z * sb,
-  });
-
-  // Only apply sign-continuity for pieces without banking (like the loop).
-  // For pieces with progressive banking (corkscrew, spiral, helix), the
-  // Rodrigues rotation is authoritative and sign-flipping would fight it.
-  const bankingActive = Math.abs(h.banking) > 0.01 || Math.abs(prevBanking) > 0.01;
-  if (prevSide && !bankingActive && dot(side, prevSide) < 0) side = scale(side, -1);
+  // Surface normal rolled by the banking angle about the forward axis: banking 0
+  // -> straight up; a corkscrew's banking sweeps it a full turn. side = tangent x
+  // normal is the lateral (rail) axis, always perpendicular to the tangent.
+  const normal: Vec3 = { x: 0, y: -Math.sin(h.banking), z: Math.cos(h.banking) };
+  let side = cross(tangent, normal);
+  if (lenSq(side) < 1e-8) side = prevSide ? { ...prevSide } : { x: 0, y: 1, z: 0 };
+  side = normalize(side);
+  // Keep the lateral axis sign-continuous. Without this, a loop's side flips
+  // where the tangent passes vertical and the derived "up" would not invert.
+  if (prevSide && dot(side, prevSide) < 0) side = scale(side, -1);
 
   const up = normalize(cross(side, tangent));
   return { pos, tangent, up, side, banking: h.banking };
@@ -101,13 +78,11 @@ export function trackFrames(
 ): TrackFrame[] {
   const frames: TrackFrame[] = [];
   let prevSide: Vec3 | null = null;
-  let prevBanking = 0;
   for (let i = 0; i <= segments; i++) {
     const t = tStart + (tEnd - tStart) * (i / segments);
-    const f = buildFrame(path, entry, t, prevSide, prevBanking);
+    const f = buildFrame(path, entry, t, prevSide);
     frames.push(f);
     prevSide = f.side;
-    prevBanking = f.banking;
   }
   return frames;
 }
