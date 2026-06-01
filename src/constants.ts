@@ -12,3 +12,11 @@ export const DRAG = 0.0008;              // tiny v²-proportional drag, keeps th
 // Radius of the vertical loop, in grid units. Must match `R` in pathLoop()
 // (pieces/paths.ts): the loop apex sits at 2·R = 1.0.
 export const LOOP_RADIUS = 0.5;
+
+// Radius of the spiral helix in the horizontal plane (grid units).
+export const SPIRAL_RADIUS = 0.35;
+
+// Scale factor applied to simulation time in the run loop (main.ts).
+// A value < 1 makes the car traverse the track more slowly, giving a more
+// dramatic and watchable run without altering the underlying physics.
+export const SPEED_SCALE = 0.55;

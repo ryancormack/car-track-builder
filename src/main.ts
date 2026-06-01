@@ -6,6 +6,7 @@ import { Renderer } from './renderer/index.js';
 import { Editor } from './editor.js';
 import { Simulator } from './physics.js';
 import { computeScore } from './scoring.js';
+import { SPEED_SCALE } from './constants.js';
 import { Hud } from './app/hud.js';
 import { ResultOverlay } from './app/overlay.js';
 import { saveTrackJSON, loadTrackJSON } from './app/storage.js';
@@ -123,6 +124,7 @@ function updateInsertModeUI(): void {
 let mode: Mode = 'build';
 let sim: Simulator | null = null;
 let runResult: RunResult | null = null;
+let wipeoutPlaying = false;
 let lastFrameTime = performance.now();
 let mouseDownPos: { x: number; y: number } | null = null;
 
@@ -252,6 +254,7 @@ function switchMode(next: Mode): void {
     els.drop.disabled = true; // drop height is a build-time setting
     sim = new Simulator(track);
     runResult = null;
+    wipeoutPlaying = false;
     renderer.setCar(true, sim.carSample());
     renderer.animateLauncher();
   } else {
@@ -263,6 +266,8 @@ function switchMode(next: Mode): void {
     els.drop.disabled = false;
     renderer.setCar(false);
     renderer.stopLauncher();
+    renderer.cleanupWipeout();
+    wipeoutPlaying = false;
     sim = null;
   }
   refreshHud();
@@ -293,19 +298,38 @@ function frame(now: number): void {
   if (mode === 'play' && sim) {
     if (sim.isRunning()) {
       const subSteps = 4;
-      const sdt = dt / subSteps;
+      const sdt = (dt * SPEED_SCALE) / subSteps;
       for (let i = 0; i < subSteps && sim.isRunning(); i++) sim.step(sdt);
       const sample = sim.carSample();
       if (sample) renderer.setCar(true, sample);
       els.hudSpeed.textContent = sim.speed.toFixed(1);
+    } else if (wipeoutPlaying) {
+      const still = renderer.updateWipeoutAnimation(dt * SPEED_SCALE);
+      if (!still) {
+        wipeoutPlaying = false;
+        if (!runResult) {
+          const s = sim;
+          const result: RunResult = { score: computeScore(track, s), sim: s };
+          runResult = result;
+          els.hudScore.textContent = String(result.score.total);
+          setTimeout(() => {
+            if (mode === 'play') overlay.show(track, result.score, s);
+          }, 200);
+        }
+      }
     } else if (!runResult) {
       const s = sim;
-      const result: RunResult = { score: computeScore(track, s), sim: s };
-      runResult = result;
-      els.hudScore.textContent = String(result.score.total);
-      setTimeout(() => {
-        if (mode === 'play') overlay.show(track, result.score, s);
-      }, 700);
+      if (s.failed) {
+        renderer.startWipeoutAnimation(s.failType, s.carSample());
+        wipeoutPlaying = true;
+      } else {
+        const result: RunResult = { score: computeScore(track, s), sim: s };
+        runResult = result;
+        els.hudScore.textContent = String(result.score.total);
+        setTimeout(() => {
+          if (mode === 'play') overlay.show(track, result.score, s);
+        }, 700);
+      }
     }
   }
 

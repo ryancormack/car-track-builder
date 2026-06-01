@@ -8,6 +8,7 @@ import {
   pathStraight, pathCurveR, pathCurveL,
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
+  pathSpiral, pathSteepHill,
 } from './paths.js';
 import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS } from '../constants.js';
 import type { Piece, PieceId } from '../types.js';
@@ -31,6 +32,15 @@ const RAMP_UP_MIN_V2 =
   2 * G * RAMP_UP_RISE +
   2 * FRICTION * RAMP_FRICTION_MULT * RAMP_UP_LEN +
   RAMP_UP_CREST_BUFFER;
+
+// Entry-speed gate for Steep Hill, derived the same way as Ramp Up. The car
+// must crest a 1.5-unit peak with friction along half the path length (~1.87).
+const STEEP_HILL_RISE = 1.5;
+const STEEP_HILL_LEN = 3.73;
+const STEEP_HILL_MIN_V2 =
+  2 * G * STEEP_HILL_RISE +
+  2 * FRICTION * RAMP_FRICTION_MULT * STEEP_HILL_LEN / 2 +
+  5;
 
 export const PIECES: Record<PieceId, Piece> = {
   START: {
@@ -103,6 +113,20 @@ export const PIECES: Record<PieceId, Piece> = {
     color: '#ff9d3d',
     pathLocal: pathJump,
   },
+  SPIRAL: {
+    id: 'SPIRAL', name: 'Spiral', icon: '🔽', category: 'stunt', featured: true,
+    forward: 2, turn: 0, dz: -2,
+    pathLen: 4.22, excitement: 25, minV2: 12, boostEnergy: 0,
+    color: '#3da9fc',
+    pathLocal: pathSpiral,
+  },
+  STEEP_HILL: {
+    id: 'STEEP_HILL', name: 'Steep Hill', icon: '⛰', category: 'stunt', featured: true,
+    forward: 2, turn: 0, dz: 0,
+    pathLen: STEEP_HILL_LEN, excitement: 15, minV2: STEEP_HILL_MIN_V2, boostEnergy: 0,
+    color: '#ff9d3d',
+    pathLocal: pathSteepHill,
+  },
   FINISH: {
     id: 'FINISH', name: 'Finish', icon: '🏁', category: 'meta',
     forward: 1, turn: 0, dz: 0,
@@ -116,6 +140,7 @@ export const PALETTE_ORDER: PieceId[] = [
   'STRAIGHT', 'CURVE_L', 'CURVE_R',
   'RAMP_UP', 'RAMP_DN',
   'LOOP', 'CORKSCREW', 'JUMP',
+  'SPIRAL', 'STEEP_HILL',
   'BOOSTER', 'FINISH',
 ];
 

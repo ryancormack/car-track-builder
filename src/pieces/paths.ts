@@ -3,6 +3,7 @@
 // Pure functions of t — easy to unit-test for continuity and end-points.
 
 import type { PathFn } from '../types.js';
+import { SPIRAL_RADIUS } from '../constants.js';
 
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
@@ -103,4 +104,32 @@ export const pathJump: PathFn = (t) => {
   const lx = 2 * t;
   const lz = 1.15 * Math.sin(Math.PI * t);
   return { lx, ly: 0, lz, banking: 0 };
+};
+
+export const pathSpiral: PathFn = (t) => {
+  // Helical descent: 2 full turns (720 degrees), dropping 2 units of elevation.
+  // Approach (0..0.05): straight entry at top elevation
+  // Helix (0.05..0.95): 2 full turns descending
+  // Depart (0.95..1.0): straight exit at bottom elevation
+  const R = SPIRAL_RADIUS;
+  if (t <= 0.05) {
+    return { lx: (t / 0.05) * 0.1, ly: 0, lz: 0, banking: 0 };
+  }
+  if (t >= 0.95) {
+    const u = (t - 0.95) / 0.05;
+    return { lx: 1.9 + u * 0.1, ly: 0, lz: -2, banking: 4 * Math.PI };
+  }
+  const u = (t - 0.05) / 0.9; // 0..1 over the helix portion
+  const theta = 4 * Math.PI * easedProgress(u); // 2 full turns = 4*PI, eased for tangent continuity
+  return {
+    lx: 0.1 + u * 1.8,
+    ly: R * Math.sin(theta),
+    lz: -2 * u,
+    banking: theta,
+  };
+};
+
+export const pathSteepHill: PathFn = (t) => {
+  // Steep symmetric hill: rises to 1.5 units at midpoint, returns to 0.
+  return { lx: 2 * t, ly: 0, lz: 1.5 * Math.sin(Math.PI * t), banking: 0 };
 };
