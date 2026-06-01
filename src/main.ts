@@ -6,6 +6,7 @@ import { Renderer } from './renderer/index.js';
 import { Editor } from './editor.js';
 import { Simulator } from './physics.js';
 import { computeScore } from './scoring.js';
+import { SPEED_SCALE } from './constants.js';
 import { Hud } from './app/hud.js';
 import { ResultOverlay } from './app/overlay.js';
 import { saveTrackJSON, loadTrackJSON } from './app/storage.js';
@@ -293,7 +294,7 @@ function frame(now: number): void {
   if (mode === 'play' && sim) {
     if (sim.isRunning()) {
       const subSteps = 4;
-      const sdt = dt / subSteps;
+      const sdt = (dt * SPEED_SCALE) / subSteps;
       for (let i = 0; i < subSteps && sim.isRunning(); i++) sim.step(sdt);
       const sample = sim.carSample();
       if (sample) renderer.setCar(true, sample);
