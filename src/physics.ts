@@ -104,7 +104,7 @@ export class Simulator {
 
     // Substep so very fast cars don't tunnel through pieces.
     const v = Math.sqrt(Math.max(this.v2, 0));
-    if ((pieceId === 'RAMP_UP' || pieceId === 'STEEP_HILL') && this.v2 < 2.0 && this.v2 > 0.01 && this.t > 0.3) {
+    if ((pieceId === 'RAMP_UP' || pieceId === 'STEEP_HILL' || pieceId === 'HELIX_UP') && this.v2 < 2.0 && this.v2 > 0.01 && this.t > 0.3) {
       this.failed = true;
       this.failReason = 'Not enough speed! The car rolls back down the hill...';
       this.failType = 'rollback';
@@ -132,7 +132,7 @@ export class Simulator {
     const p2 = resolvedPath(t_new);
     const dh = p2.lz - p1.lz; // local altitude change (grid units)
 
-    const frictionMult = piece.id === 'RAMP_UP' || piece.id === 'RAMP_DN' || piece.id === 'STEEP_HILL' ? RAMP_FRICTION_MULT : 1.0;
+    const frictionMult = piece.id === 'RAMP_UP' || piece.id === 'RAMP_DN' || piece.id === 'STEEP_HILL' || piece.id === 'HELIX_UP' || piece.id === 'HELIX_DN' ? RAMP_FRICTION_MULT : 1.0;
     this.v2 += -2 * G * dh - 2 * FRICTION * frictionMult * ds_actual - 2 * DRAG * this.v2 * ds_actual;
 
     if (this.v2 < 0) this.v2 = 0;

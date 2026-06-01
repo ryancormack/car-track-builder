@@ -3,7 +3,7 @@
 // Pure functions of t — easy to unit-test for continuity and end-points.
 
 import type { PathFn } from '../types.js';
-import { SPIRAL_RADIUS } from '../constants.js';
+import { SPIRAL_RADIUS, HELIX_RADIUS } from '../constants.js';
 
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
@@ -132,4 +132,30 @@ export const pathSpiral: PathFn = (t) => {
 export const pathSteepHill: PathFn = (t) => {
   // Steep symmetric hill: rises to 1.5 units at midpoint, returns to 0.
   return { lx: 2 * t, ly: 0, lz: 1.5 * Math.sin(Math.PI * t), banking: 0 };
+};
+
+export const pathHelixDown: PathFn = (t) => {
+  // Circular helix descent: one full revolution (2*PI), forward 3 cells, descending 3 units.
+  // Like a parking garage spiral ramp going down.
+  const R = HELIX_RADIUS;
+  const theta = 2 * Math.PI * easedProgress(t);
+  return {
+    lx: 3 * t,
+    ly: R * Math.sin(theta),
+    lz: -3 * t,
+    banking: theta,
+  };
+};
+
+export const pathHelixUp: PathFn = (t) => {
+  // Circular helix ascent: one full revolution (2*PI), forward 3 cells, ascending 3 units.
+  // Like a parking garage spiral ramp going up.
+  const R = HELIX_RADIUS;
+  const theta = 2 * Math.PI * easedProgress(t);
+  return {
+    lx: 3 * t,
+    ly: R * Math.sin(theta),
+    lz: 3 * t,
+    banking: theta,
+  };
 };
