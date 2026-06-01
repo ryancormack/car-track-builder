@@ -161,19 +161,21 @@ export class Editor {
 
   /**
    * Delete the selected piece. The piece is removed from the track entirely.
-   * Downstream keeps its frozen visual positions until Rejoin.
+   * We then drop into insert mode at the gap so the user can build new track in
+   * its place; the downstream stays frozen until Rejoin.
    */
   deleteSelected(): void {
     if (this.selectedIndex === null) return;
     const index = this.selectedIndex;
     const removed = this.track.deleteAt(index);
+    if (!removed) { this.deselectPiece(); return; }
+    // Enter insert mode positioned at the gap (next palette click inserts here).
+    this.selectedIndex = null;
+    this.renderer.highlightPiece(null);
+    this.insertCursor = index - 1;
     this.renderer.rebuildTrack(this.track);
     this.renderer.clearGhost();
-    if (removed) {
-      const name = PIECES[removed].name;
-      this._setStatus(`Removed ${name}.`, 'ok');
-    }
-    this.deselectPiece();
+    this._setStatus(`Removed ${PIECES[removed].name} — build into the gap or Rejoin.`, 'ok');
     this._refreshButtons();
     this.onChange();
   }
