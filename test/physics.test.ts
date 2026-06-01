@@ -141,3 +141,33 @@ test('failPieceIndex is set correctly on failure', () => {
   assert.equal(sim.failed, true);
   assert.equal(sim.failPieceIndex, 1);
 });
+
+// --- SPIRAL physics tests ---
+
+test('SPIRAL succeeds from sufficient drop height', () => {
+  const sim = new Simulator(trackOf(['SPIRAL', 'FINISH'], 4));
+  runToCompletion(sim);
+  assert.equal(sim.failed, false);
+  assert.equal(sim.finished, true);
+});
+
+test('SPIRAL fails with insufficient speed', () => {
+  const sim = new Simulator(trackOf(['SPIRAL', 'FINISH'], 0));
+  runToCompletion(sim);
+  assert.equal(sim.failed, true);
+});
+
+// --- STEEP_HILL physics tests ---
+
+test('STEEP_HILL succeeds from sufficient drop height', () => {
+  const sim = new Simulator(trackOf(['STEEP_HILL', 'FINISH'], 5));
+  runToCompletion(sim);
+  assert.equal(sim.failed, false);
+  assert.equal(sim.finished, true);
+});
+
+test('STEEP_HILL fails with insufficient speed', () => {
+  const sim = new Simulator(trackOf(['STEEP_HILL', 'FINISH'], 0));
+  runToCompletion(sim);
+  assert.equal(sim.failed, true);
+});

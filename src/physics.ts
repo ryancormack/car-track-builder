@@ -132,7 +132,7 @@ export class Simulator {
     const p2 = resolvedPath(t_new);
     const dh = p2.lz - p1.lz; // local altitude change (grid units)
 
-    const frictionMult = piece.id === 'RAMP_UP' || piece.id === 'RAMP_DN' ? RAMP_FRICTION_MULT : 1.0;
+    const frictionMult = piece.id === 'RAMP_UP' || piece.id === 'RAMP_DN' || piece.id === 'STEEP_HILL' ? RAMP_FRICTION_MULT : 1.0;
     this.v2 += -2 * G * dh - 2 * FRICTION * frictionMult * ds_actual - 2 * DRAG * this.v2 * ds_actual;
 
     if (this.v2 < 0) this.v2 = 0;

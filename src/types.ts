@@ -55,6 +55,8 @@ export type PieceId =
   | 'CORKSCREW'
   | 'BOOSTER'
   | 'JUMP'
+  | 'SPIRAL'
+  | 'STEEP_HILL'
   | 'FINISH';
 
 export type PieceCategory =

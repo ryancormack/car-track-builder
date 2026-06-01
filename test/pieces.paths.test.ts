@@ -7,6 +7,7 @@ import {
   pathStraight, pathCurveR, pathCurveL,
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
+  pathSpiral, pathSteepHill,
   easedProgress,
   makeRampUpPath,
 } from '../src/pieces/paths.js';
@@ -14,7 +15,7 @@ import { resolvePathLocal } from '../src/pieces/resolve.js';
 import type { PieceId } from '../src/types.js';
 
 const samplers = [pathStraight, pathCurveR, pathCurveL, pathRampUp, pathRampDown,
-                  pathLoop, pathCorkscrew, pathJump];
+                  pathLoop, pathCorkscrew, pathJump, pathSpiral, pathSteepHill];
 
 test('every path sampler returns finite numeric coordinates across [0,1]', () => {
   for (const fn of samplers) {
@@ -217,4 +218,74 @@ test('resolvePathLocal: non-ramp pieces return default pathLocal', () => {
   const pieces: PieceId[] = ['STRAIGHT', 'CURVE_L', 'STRAIGHT'];
   const resolved = resolvePathLocal(pieces, 0);
   assert.deepEqual(resolved(0.5), pathStraight(0.5));
+});
+
+// --- Spiral path tests ---
+
+test('pathSpiral starts at (0,0,0) and ends at (2,~0,-2)', () => {
+  const start = pathSpiral(0);
+  const end = pathSpiral(1);
+  assert.ok(Math.abs(start.lx) < 1e-9);
+  assert.ok(Math.abs(start.ly) < 1e-9);
+  assert.ok(Math.abs(start.lz) < 1e-9);
+  assert.ok(Math.abs(start.banking) < 1e-9);
+  assert.ok(Math.abs(end.lx - 2) < 1e-6);
+  assert.ok(Math.abs(end.ly) < 0.01);
+  assert.ok(Math.abs(end.lz + 2) < 1e-6);
+});
+
+test('pathSpiral lx is monotonically increasing', () => {
+  let prev = -Infinity;
+  for (let t = 0; t <= 1; t += 0.01) {
+    const p = pathSpiral(t);
+    assert.ok(p.lx >= prev - 1e-9, `spiral lx not monotonic at t=${t}`);
+    prev = p.lx;
+  }
+});
+
+test('pathSpiral is continuous at segment seams', () => {
+  const eps = 1e-5;
+  // Check seam at t=0.05
+  const before05 = pathSpiral(0.05 - eps);
+  const after05 = pathSpiral(0.05 + eps);
+  assert.ok(Math.abs(before05.lx - after05.lx) < 0.01);
+  assert.ok(Math.abs(before05.ly - after05.ly) < 0.01);
+  assert.ok(Math.abs(before05.lz - after05.lz) < 0.01);
+  // Check seam at t=0.95
+  const before95 = pathSpiral(0.95 - eps);
+  const after95 = pathSpiral(0.95 + eps);
+  assert.ok(Math.abs(before95.lx - after95.lx) < 0.01);
+  assert.ok(Math.abs(before95.ly - after95.ly) < 0.01);
+  assert.ok(Math.abs(before95.lz - after95.lz) < 0.01);
+});
+
+// --- Steep Hill path tests ---
+
+test('pathSteepHill starts and ends at ground level with peak at 1.5', () => {
+  const start = pathSteepHill(0);
+  const end = pathSteepHill(1);
+  const mid = pathSteepHill(0.5);
+  assert.ok(Math.abs(start.lx) < 1e-9);
+  assert.ok(Math.abs(start.lz) < 1e-9);
+  assert.ok(Math.abs(end.lx - 2) < 1e-9);
+  assert.ok(Math.abs(end.lz) < 1e-9);
+  assert.ok(Math.abs(mid.lz - 1.5) < 1e-9);
+  assert.ok(Math.abs(mid.lx - 1) < 1e-9);
+});
+
+test('pathSteepHill lx is monotonically increasing from 0 to 2', () => {
+  let prev = -Infinity;
+  for (let t = 0; t <= 1; t += 0.01) {
+    const p = pathSteepHill(t);
+    assert.ok(p.lx >= prev - 1e-9, `steep hill lx not monotonic at t=${t}`);
+    prev = p.lx;
+  }
+});
+
+test('pathSteepHill is symmetric', () => {
+  for (let t = 0; t <= 0.5; t += 0.05) {
+    const a = pathSteepHill(t);
+    const b = pathSteepHill(1 - t);
+    assert.ok(Math.abs(a.lz - b.lz) < 1e-9, `not symmetric at t=${t}`);
+  }
 });
