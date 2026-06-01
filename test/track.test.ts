@@ -310,6 +310,21 @@ test('fromJSON clears editing state', () => {
   assert.deepEqual(t.pieces, ['LOOP', 'FINISH']);
 });
 
+test('deleting a middle piece does not move the pieces before it (no overlap)', () => {
+  const t = new Track();
+  for (let i = 0; i < 5; i++) t.addPiece('STRAIGHT'); // [S,S,S,S,S] heading East
+  const before0 = t.computeEntryAt(0);
+  const before1 = t.computeEntryAt(1);
+  t.deleteAt(2);
+  // Pieces before the gap (indices 0,1) must stay exactly where they were.
+  assert.deepEqual(t.entryStateAt(0), before0);
+  assert.deepEqual(t.entryStateAt(1), before1);
+  // The piece now at index 2 (originally index 3) stays frozen at gx=3,
+  // i.e. it does NOT slide back to overlap the pieces before the gap.
+  assert.deepEqual(t.entryStateAt(2), { gx: 3, gy: 0, gz: 0, dir: 1 });
+  assert.deepEqual(t.entryStateAt(3), { gx: 4, gy: 0, gz: 0, dir: 1 });
+});
+
 // ---- insertPieceAfter (legacy compat) ----
 
 test('insertPieceAfter splices a new piece after the given index', () => {

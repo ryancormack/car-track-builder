@@ -15,16 +15,19 @@ export class Track {
   startState: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // facing East
   pieces: PieceId[] = [];
 
-  // Frozen entries: when an edit-mode operation happens, we snapshot the entry
-  // states for all pieces at or after the edit point. These frozen positions are
-  // used by the renderer for downstream pieces until Rejoin.
+  // Frozen entries: when the first edit of a session happens, we snapshot the
+  // entry states of the pieces *downstream* of the edit. Those frozen positions
+  // always apply to the LAST `frozenEntries.length` pieces of the track (a
+  // trailing "frozen suffix"). As you add/remove pieces in the live region, the
+  // boundary `pieces.length - frozenEntries.length` shifts automatically, so the
+  // original downstream stays visually put until Rejoin. No editIndex/delta math.
   frozenEntries: GridState[] | null = null;
-  // The index where editing started. Pieces at indices >= editIndex that existed
-  // before the edit use their frozen entry state for rendering.
-  editIndex: number | null = null;
-  // How many pieces have been inserted/removed since editing started.
-  // Positive means net insertions, negative means net deletions.
-  private _editDelta = 0;
+
+  /** Index of the first frozen piece (start of the frozen suffix), or -1. */
+  private get _frozenBoundary(): number {
+    if (!this.frozenEntries) return -1;
+    return this.pieces.length - this.frozenEntries.length;
+  }
 
   /** Compute entry state for piece i by chaining piece geometry from the start. */
   computeEntryAt(i: number): GridState {
@@ -37,21 +40,16 @@ export class Track {
   }
 
   /**
-   * Entry state for rendering piece i. If frozen entries exist and this piece
-   * is a "downstream original" (existed before the edit), return its frozen
-   * position. Otherwise compute normally.
+   * Entry state for rendering piece i. Pieces in the frozen trailing suffix keep
+   * their snapshot positions; everything before the boundary (the live region:
+   * original pieces before the edit + any new pieces you've placed) is computed
+   * normally so it chains correctly from the start.
    */
   entryStateAt(i: number): GridState {
-    if (this.frozenEntries && this.editIndex !== null) {
-      // Pieces in the new/edited section (from editIndex up to editIndex + _editDelta - 1
-      // for insertions, or the replacement point) compute normally so they chain.
-      // Original downstream pieces (those that were at editIndex or later before
-      // the edit) use their frozen state.
-      const originalStart = this.editIndex + this._editDelta;
-      if (i >= originalStart && i < this.pieces.length) {
-        // Map this back to the frozen array. The frozen array was snapshotted
-        // starting at editIndex in the original track.
-        const frozenIdx = i - this._editDelta - this.editIndex;
+    if (this.frozenEntries) {
+      const boundary = this._frozenBoundary;
+      if (i >= boundary && i < this.pieces.length) {
+        const frozenIdx = i - boundary;
         if (frozenIdx >= 0 && frozenIdx < this.frozenEntries.length) {
           return { ...this.frozenEntries[frozenIdx] };
         }
@@ -88,14 +86,14 @@ export class Track {
   }
 
   /**
-   * Snapshot downstream entry states starting at the given index.
-   * Only snapshots once per editing session (first edit wins).
+   * Begin a freeze session by snapshotting the entry states of the pieces from
+   * `fromIndex` to the end (the "downstream" that should stay put). No-ops if
+   * already editing, or if there is nothing downstream to freeze (so deleting or
+   * replacing the trailing piece stays a clean, non-editing operation).
    */
-  private _snapshotDownstream(fromIndex: number): void {
+  private _freezeFrom(fromIndex: number): void {
     if (this.frozenEntries !== null) return; // already editing
-    this.editIndex = fromIndex;
-    this._editDelta = 0;
-    // Snapshot entries for pieces from fromIndex to end.
+    if (fromIndex >= this.pieces.length) return; // nothing downstream to freeze
     const entries: GridState[] = [];
     for (let i = fromIndex; i < this.pieces.length; i++) {
       entries.push(this.computeEntryAt(i));
@@ -103,51 +101,63 @@ export class Track {
     this.frozenEntries = entries;
   }
 
+  /** If the frozen suffix has been emptied out, exit editing mode. */
+  private _maybeEndEdit(): void {
+    if (this.frozenEntries && this.frozenEntries.length === 0) {
+      this.frozenEntries = null;
+    }
+  }
+
   /**
-   * Delete the piece at the given index. The piece is gone from the array.
-   * Downstream pieces keep their frozen visual positions until Rejoin.
+   * Delete the piece at the given index. The piece is removed from the array
+   * entirely. The downstream (pieces after it) keeps its frozen visual positions
+   * until Rejoin, so the rest of the track does not jump around.
    */
   deleteAt(index: number): PieceId | undefined {
     if (index < 0 || index >= this.pieces.length) return undefined;
-    this._snapshotDownstream(index);
+    if (this.frozenEntries === null) {
+      // First edit: freeze everything strictly after the deleted piece.
+      this._freezeFrom(index + 1);
+    } else if (index >= this._frozenBoundary) {
+      // Deleting a piece that's part of the frozen suffix: drop its frozen entry.
+      this.frozenEntries.splice(index - this._frozenBoundary, 1);
+    }
     const removed = this.pieces.splice(index, 1)[0];
-    this._editDelta--;
+    this._maybeEndEdit();
     return removed;
   }
 
   /**
-   * Insert a new piece at the given index. The piece is real and chains
-   * correctly from pieces before it. Downstream keeps frozen positions.
+   * Insert a new piece at the given index. The piece is real and chains from the
+   * pieces before it; the frozen downstream stays put until Rejoin.
    */
   insertAt(index: number, pieceId: PieceId): boolean {
     if (index < 0 || index > this.pieces.length) return false;
     if (!isPieceId(pieceId)) return false;
-    this._snapshotDownstream(index);
+    // First edit: freeze everything from this index onward (it shifts right).
+    if (this.frozenEntries === null) this._freezeFrom(index);
     this.pieces.splice(index, 0, pieceId);
-    this._editDelta++;
     return true;
   }
 
   /**
-   * Replace the piece at the given index. It becomes a real piece immediately.
-   * Downstream keeps frozen positions.
+   * Replace the piece at the given index with a new one. It becomes a real piece
+   * immediately; the frozen downstream after it stays put until Rejoin.
    */
   replaceAt(index: number, pieceId: PieceId): boolean {
     if (index < 0 || index >= this.pieces.length) return false;
     if (!isPieceId(pieceId)) return false;
-    this._snapshotDownstream(index);
+    if (this.frozenEntries === null) this._freezeFrom(index + 1);
     this.pieces[index] = pieceId;
     return true;
   }
 
   /**
-   * Rejoin: clear frozen entries. Everything recomputes from actual pieces.
-   * Downstream repositions to connect to the new section.
+   * Rejoin: clear frozen entries. Everything recomputes from the actual piece
+   * sequence, so the downstream repositions to connect to the new section.
    */
   rejoin(): void {
     this.frozenEntries = null;
-    this.editIndex = null;
-    this._editDelta = 0;
   }
 
   // Legacy removePieceAt - now delegates to deleteAt
@@ -173,8 +183,6 @@ export class Track {
   clear(): void {
     this.pieces.length = 0;
     this.frozenEntries = null;
-    this.editIndex = null;
-    this._editDelta = 0;
   }
 
   hasFinish(): boolean {
@@ -213,7 +221,5 @@ export class Track {
       : [];
     // Clear any editing state on load.
     this.frozenEntries = null;
-    this.editIndex = null;
-    this._editDelta = 0;
   }
 }
