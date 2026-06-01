@@ -130,8 +130,11 @@ function barrelHelix(t: number, forward: number, r: number, turns: number, dz: n
 }
 
 export const pathSpiral: PathFn = (t) =>
-  // Tight descending double coil: 2 full turns dropping 2 units over 2 cells.
-  barrelHelix(t, 2, SPIRAL_RADIUS, 2, -2);
+  // One clean descending loop over 2 cells, dropping 2 units. A single full turn
+  // (like the helix and corkscrew) reads clearly in the iso view; an earlier
+  // 2-turn version packed two coils into 2 cells and looked tangled even though
+  // each frame was individually correct.
+  barrelHelix(t, 2, SPIRAL_RADIUS, 1, -2);
 
 export const pathSteepHill: PathFn = (t) => {
   // Steep symmetric hill: rises to 1.5 units at midpoint, returns to 0.
