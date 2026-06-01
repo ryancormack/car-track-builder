@@ -44,9 +44,9 @@ const STEEP_HILL_MIN_V2 =
   5;
 
 // Entry-speed gate for Helix Up: must climb 3 units with friction along the
-// full helical path (~6.16 arc length).
+// full helical path (~7.61 arc length, verified numerically).
 const HELIX_UP_RISE = 3;
-const HELIX_UP_LEN = 6.16;
+const HELIX_UP_LEN = 7.61;
 const HELIX_UP_MIN_V2 =
   2 * G * HELIX_UP_RISE +
   2 * FRICTION * RAMP_FRICTION_MULT * HELIX_UP_LEN +
@@ -126,7 +126,7 @@ export const PIECES: Record<PieceId, Piece> = {
   SPIRAL: {
     id: 'SPIRAL', name: 'Spiral', icon: '🔽', category: 'stunt', featured: true,
     forward: 2, turn: 0, dz: -2,
-    pathLen: 4.22, excitement: 25, minV2: 12, boostEnergy: 0,
+    pathLen: 5.26, excitement: 25, minV2: 12, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathSpiral,
   },
@@ -140,14 +140,14 @@ export const PIECES: Record<PieceId, Piece> = {
   HELIX_UP: {
     id: 'HELIX_UP', name: 'Helix Up', icon: '🌀⬆', category: 'stunt', featured: true,
     forward: 3, turn: 0, dz: 3,
-    pathLen: HELIX_UP_LEN, excitement: 28, minV2: HELIX_UP_MIN_V2, boostEnergy: 0,
+    pathLen: 7.61, excitement: 28, minV2: HELIX_UP_MIN_V2, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathHelixUp,
   },
   HELIX_DN: {
     id: 'HELIX_DN', name: 'Helix Down', icon: '🌀⬇', category: 'stunt', featured: true,
     forward: 3, turn: 0, dz: -3,
-    pathLen: HELIX_UP_LEN, excitement: 28, minV2: 12, boostEnergy: 0,
+    pathLen: 7.61, excitement: 28, minV2: 12, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathHelixDown,
   },

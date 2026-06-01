@@ -2,7 +2,7 @@
 // Each returns { lx, ly, lz, banking } at t in [0, 1] in piece-local coords.
 // Pure functions of t — easy to unit-test for continuity and end-points.
 
-import type { PathFn } from '../types.js';
+import type { LocalPoint, PathFn } from '../types.js';
 import { SPIRAL_RADIUS, HELIX_RADIUS } from '../constants.js';
 
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
@@ -106,56 +106,43 @@ export const pathJump: PathFn = (t) => {
   return { lx, ly: 0, lz, banking: 0 };
 };
 
-export const pathSpiral: PathFn = (t) => {
-  // Helical descent: 2 full turns (720 degrees), dropping 2 units of elevation.
-  // Approach (0..0.05): straight entry at top elevation
-  // Helix (0.05..0.95): 2 full turns descending
-  // Depart (0.95..1.0): straight exit at bottom elevation
-  const R = SPIRAL_RADIUS;
-  if (t <= 0.05) {
-    return { lx: (t / 0.05) * 0.1, ly: 0, lz: 0, banking: 0 };
-  }
-  if (t >= 0.95) {
-    const u = (t - 0.95) / 0.05;
-    return { lx: 1.9 + u * 0.1, ly: 0, lz: -2, banking: 4 * Math.PI };
-  }
-  const u = (t - 0.05) / 0.9; // 0..1 over the helix portion
-  const theta = 4 * Math.PI * easedProgress(u); // 2 full turns = 4*PI, eased for tangent continuity
+// --- Barrel-helix construction (shared by spiral + helix) ---------------------
+// A descending/ascending coil built exactly like the corkscrew: the cross-section
+// (ly, lz_barrel) traces a circle of radius r whose centre sits one radius above
+// the centreline, so the surface normal {0, -sin θ, cos θ} points radially to the
+// coil axis at every sample. Net elevation is added as dz·p, a uniform vertical
+// shift of BOTH the centreline and the (conceptual) coil axis — this keeps the
+// normal radial, so the road renders cleanly (the same reason the corkscrew works).
+//
+// Using easedProgress for the angle makes the roll-rate (and the lateral/vertical
+// velocity) ease to zero at both seams, so the piece joins flat track without a
+// kink. With an integer number of turns, ly and the barrel term both return to 0
+// at t=1, leaving a clean net elevation change of exactly dz.
+function barrelHelix(t: number, forward: number, r: number, turns: number, dz: number): LocalPoint {
+  const p = easedProgress(t);
+  const theta = turns * 2 * Math.PI * p;
   return {
-    lx: 0.1 + u * 1.8,
-    ly: R * Math.sin(theta),
-    lz: -2 * u,
+    lx: forward * t,
+    ly: r * Math.sin(theta),
+    lz: r * (1 - Math.cos(theta)) + dz * p,
     banking: theta,
   };
-};
+}
+
+export const pathSpiral: PathFn = (t) =>
+  // Tight descending double coil: 2 full turns dropping 2 units over 2 cells.
+  barrelHelix(t, 2, SPIRAL_RADIUS, 2, -2);
 
 export const pathSteepHill: PathFn = (t) => {
   // Steep symmetric hill: rises to 1.5 units at midpoint, returns to 0.
   return { lx: 2 * t, ly: 0, lz: 1.5 * Math.sin(Math.PI * t), banking: 0 };
 };
 
-export const pathHelixDown: PathFn = (t) => {
-  // Circular helix descent: one full revolution (2*PI), forward 3 cells, descending 3 units.
-  // Like a parking garage spiral ramp going down.
-  const R = HELIX_RADIUS;
-  const theta = 2 * Math.PI * easedProgress(t);
-  return {
-    lx: 3 * t,
-    ly: R * Math.sin(theta),
-    lz: -3 * t,
-    banking: theta,
-  };
-};
+export const pathHelixDown: PathFn = (t) =>
+  // One big descending coil over 3 cells, dropping 3 units. Parking-garage style
+  // but built as a barrel coil so the banked road surface renders correctly.
+  barrelHelix(t, 3, HELIX_RADIUS, 1, -3);
 
-export const pathHelixUp: PathFn = (t) => {
-  // Circular helix ascent: one full revolution (2*PI), forward 3 cells, ascending 3 units.
-  // Like a parking garage spiral ramp going up.
-  const R = HELIX_RADIUS;
-  const theta = 2 * Math.PI * easedProgress(t);
-  return {
-    lx: 3 * t,
-    ly: R * Math.sin(theta),
-    lz: 3 * t,
-    banking: theta,
-  };
-};
+export const pathHelixUp: PathFn = (t) =>
+  // One big ascending coil over 3 cells, climbing 3 units. Needs real entry speed.
+  barrelHelix(t, 3, HELIX_RADIUS, 1, 3);
