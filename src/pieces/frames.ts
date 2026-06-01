@@ -48,7 +48,7 @@ function tangentAt(path: PathFn, entry: GridState, t: number): Vec3 {
   return lenSq(d) > 1e-12 ? normalize(d) : { x: 1, y: 0, z: 0 };
 }
 
-function buildFrame(path: PathFn, entry: GridState, t: number, prevSide: Vec3 | null): TrackFrame {
+function buildFrame(path: PathFn, entry: GridState, t: number, prevSide: Vec3 | null, prevBanking: number): TrackFrame {
   const h = piecePathAtT(path, entry, t);
   const pos: Vec3 = { x: h.wx, y: h.wy, z: h.wz };
   const tangent = tangentAt(path, entry, t);
@@ -81,9 +81,11 @@ function buildFrame(path: PathFn, entry: GridState, t: number, prevSide: Vec3 | 
     z: naturalSide.z * cb + naturalUp.z * sb,
   });
 
-  // Keep the lateral axis sign-continuous. Without this, a loop's side flips
-  // where the tangent passes vertical and the derived "up" would not invert.
-  if (prevSide && dot(side, prevSide) < 0) side = scale(side, -1);
+  // Only apply sign-continuity for pieces without banking (like the loop).
+  // For pieces with progressive banking (corkscrew, spiral, helix), the
+  // Rodrigues rotation is authoritative and sign-flipping would fight it.
+  const bankingActive = Math.abs(h.banking) > 0.01 || Math.abs(prevBanking) > 0.01;
+  if (prevSide && !bankingActive && dot(side, prevSide) < 0) side = scale(side, -1);
 
   const up = normalize(cross(side, tangent));
   return { pos, tangent, up, side, banking: h.banking };
@@ -99,11 +101,13 @@ export function trackFrames(
 ): TrackFrame[] {
   const frames: TrackFrame[] = [];
   let prevSide: Vec3 | null = null;
+  let prevBanking = 0;
   for (let i = 0; i <= segments; i++) {
     const t = tStart + (tEnd - tStart) * (i / segments);
-    const f = buildFrame(path, entry, t, prevSide);
+    const f = buildFrame(path, entry, t, prevSide, prevBanking);
     frames.push(f);
     prevSide = f.side;
+    prevBanking = f.banking;
   }
   return frames;
 }
