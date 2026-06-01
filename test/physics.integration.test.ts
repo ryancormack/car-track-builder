@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import { Track } from '../src/track.js';
 import { Simulator, G } from '../src/physics.js';
-import { pathSpiral, pathSteepHill } from '../src/pieces/paths.js';
+import { pathSpiral, pathSteepHill, pathHelixUp, pathHelixDown } from '../src/pieces/paths.js';
 import { PIECES } from '../src/pieces/definitions.js';
 import type { PathFn } from '../src/types.js';
 
@@ -57,6 +57,22 @@ test('STEEP_HILL: declared pathLen matches numerical arc length within 10%', () 
     `STEEP_HILL pathLen mismatch: actual=${actual.toFixed(3)}, declared=${declared}, ratio=${ratio.toFixed(3)}`);
 });
 
+test('HELIX_DN: declared pathLen matches numerical arc length within 10%', () => {
+  const actual = computeArcLength(pathHelixDown);
+  const declared = PIECES.HELIX_DN.pathLen;
+  const ratio = actual / declared;
+  assert.ok(ratio > 0.9 && ratio < 1.1,
+    `HELIX_DN pathLen mismatch: actual=${actual.toFixed(3)}, declared=${declared}, ratio=${ratio.toFixed(3)}`);
+});
+
+test('HELIX_UP: declared pathLen matches numerical arc length within 10%', () => {
+  const actual = computeArcLength(pathHelixUp);
+  const declared = PIECES.HELIX_UP.pathLen;
+  const ratio = actual / declared;
+  assert.ok(ratio > 0.9 && ratio < 1.1,
+    `HELIX_UP pathLen mismatch: actual=${actual.toFixed(3)}, declared=${declared}, ratio=${ratio.toFixed(3)}`);
+});
+
 // --- minV2 gate verification ---
 
 test('SPIRAL: car gains net energy from gravity descent (exits faster than entry)', () => {
@@ -102,6 +118,28 @@ test('STEEP_HILL: car with v2 below minV2 fails at gate', () => {
   runToCompletion(sim);
   assert.ok(sim.failed);
   assert.equal(sim.failType, 'speed_gate');
+});
+
+// --- Helix minV2 gate and energy tests ---
+
+test('HELIX_DN: car gains net energy from gravity descent (exits faster)', () => {
+  const sim = new Simulator(trackOf(['HELIX_DN', 'FINISH'], 3));
+  const entryV2 = sim.v2;
+  runToCompletion(sim);
+  assert.ok(!sim.failed, `should not fail: ${sim.failReason}`);
+  assert.ok(sim.v2 > entryV2,
+    `helix down should gain speed from descent: entry=${entryV2.toFixed(1)}, exit=${sim.v2.toFixed(1)}`);
+});
+
+test('HELIX_UP: car with v2 above minV2 gate completes successfully', () => {
+  const minV2 = PIECES.HELIX_UP.minV2;
+  // Give enough drop to pass the gate with a buffer
+  const dropHeight = (minV2 + 5) / (2 * G);
+  const sim = new Simulator(trackOf(['HELIX_UP', 'FINISH'], dropHeight));
+  runToCompletion(sim);
+  assert.ok(!sim.failed,
+    `HELIX_UP should succeed with v2=${(2 * G * dropHeight).toFixed(1)} > minV2=${minV2.toFixed(1)}: ${sim.failReason}`);
+  assert.ok(sim.finished);
 });
 
 // --- Energy conservation spot-checks ---
@@ -191,6 +229,7 @@ test('Integration: all piece types in sequence at drop=6 completes', () => {
     'CORKSCREW', 'STRAIGHT',
     'JUMP', 'STRAIGHT',
     'SPIRAL', 'STRAIGHT',
+    'HELIX_DN', 'STRAIGHT',
     'STEEP_HILL', 'STRAIGHT',
     'FINISH',
   ];

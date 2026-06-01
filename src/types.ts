@@ -57,6 +57,8 @@ export type PieceId =
   | 'JUMP'
   | 'SPIRAL'
   | 'STEEP_HILL'
+  | 'HELIX_UP'
+  | 'HELIX_DN'
   | 'FINISH';
 
 export type PieceCategory =

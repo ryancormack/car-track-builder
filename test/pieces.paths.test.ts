@@ -8,6 +8,7 @@ import {
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
   pathSpiral, pathSteepHill,
+  pathHelixUp, pathHelixDown,
   easedProgress,
   makeRampUpPath,
 } from '../src/pieces/paths.js';
@@ -15,7 +16,8 @@ import { resolvePathLocal } from '../src/pieces/resolve.js';
 import type { PieceId } from '../src/types.js';
 
 const samplers = [pathStraight, pathCurveR, pathCurveL, pathRampUp, pathRampDown,
-                  pathLoop, pathCorkscrew, pathJump, pathSpiral, pathSteepHill];
+                  pathLoop, pathCorkscrew, pathJump, pathSpiral, pathSteepHill,
+                  pathHelixUp, pathHelixDown];
 
 test('every path sampler returns finite numeric coordinates across [0,1]', () => {
   for (const fn of samplers) {
@@ -287,5 +289,83 @@ test('pathSteepHill is symmetric', () => {
     const a = pathSteepHill(t);
     const b = pathSteepHill(1 - t);
     assert.ok(Math.abs(a.lz - b.lz) < 1e-9, `not symmetric at t=${t}`);
+  }
+});
+
+// --- Helix Down path tests ---
+
+test('pathHelixDown starts at (0,0,0) and ends at (3,~0,-3) with banking~2*PI', () => {
+  const start = pathHelixDown(0);
+  const end = pathHelixDown(1);
+  assert.ok(Math.abs(start.lx) < 1e-9);
+  assert.ok(Math.abs(start.ly) < 1e-9);
+  assert.ok(Math.abs(start.lz) < 1e-9);
+  assert.ok(Math.abs(start.banking) < 1e-9);
+  assert.ok(Math.abs(end.lx - 3) < 1e-6);
+  assert.ok(Math.abs(end.ly) < 0.01, `end ly should be ~0, got ${end.ly}`);
+  assert.ok(Math.abs(end.lz + 3) < 1e-6);
+  assert.ok(Math.abs(end.banking - 2 * Math.PI) < 1e-4, `end banking should be ~2*PI, got ${end.banking}`);
+});
+
+test('pathHelixDown lx is monotonically increasing from 0 to 3', () => {
+  let prev = -Infinity;
+  for (let t = 0; t <= 1; t += 0.01) {
+    const p = pathHelixDown(t);
+    assert.ok(p.lx >= prev - 1e-9, `helix down lx not monotonic at t=${t}`);
+    prev = p.lx;
+  }
+});
+
+test('pathHelixDown is continuous (no jumps between adjacent samples)', () => {
+  const steps = 200;
+  let prev = pathHelixDown(0);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const curr = pathHelixDown(t);
+    const dx = curr.lx - prev.lx;
+    const dy = curr.ly - prev.ly;
+    const dz = curr.lz - prev.lz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    assert.ok(dist < 0.15, `helix down discontinuity at t=${t.toFixed(3)}: dist=${dist.toFixed(4)}`);
+    prev = curr;
+  }
+});
+
+// --- Helix Up path tests ---
+
+test('pathHelixUp starts at (0,0,0) and ends at (3,~0,+3) with banking~2*PI', () => {
+  const start = pathHelixUp(0);
+  const end = pathHelixUp(1);
+  assert.ok(Math.abs(start.lx) < 1e-9);
+  assert.ok(Math.abs(start.ly) < 1e-9);
+  assert.ok(Math.abs(start.lz) < 1e-9);
+  assert.ok(Math.abs(start.banking) < 1e-9);
+  assert.ok(Math.abs(end.lx - 3) < 1e-6);
+  assert.ok(Math.abs(end.ly) < 0.01, `end ly should be ~0, got ${end.ly}`);
+  assert.ok(Math.abs(end.lz - 3) < 1e-6);
+  assert.ok(Math.abs(end.banking - 2 * Math.PI) < 1e-4, `end banking should be ~2*PI, got ${end.banking}`);
+});
+
+test('pathHelixUp lx is monotonically increasing from 0 to 3', () => {
+  let prev = -Infinity;
+  for (let t = 0; t <= 1; t += 0.01) {
+    const p = pathHelixUp(t);
+    assert.ok(p.lx >= prev - 1e-9, `helix up lx not monotonic at t=${t}`);
+    prev = p.lx;
+  }
+});
+
+test('pathHelixUp is continuous (no jumps between adjacent samples)', () => {
+  const steps = 200;
+  let prev = pathHelixUp(0);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const curr = pathHelixUp(t);
+    const dx = curr.lx - prev.lx;
+    const dy = curr.ly - prev.ly;
+    const dz = curr.lz - prev.lz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    assert.ok(dist < 0.15, `helix up discontinuity at t=${t.toFixed(3)}: dist=${dist.toFixed(4)}`);
+    prev = curr;
   }
 });

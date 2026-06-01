@@ -358,6 +358,13 @@ export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): TH
       segments: 64,
     });
   }
+  if (piece.id === 'HELIX_UP' || piece.id === 'HELIX_DN') {
+    return buildRailedTrack(path, entry, COLORS.trackBlue, {
+      emissive: COLORS.trackBlue,
+      emissiveIntensity: 0.12,
+      segments: 128,
+    });
+  }
   if (piece.id === 'LOOP' || piece.id === 'CORKSCREW') {
     return buildRailedTrack(path, entry, COLORS.trackBlue, {
       emissive: COLORS.trackBlue,
