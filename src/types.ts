@@ -56,6 +56,7 @@ export type PieceId =
   | 'BOOSTER'
   | 'JUMP'
   | 'SPIRAL'
+  | 'SPIRAL_TOWER'
   | 'STEEP_HILL'
   | 'HELIX_UP'
   | 'HELIX_DN'

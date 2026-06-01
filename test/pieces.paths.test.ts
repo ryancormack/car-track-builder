@@ -8,7 +8,7 @@ import {
   pathRampUp, pathRampDown,
   pathLoop, pathCorkscrew, pathJump,
   pathSpiral, pathSteepHill,
-  pathHelixUp, pathHelixDown,
+  pathHelixUp, pathHelixDown, pathSpiralTower,
   easedProgress,
   makeRampUpPath,
 } from '../src/pieces/paths.js';
@@ -17,7 +17,7 @@ import type { PieceId } from '../src/types.js';
 
 const samplers = [pathStraight, pathCurveR, pathCurveL, pathRampUp, pathRampDown,
                   pathLoop, pathCorkscrew, pathJump, pathSpiral, pathSteepHill,
-                  pathHelixUp, pathHelixDown];
+                  pathHelixUp, pathHelixDown, pathSpiralTower];
 
 test('every path sampler returns finite numeric coordinates across [0,1]', () => {
   for (const fn of samplers) {
@@ -366,6 +366,46 @@ test('pathHelixUp is continuous (no jumps between adjacent samples)', () => {
     const dz = curr.lz - prev.lz;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     assert.ok(dist < 0.15, `helix up discontinuity at t=${t.toFixed(3)}: dist=${dist.toFixed(4)}`);
+    prev = curr;
+  }
+});
+
+
+// --- Spiral Tower path tests ---
+
+test('pathSpiralTower starts at (0,0,0) and ends at (4,~0,-4) with banking~4*PI', () => {
+  const start = pathSpiralTower(0);
+  const end = pathSpiralTower(1);
+  assert.ok(Math.abs(start.lx) < 1e-9);
+  assert.ok(Math.abs(start.ly) < 1e-9);
+  assert.ok(Math.abs(start.lz) < 1e-9);
+  assert.ok(Math.abs(start.banking) < 1e-9);
+  assert.ok(Math.abs(end.lx - 4) < 1e-6);
+  assert.ok(Math.abs(end.ly) < 0.01, `end ly should be ~0, got ${end.ly}`);
+  assert.ok(Math.abs(end.lz + 4) < 1e-6);
+  assert.ok(Math.abs(end.banking - 4 * Math.PI) < 1e-4, `end banking should be ~4*PI (2 turns), got ${end.banking}`);
+});
+
+test('pathSpiralTower lx is monotonically increasing from 0 to 4', () => {
+  let prev = -Infinity;
+  for (let t = 0; t <= 1; t += 0.01) {
+    const p = pathSpiralTower(t);
+    assert.ok(p.lx >= prev - 1e-9, `spiral tower lx not monotonic at t=${t}`);
+    prev = p.lx;
+  }
+});
+
+test('pathSpiralTower is continuous (no jumps between adjacent samples)', () => {
+  const steps = 300;
+  let prev = pathSpiralTower(0);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const curr = pathSpiralTower(t);
+    const dx = curr.lx - prev.lx;
+    const dy = curr.ly - prev.ly;
+    const dz = curr.lz - prev.lz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    assert.ok(dist < 0.15, `spiral tower discontinuity at t=${t.toFixed(3)}: dist=${dist.toFixed(4)}`);
     prev = curr;
   }
 });

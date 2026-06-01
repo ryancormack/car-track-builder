@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import { Track } from '../src/track.js';
 import { Simulator, G } from '../src/physics.js';
-import { pathSpiral, pathSteepHill, pathHelixUp, pathHelixDown } from '../src/pieces/paths.js';
+import { pathSpiral, pathSteepHill, pathHelixUp, pathHelixDown, pathSpiralTower } from '../src/pieces/paths.js';
 import { PIECES } from '../src/pieces/definitions.js';
 import type { PathFn } from '../src/types.js';
 
@@ -71,6 +71,14 @@ test('HELIX_UP: declared pathLen matches numerical arc length within 10%', () =>
   const ratio = actual / declared;
   assert.ok(ratio > 0.9 && ratio < 1.1,
     `HELIX_UP pathLen mismatch: actual=${actual.toFixed(3)}, declared=${declared}, ratio=${ratio.toFixed(3)}`);
+});
+
+test('SPIRAL_TOWER: declared pathLen matches numerical arc length within 10%', () => {
+  const actual = computeArcLength(pathSpiralTower);
+  const declared = PIECES.SPIRAL_TOWER.pathLen;
+  const ratio = actual / declared;
+  assert.ok(ratio > 0.9 && ratio < 1.1,
+    `SPIRAL_TOWER pathLen mismatch: actual=${actual.toFixed(3)}, declared=${declared}, ratio=${ratio.toFixed(3)}`);
 });
 
 // --- minV2 gate verification ---
@@ -139,6 +147,24 @@ test('HELIX_UP: car with v2 above minV2 gate completes successfully', () => {
   runToCompletion(sim);
   assert.ok(!sim.failed,
     `HELIX_UP should succeed with v2=${(2 * G * dropHeight).toFixed(1)} > minV2=${minV2.toFixed(1)}: ${sim.failReason}`);
+  assert.ok(sim.finished);
+});
+
+test('SPIRAL_TOWER: car gains net energy from the long descent (exits faster)', () => {
+  const sim = new Simulator(trackOf(['SPIRAL_TOWER', 'FINISH'], 3));
+  const entryV2 = sim.v2;
+  runToCompletion(sim);
+  assert.ok(!sim.failed, `should not fail: ${sim.failReason}`);
+  // dz=-4 gives a large gravity gain (2*G*4 = 78.4), well above the friction toll.
+  assert.ok(sim.v2 > entryV2,
+    `spiral tower should gain speed from descent: entry=${entryV2.toFixed(1)}, exit=${sim.v2.toFixed(1)}`);
+  assert.ok(sim.finished);
+});
+
+test('SPIRAL_TOWER: completes from a modest drop (gravity-assisted descent)', () => {
+  const sim = new Simulator(trackOf(['STRAIGHT', 'SPIRAL_TOWER', 'FINISH'], 2));
+  runToCompletion(sim);
+  assert.ok(!sim.failed, `SPIRAL_TOWER should complete from drop=2: ${sim.failReason}`);
   assert.ok(sim.finished);
 });
 
@@ -230,6 +256,7 @@ test('Integration: all piece types in sequence at drop=6 completes', () => {
     'JUMP', 'STRAIGHT',
     'SPIRAL', 'STRAIGHT',
     'HELIX_DN', 'STRAIGHT',
+    'SPIRAL_TOWER', 'STRAIGHT',
     'STEEP_HILL', 'STRAIGHT',
     'FINISH',
   ];

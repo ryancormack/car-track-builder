@@ -3,7 +3,7 @@
 // Pure functions of t — easy to unit-test for continuity and end-points.
 
 import type { LocalPoint, PathFn } from '../types.js';
-import { SPIRAL_RADIUS, HELIX_RADIUS } from '../constants.js';
+import { SPIRAL_RADIUS, HELIX_RADIUS, SPIRAL_TOWER_RADIUS } from '../constants.js';
 
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
@@ -149,3 +149,9 @@ export const pathHelixDown: PathFn = (t) =>
 export const pathHelixUp: PathFn = (t) =>
   // One big ascending coil over 3 cells, climbing 3 units. Needs real entry speed.
   barrelHelix(t, 3, HELIX_RADIUS, 1, 3);
+
+export const pathSpiralTower: PathFn = (t) =>
+  // Tall multi-coil descent: 2 full turns dropping 4 units over 4 cells. Spread
+  // over 4 cells (2 per turn) and dropping 2 per turn, the coils have room to
+  // separate so the double coil reads cleanly as a spiral tower.
+  barrelHelix(t, 4, SPIRAL_TOWER_RADIUS, 2, -4);
