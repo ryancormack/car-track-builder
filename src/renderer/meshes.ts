@@ -350,7 +350,7 @@ export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): TH
     return buildRailedTrack(path, entry, COLORS.trackBlue, {
       emissive: COLORS.trackBlue,
       emissiveIntensity: 0.12,
-      segments: 96,
+      segments: 192,
     });
   }
   if (piece.id === 'STEEP_HILL') {
