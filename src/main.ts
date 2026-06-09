@@ -180,7 +180,15 @@ els.overlayClose.addEventListener('click', () => {
 els.selDelete.addEventListener('click', () => editor.deleteSelected());
 els.selDeselect.addEventListener('click', () => editor.deselectPiece());
 els.selRejoin.addEventListener('click', () => {
-  track.rejoin();
+  const ok = track.rejoin();
+  if (!ok) {
+    // Mismatch (Req 7.6): the rebuilt live region doesn't connect to the frozen
+    // suffix. Stay in editing mode so the user can keep building or undo, and
+    // keep the rejoin button visible.
+    hud.flashStatus("Cannot rejoin: track doesn't connect. Keep building or undo.", 'err');
+    updateRejoinButton();
+    return;
+  }
   renderer.rebuildTrack(track);
   editor.deselectPiece();
   hud.flashStatus('Track rejoined!', 'ok');

@@ -151,7 +151,10 @@ test('HELIX_UP: car with v2 above minV2 gate completes successfully', () => {
 });
 
 test('SPIRAL_TOWER: car gains net energy from the long descent (exits faster)', () => {
-  const sim = new Simulator(trackOf(['SPIRAL_TOWER', 'FINISH'], 3));
+  // dropHeight must be >= 4 so the -4 descent stays at/above the floor; at
+  // lower drops the exit (gz = drop - 4) falls below floor and collision
+  // detection correctly rejects the placement (Req 1.1, 6.1).
+  const sim = new Simulator(trackOf(['SPIRAL_TOWER', 'FINISH'], 4));
   const entryV2 = sim.v2;
   runToCompletion(sim);
   assert.ok(!sim.failed, `should not fail: ${sim.failReason}`);
@@ -162,9 +165,10 @@ test('SPIRAL_TOWER: car gains net energy from the long descent (exits faster)', 
 });
 
 test('SPIRAL_TOWER: completes from a modest drop (gravity-assisted descent)', () => {
-  const sim = new Simulator(trackOf(['STRAIGHT', 'SPIRAL_TOWER', 'FINISH'], 2));
+  // dropHeight 4 is the minimum that keeps the -4 descent at/above the floor.
+  const sim = new Simulator(trackOf(['STRAIGHT', 'SPIRAL_TOWER', 'FINISH'], 4));
   runToCompletion(sim);
-  assert.ok(!sim.failed, `SPIRAL_TOWER should complete from drop=2: ${sim.failReason}`);
+  assert.ok(!sim.failed, `SPIRAL_TOWER should complete from drop=4: ${sim.failReason}`);
   assert.ok(sim.finished);
 });
 

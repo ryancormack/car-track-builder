@@ -225,16 +225,28 @@ test('insertAt keeps downstream frozen', () => {
   assert.deepEqual(entry2After, entry1Before);
 });
 
-test('rejoin clears frozen entries and recomputes downstream', () => {
+test('rejoin clears frozen entries and recomputes downstream when connection matches', () => {
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('CURVE_R'); t.addPiece('STRAIGHT');
-  t.deleteAt(1); // delete CURVE_R, now [S, S]
+  t.deleteAt(1); // delete CURVE_R, now [S, S], downstream STRAIGHT frozen
   assert.equal(t.isEditing(), true);
-  t.rejoin();
+  // Rebuild the curve so the live region reconnects to the frozen suffix.
+  assert.equal(t.insertAt(1, 'CURVE_R'), true); // back to [S, C, S]
+  // Connection matches the frozen entry, so rejoin succeeds and clears.
+  assert.equal(t.rejoin(), true);
   assert.equal(t.isEditing(), false);
-  // After rejoin, entry for piece 1 recomputes from actual pieces [S, S]
+  // After rejoin, entry for piece 1 recomputes from actual pieces [S, C, S]
   const entry1 = t.entryStateAt(1);
   assert.deepEqual(entry1, { gx: 1, gy: 0, gz: 0, dir: 1 });
+});
+
+test('rejoin returns false and stays editing when connection mismatches', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('CURVE_R'); t.addPiece('STRAIGHT');
+  t.deleteAt(1); // delete CURVE_R, now [S, S]: live exit no longer matches frozen entry
+  assert.equal(t.isEditing(), true);
+  assert.equal(t.rejoin(), false);
+  assert.equal(t.isEditing(), true); // editing mode preserved
 });
 
 test('isComplete requires Finish and not editing', () => {
@@ -246,8 +258,10 @@ test('isComplete requires Finish and not editing', () => {
   t.deleteAt(0);
   assert.equal(t.isEditing(), true);
   assert.equal(t.isComplete(), false);
-  t.rejoin();
-  // After rejoin, just FINISH remains
+  // Rebuild the deleted STRAIGHT so the live region reconnects to FINISH.
+  assert.equal(t.insertAt(0, 'STRAIGHT'), true);
+  assert.equal(t.rejoin(), true);
+  // After rejoin, the track is [STRAIGHT, FINISH] again and complete
   assert.equal(t.isComplete(), true);
 });
 
@@ -368,4 +382,138 @@ test('fromJSON tolerates legacy data with empties field', () => {
   // Legacy empties are ignored - all pieces are real
   assert.deepEqual(t.pieces, ['STRAIGHT', 'LOOP']);
   assert.equal(t.isEditing(), false);
+});
+
+
+// ---- collision integration (Task 3.6) ----
+//
+// Behaviour grounded in src/track.ts + src/collision.ts:
+//   * Floor checks use the dropHeight offset and include the piece's EXIT cell
+//     (computeCells excludes the exit, so a single-cell descent is caught via it).
+//   * Overlap checks exclude a piece's entry cell (the connection point shared
+//     with its predecessor). A piece's entry cell (computeCells i=0) is always
+//     that connection point, so a single-cell piece (forward=1) can never trip
+//     the overlap rule on its own seam — only cells at i>=1 of a multi-cell
+//     piece (e.g. JUMP, forward=2) are checked against the occupied set. The
+//     overlap tests below therefore use a multi-cell JUMP whose i=1 cell lands
+//     on a genuinely occupied cell.
+//   * rejoin() match/mismatch is already covered above (Task 3.5), so it is not
+//     duplicated here.
+
+test('addPiece rejects a floor-violating piece (dropHeight=0, descending exit gz<0)', () => {
+  const t = new Track();
+  t.dropHeight = 0; // remove the cushion so a single descent breaks the floor
+  // RAMP_DN at the build plane: owned cell {0,0,0} is fine, but its EXIT cell
+  // {1,0,-1} sits below the floor once dropHeight no longer offsets it.
+  const ok = t.addPiece('RAMP_DN');
+  assert.equal(ok, false);
+  assert.equal(t.pieces.length, 0); // unchanged
+  const res = t.lastCollisionResult;
+  assert.ok(res && !res.ok, 'expected a rejection result');
+  if (res && !res.ok) {
+    assert.equal(res.reason, 'floor');
+    assert.deepEqual(res.cell, { gx: 1, gy: 0, gz: -1 });
+  }
+});
+
+test('addPiece rejects an overlapping piece (multi-cell JUMP revisits an occupied cell)', () => {
+  const t = new Track();
+  // Trace a path back toward the start cell. Geometry verified via computeEntryAt:
+  //   p0 STRAIGHT (0,0,0,E) -> exit (1,0,0,E)
+  //   p1 CURVE_R  (1,0,0,E) -> exit (1,1,0,S)
+  //   p2 STRAIGHT (1,1,0,S) -> exit (1,2,0,S)
+  //   p3 CURVE_R  (1,2,0,S) -> exit (0,2,0,W)
+  //   p4 CURVE_R  (0,2,0,W) -> exit (0,1,0,N)
+  // Occupied (gz=0): (0,0),(1,0),(1,1),(1,2),(0,2). Cursor (0,1,0,N).
+  assert.equal(t.addPiece('STRAIGHT'), true);
+  assert.equal(t.addPiece('CURVE_R'), true);
+  assert.equal(t.addPiece('STRAIGHT'), true);
+  assert.equal(t.addPiece('CURVE_R'), true);
+  assert.equal(t.addPiece('CURVE_R'), true);
+  assert.deepEqual(t.cursorState(), { gx: 0, gy: 1, gz: 0, dir: 0 });
+  // A JUMP (forward=2) from (0,1,0,N): entry cell {0,1,0} (excluded connection),
+  // landing cell {0,0,0} which is occupied by p0 -> overlap.
+  const ok = t.addPiece('JUMP');
+  assert.equal(ok, false);
+  assert.equal(t.pieces.length, 5); // unchanged
+  const res = t.lastCollisionResult;
+  assert.ok(res && !res.ok, 'expected a rejection result');
+  if (res && !res.ok) {
+    assert.equal(res.reason, 'overlap');
+    assert.deepEqual(res.cell, { gx: 0, gy: 0, gz: 0 });
+  }
+});
+
+test('insertAt rejects overlap with the frozen region (auto-detection)', () => {
+  const t = new Track();
+  // [S,S,S,S] heading East. Entries: 0:(0,0,0) 1:(1,0,0) 2:(2,0,0) 3:(3,0,0).
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.deleteAt(1); // editing mode: pieces [S,S,S], frozen suffix entries (2,0,0),(3,0,0)
+  assert.equal(t.isEditing(), true);
+  // Insert a JUMP at index 1: entry (1,0,0,E), entry cell {1,0,0} (excluded),
+  // landing cell {2,0,0} coincides with a FROZEN-suffix cell -> auto-rejected.
+  const ok = t.insertAt(1, 'JUMP');
+  assert.equal(ok, false);
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'STRAIGHT', 'STRAIGHT']); // unchanged
+  const res = t.lastCollisionResult;
+  assert.ok(res && !res.ok, 'expected a rejection result');
+  if (res && !res.ok) {
+    assert.equal(res.reason, 'overlap');
+    assert.deepEqual(res.cell, { gx: 2, gy: 0, gz: 0 });
+  }
+});
+
+test('replaceAt excludes the old piece\'s own cells (single-cell replace succeeds)', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  // Replacing the single-cell STRAIGHT at index 1 with a single-cell CURVE_R at
+  // the same entry must NOT count the old piece's cell as a conflict.
+  const ok = t.replaceAt(1, 'CURVE_R');
+  assert.equal(ok, true);
+  assert.deepEqual(t.pieces, ['STRAIGHT', 'CURVE_R', 'STRAIGHT']);
+  const res = t.lastCollisionResult;
+  assert.ok(res && res.ok, 'expected an accepted result');
+});
+
+test('rejected placement leaves track unchanged (atomicity)', () => {
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT');
+  t.deleteAt(1); // enter editing mode with a frozen suffix
+  // Snapshot state before a placement we know will be rejected.
+  const piecesBefore = [...t.pieces];
+  const frozenBefore = JSON.stringify(t.frozenEntries);
+  const editingBefore = t.isEditing();
+  const ok = t.insertAt(1, 'JUMP'); // overlaps frozen suffix -> rejected
+  assert.equal(ok, false);
+  // Pieces, frozen entries, and editing mode must be byte-for-byte identical.
+  assert.deepEqual(t.pieces, piecesBefore);
+  assert.equal(JSON.stringify(t.frozenEntries), frozenBefore);
+  assert.equal(t.isEditing(), editingBefore);
+});
+
+test('two pieces at same (gx,gy) but different gz do not collide (elevation separation)', () => {
+  const t = new Track();
+  // Climb to gz=1, then loop back over the start column at the higher level.
+  // Geometry verified via computeEntryAt:
+  //   p0 RAMP_UP  (0,0,0,E) -> exit (1,0,1,E)   occ (0,0,0)
+  //   p1 CURVE_R  (1,0,1,E) -> exit (1,1,1,S)   occ (1,0,1)
+  //   p2 STRAIGHT (1,1,1,S) -> exit (1,2,1,S)   occ (1,1,1)
+  //   p3 CURVE_R  (1,2,1,S) -> exit (0,2,1,W)   occ (1,2,1)
+  //   p4 CURVE_R  (0,2,1,W) -> exit (0,1,1,N)   occ (0,2,1)
+  assert.equal(t.addPiece('RAMP_UP'), true);
+  assert.equal(t.addPiece('CURVE_R'), true);
+  assert.equal(t.addPiece('STRAIGHT'), true);
+  assert.equal(t.addPiece('CURVE_R'), true);
+  assert.equal(t.addPiece('CURVE_R'), true);
+  assert.deepEqual(t.cursorState(), { gx: 0, gy: 1, gz: 1, dir: 0 });
+  // (0,0) is occupied at gz=0 (p0's entry cell). A JUMP from (0,1,1,N) lands its
+  // i=1 cell on (0,0,1) -- same (gx,gy) as (0,0,0) but a different gz -- so the
+  // 3D cell identity keeps them separate and the placement is accepted.
+  const ok = t.addPiece('JUMP');
+  assert.equal(ok, true);
+  assert.equal(t.pieces.length, 6);
+  const res = t.lastCollisionResult;
+  assert.ok(res && res.ok, 'expected an accepted result (elevation separation)');
 });

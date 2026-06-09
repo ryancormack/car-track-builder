@@ -1,0 +1,513 @@
+{
+  "pbtResults": {
+    "7.2 Write property test for Property 1: Floor Violation Detection": {
+      "status": "passed",
+      "lastRunTimestamp": 1780959774267
+    },
+    "7.3 Write property test for Property 2: Cell Computation Correctness": {
+      "status": "passed",
+      "lastRunTimestamp": 1780959857371
+    },
+    "7.4 Write property test for Property 3: Cell Computation Consistency with applyPiece": {
+      "status": "passed",
+      "lastRunTimestamp": 1780959942325
+    },
+    "7.5 Write property test for Property 4: Overlap Detection Rejects Colliding Placements": {
+      "status": "passed",
+      "lastRunTimestamp": 1780960035920
+    },
+    "7.6 Write property test for Property 5: Elevation Separation": {
+      "status": "passed",
+      "lastRunTimestamp": 1780960183473
+    },
+    "7.8 Write property test for Property 7: Frozen Region Auto-Detection": {
+      "status": "passed",
+      "lastRunTimestamp": 1780960548428
+    }
+  },
+  "executionHistory": {
+    "1.1 Create `src/collision.ts` with types and the `cellKey` utility": [
+      {
+        "executionId": "f4bdba40-e02f-432d-9277-c20253c9bc8d",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955903850
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940916
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955950217
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956118133
+      }
+    ],
+    "1.2 Implement `computeCells(entry, piece)` function": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940919
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956126501
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956211852
+      }
+    ],
+    "1.3 Implement `checkFloor(cells)` function": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940921
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956214861
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956325088
+      }
+    ],
+    "1.4 Implement `checkOverlap(cells, occupied, excludeCell)` function": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940923
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956328549
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956422239
+      }
+    ],
+    "1.5 Implement `checkPlacement(entry, piece, opts)` function": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940925
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956425566
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956507357
+      }
+    ],
+    "1.6 Implement `buildOccupiedSet(pieces, startState, fromIndex, toIndex)` function": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940929
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956515768
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956612418
+      }
+    ],
+    "1.7 Implement `buildFrozenOccupiedSet(pieces, frozenEntries, frozenBoundary)` function": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940932
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956616130
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956687903
+      }
+    ],
+    "2. Checkpoint - Verify collision module": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940935
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957039365
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957042003
+      }
+    ],
+    "3.1 Add `lastCollisionResult` field and helper methods to `src/track.ts`": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940937
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957067501
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957270101
+      }
+    ],
+    "3.2 Modify `addPiece` to perform collision check before mutation": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940939
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957279911
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957638028
+      }
+    ],
+    "3.3 Modify `insertAt` to perform collision check before mutation": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940943
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957646175
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957721422
+      }
+    ],
+    "3.4 Modify `replaceAt` to perform collision check before mutation": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940946
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957724431
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957792715
+      }
+    ],
+    "3.5 Modify `rejoin()` to validate connection point mismatch": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940948
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957796774
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957989337
+      }
+    ],
+    "4. Checkpoint - Verify Track integration": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940951
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780958896138
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780958900060
+      }
+    ],
+    "5.1 Modify `src/editor.ts` to read `lastCollisionResult` and display error messages": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940953
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780958923597
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959034648
+      }
+    ],
+    "5.2 Update rejoin handling in Editor/UI for mismatch feedback": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940956
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959075150
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959214589
+      }
+    ],
+    "6. Checkpoint - Verify Editor integration": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940958
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959476728
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959479529
+      }
+    ],
+    "8. Final checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780955940962
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960670057
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960674265
+      }
+    ],
+    "1. Create the collision detection module with pure functions": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956687906
+      }
+    ],
+    "1.8 Write unit tests for collision module pure functions": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780956712743
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957024517
+      }
+    ],
+    "3. Integrate collision detection into Track class": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957989339
+      }
+    ],
+    "3.6 Write unit tests for Track collision integration": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780957994765
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780958892678
+      }
+    ],
+    "5. Integrate collision feedback into Editor": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959214591
+      }
+    ],
+    "5.3 Write unit tests for Editor collision feedback": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959222860
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959473262
+      }
+    ],
+    "7.1 Add `fast-check` dependency and create test file": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959513221
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959650160
+      }
+    ],
+    "7. Property-based tests for collision detection": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959650162
+      }
+    ],
+    "7.2 Write property test for Property 1: Floor Violation Detection": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959659250
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959797175
+      }
+    ],
+    "7.3 Write property test for Property 2: Cell Computation Correctness": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959800362
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959881910
+      }
+    ],
+    "7.4 Write property test for Property 3: Cell Computation Consistency with applyPiece": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959885026
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959962350
+      }
+    ],
+    "7.5 Write property test for Property 4: Overlap Detection Rejects Colliding Placements": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780959967392
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960107497
+      }
+    ],
+    "7.6 Write property test for Property 5: Elevation Separation": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960119271
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960203324
+      }
+    ],
+    "7.7 Write property test for Property 6: Rejection Atomicity": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960207060
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960420165
+      }
+    ],
+    "7.8 Write property test for Property 7: Frozen Region Auto-Detection": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960427552
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960571893
+      }
+    ],
+    "7.9 Write property test for Property 9: Valid Placements Accepted": [
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960574916
+      },
+      {
+        "executionId": "11ac09b2-b151-420a-bead-2bd3f9375a36",
+        "chatSessionId": "7e909190-1628-4139-a148-598b42f26884",
+        "timestamp": 1780960666065
+      }
+    ]
+  }
+}
