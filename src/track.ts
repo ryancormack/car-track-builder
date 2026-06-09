@@ -7,7 +7,15 @@
 // piece sequence. No shadows, no ghosts, no gap placeholders.
 
 import { PIECES, applyPiece, isPieceId } from './pieces/index.js';
-import type { GridState, PieceId, TrackJSON } from './types.js';
+import {
+  buildOccupiedSet,
+  buildFrozenOccupiedSet,
+  cellKey,
+  checkOverlap,
+  computeCells,
+} from './collision.js';
+import type { CellKey, CollisionResult, GridCell } from './collision.js';
+import type { GridState, Piece, PieceId, TrackJSON } from './types.js';
 
 export class Track {
   dropHeight = 3;
@@ -22,6 +30,14 @@ export class Track {
   // boundary `pieces.length - frozenEntries.length` shifts automatically, so the
   // original downstream stays visually put until Rejoin. No editIndex/delta math.
   frozenEntries: GridState[] | null = null;
+
+  /**
+   * Result of the last collision check performed by a mutation method. The
+   * Editor reads this after a rejected addPiece/insertAt/replaceAt to choose the
+   * appropriate error message. It is set on every mutation attempt (and cleared
+   * to `{ ok: true }` on a successful placement) by tasks 3.2–3.5.
+   */
+  lastCollisionResult: CollisionResult | null = null;
 
   /** Index of the first frozen piece (start of the frozen suffix), or -1. */
   private get _frozenBoundary(): number {
@@ -73,6 +89,130 @@ export class Track {
     return this.frozenEntries !== null;
   }
 
+  /**
+   * Build the set of occupied grid cells that a candidate placement must be
+   * checked against ("the checked region").
+   *
+   * - NORMAL mode (frozenEntries === null): every piece in the track
+   *   contributes its cells, via `buildOccupiedSet` over the full range.
+   * - EDITING mode (frozenEntries !== null): the LIVE region (indices
+   *   0..frozenBoundary, exclusive) is rebuilt from the actual piece chain, and
+   *   the FROZEN suffix contributes its snapshot cells via
+   *   `buildFrozenOccupiedSet`. The union of the two is what AUTO-DETECTS
+   *   collisions with the downstream frozen track while rebuilding — the user
+   *   cannot accidentally build over the segments that still exist past the
+   *   edit point.
+   *
+   * When `excludeIndex` is provided, the cells owned by the piece at that index
+   * are omitted from the result. This is needed by replaceAt, which must check a
+   * replacement piece against everything EXCEPT the piece it is replacing. The
+   * exclusion is achieved by building the cell set piecewise around the excluded
+   * index rather than subtracting cells afterwards (cells may be shared).
+   */
+  private _buildCheckedCells(excludeIndex?: number): Set<CellKey> {
+    const editing = this.frozenEntries !== null;
+    const boundary = editing ? this._frozenBoundary : this.pieces.length;
+    const cells = new Set<CellKey>();
+
+    // Live region: pieces [0, boundary). If the excluded index falls here, build
+    // the ranges on either side of it and union them so its cells are omitted.
+    if (excludeIndex !== undefined && excludeIndex >= 0 && excludeIndex < boundary) {
+      for (const key of buildOccupiedSet(this.pieces, this.startState, 0, excludeIndex)) {
+        cells.add(key);
+      }
+      for (const key of buildOccupiedSet(this.pieces, this.startState, excludeIndex + 1, boundary)) {
+        cells.add(key);
+      }
+    } else {
+      for (const key of buildOccupiedSet(this.pieces, this.startState, 0, boundary)) {
+        cells.add(key);
+      }
+    }
+
+    // Frozen region (editing mode only): the downstream suffix keeps its
+    // snapshot positions. Including these cells is what auto-detects overlaps
+    // with the frozen track during a rebuild (Requirement 7).
+    if (editing && this.frozenEntries) {
+      if (excludeIndex !== undefined && excludeIndex >= boundary && excludeIndex < this.pieces.length) {
+        // The excluded piece lives in the frozen suffix: rebuild the frozen
+        // cells piecewise from the snapshot entries, skipping that one index.
+        for (let j = 0; j < this.frozenEntries.length; j++) {
+          const index = boundary + j;
+          if (index === excludeIndex || index >= this.pieces.length) continue;
+          for (const cell of computeCells(this.frozenEntries[j], PIECES[this.pieces[index]])) {
+            cells.add(cellKey(cell.gx, cell.gy, cell.gz));
+          }
+        }
+      } else {
+        for (const key of buildFrozenOccupiedSet(this.pieces, this.frozenEntries, boundary)) {
+          cells.add(key);
+        }
+      }
+    }
+
+    return cells;
+  }
+
+  /**
+   * The connection-point cell to exclude from overlap checks for a candidate
+   * piece at `index`. This is the candidate's entry cell — the point it shares
+   * with its predecessor's exit. Returns `null` for index 0 (or any non-positive
+   * index), where there is no predecessor and thus no shared connection point.
+   */
+  private _getExcludeCell(index: number): CellKey | null {
+    if (index <= 0) return null;
+    const entry = this.computeEntryAt(index);
+    return cellKey(entry.gx, entry.gy, entry.gz);
+  }
+
+  /**
+   * Validate placing `piece` at entry state `entry`. Shared by
+   * addPiece/insertAt/replaceAt so the floor and overlap rules stay consistent
+   * across every editing operation.
+   *
+   * Floor rule (Requirements 1 & 6): a cell is below the floor when
+   * `gz + dropHeight < 0`. The whole track sits `dropHeight` above the floor
+   * (startState.gz = 0 is the build plane), so the natural gz values are offset
+   * by dropHeight before comparing against the floor. Both the OWNED cells
+   * (`computeCells`) AND the EXIT cell (`applyPiece`) are checked, because
+   * computeCells deliberately excludes the exit position — a single-cell
+   * descent (e.g. RAMP_DN at the build plane) must still be rejected on its
+   * exit gz alone.
+   *
+   * Overlap rule (Requirement 2): checked in the natural gz = 0 frame (overlap
+   * is translation-invariant, so no dropHeight offset) against the checked
+   * region — live cells plus, in editing mode, the frozen suffix — excluding the
+   * shared connection point with the predecessor.
+   */
+  private _checkPlacement(
+    entry: GridState,
+    piece: Piece,
+    excludeIndex: number | undefined,
+    connectionIndex: number,
+  ): CollisionResult {
+    const cells = computeCells(entry, piece);
+    const exit = applyPiece(entry, piece);
+
+    // Floor: owned cells + the exit cell, offset by dropHeight.
+    const floorPts: GridCell[] = [...cells, { gx: exit.gx, gy: exit.gy, gz: exit.gz }];
+    for (const c of floorPts) {
+      if (c.gz + this.dropHeight < 0) {
+        return { ok: false, reason: 'floor', cell: c };
+      }
+    }
+
+    // Overlap: against the checked region (live + frozen in editing mode),
+    // excluding the connection point shared with the predecessor.
+    const occupied = this._buildCheckedCells(excludeIndex);
+    const excludeCell = this._getExcludeCell(connectionIndex);
+    const overlap = checkOverlap(cells, occupied, excludeCell);
+    if (overlap !== null) {
+      return { ok: false, reason: 'overlap', cell: overlap };
+    }
+
+    return { ok: true };
+  }
+
   canAdd(pieceId: string): boolean {
     if (!isPieceId(pieceId)) return false;
     if (this.hasFinish()) return false; // no pieces after FINISH
@@ -81,6 +221,10 @@ export class Track {
 
   addPiece(pieceId: string): boolean {
     if (!isPieceId(pieceId) || !this.canAdd(pieceId)) return false;
+    const entry = this.cursorState();
+    const result = this._checkPlacement(entry, PIECES[pieceId], undefined, this.pieces.length);
+    this.lastCollisionResult = result;
+    if (!result.ok) return false;
     this.pieces.push(pieceId);
     return true;
   }
@@ -134,6 +278,19 @@ export class Track {
   insertAt(index: number, pieceId: PieceId): boolean {
     if (index < 0 || index > this.pieces.length) return false;
     if (!isPieceId(pieceId)) return false;
+    // Validate the placement BEFORE any state mutation (no _freezeFrom, no
+    // splice) so a rejected insert leaves frozenEntries and pieces untouched
+    // (Requirement 3.4 atomicity). The entry state for a piece inserted at
+    // `index` is the live-chained state at that position — what the inserted
+    // piece's predecessor leads into. `excludeIndex` is undefined (an insert
+    // adds a new piece; it replaces nothing) and `connectionIndex` is `index`
+    // (the inserted piece's entry/connection cell shared with its predecessor).
+    // In editing mode `_buildCheckedCells` includes the frozen suffix, so this
+    // auto-detects overlaps with the downstream frozen region (Requirement 7).
+    const entry = this.computeEntryAt(index);
+    const result = this._checkPlacement(entry, PIECES[pieceId], undefined, index);
+    this.lastCollisionResult = result;
+    if (!result.ok) return false;
     // First edit: freeze everything from this index onward (it shifts right).
     if (this.frozenEntries === null) this._freezeFrom(index);
     this.pieces.splice(index, 0, pieceId);
@@ -147,17 +304,69 @@ export class Track {
   replaceAt(index: number, pieceId: PieceId): boolean {
     if (index < 0 || index >= this.pieces.length) return false;
     if (!isPieceId(pieceId)) return false;
+    // Validate the placement BEFORE any state mutation (no _freezeFrom, no
+    // array assignment) so a rejected replace leaves frozenEntries and pieces
+    // untouched (Requirement 3.4 atomicity). The entry state for the piece at
+    // `index` is its live-chained state. `excludeIndex` is `index` so the OLD
+    // piece's own cells are removed from the checked region — we are replacing
+    // it, so it must not count as a collision against itself (Requirement 3.3).
+    // `connectionIndex` is `index` (the shared entry/connection cell with the
+    // predecessor). In editing mode `_buildCheckedCells` includes the frozen
+    // suffix, auto-detecting overlaps with the downstream region (Requirement 7).
+    const entry = this.computeEntryAt(index);
+    const result = this._checkPlacement(entry, PIECES[pieceId], index, index);
+    this.lastCollisionResult = result;
+    if (!result.ok) return false;
     if (this.frozenEntries === null) this._freezeFrom(index + 1);
     this.pieces[index] = pieceId;
     return true;
   }
 
   /**
-   * Rejoin: clear frozen entries. Everything recomputes from the actual piece
-   * sequence, so the downstream repositions to connect to the new section.
+   * Rejoin: validate the connection point between the live region and the frozen
+   * suffix, then (on success) clear the frozen entries so everything recomputes
+   * from the actual piece sequence and the downstream repositions to connect to
+   * the new section.
+   *
+   * Validation (Requirements 7.5, 7.6): the live region's FINAL EXIT state — the
+   * chained state arriving at the frozen boundary, `computeEntryAt(boundary)` —
+   * must match the frozen suffix's FIRST ENTRY snapshot, `frozenEntries[0]`, on
+   * all four GridState fields (gx, gy, gz, dir). If they MISMATCH, the rebuilt
+   * live section does not actually connect to the downstream track, so we keep
+   * `frozenEntries` intact (stay in editing mode) and return `false` — the Editor
+   * surfaces a "doesn't connect" message and the user keeps building or undoes.
+   *
+   * The boundary is computed BEFORE clearing `frozenEntries`, because the
+   * `_frozenBoundary` getter is derived from `frozenEntries.length`.
+   *
+   * No-op success cases (return `true` without rejecting):
+   * - Not editing (`frozenEntries === null`): nothing to rejoin.
+   * - Empty frozen suffix (`length === 0`): nothing downstream to connect to.
    */
-  rejoin(): void {
+  rejoin(): boolean {
+    // Not editing: nothing to validate or clear.
+    if (this.frozenEntries === null) return true;
+    // Empty frozen suffix: nothing downstream; clear and succeed.
+    if (this.frozenEntries.length === 0) {
+      this.frozenEntries = null;
+      return true;
+    }
+    // Compare the live region's final exit (at the boundary) with the frozen
+    // suffix's first entry snapshot. Compute the boundary before any clearing.
+    const boundary = this._frozenBoundary;
+    const liveExit = this.computeEntryAt(boundary);
+    const frozenEntry = this.frozenEntries[0];
+    const matches =
+      liveExit.gx === frozenEntry.gx &&
+      liveExit.gy === frozenEntry.gy &&
+      liveExit.gz === frozenEntry.gz &&
+      liveExit.dir === frozenEntry.dir;
+    if (!matches) {
+      // Mismatch: keep frozen entries intact and stay in editing mode.
+      return false;
+    }
     this.frozenEntries = null;
+    return true;
   }
 
   // Legacy removePieceAt - now delegates to deleteAt

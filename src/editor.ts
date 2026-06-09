@@ -94,7 +94,7 @@ export class Editor {
       // Replace mode: swap the selected piece.
       const ok = this.track.replaceAt(this.selectedIndex, id);
       if (!ok) {
-        this._setStatus('Cannot replace that piece.', 'err');
+        this._setStatus(this._collisionMessage('Cannot replace that piece.'), 'err');
         return;
       }
       this.renderer.rebuildTrack(this.track);
@@ -114,7 +114,7 @@ export class Editor {
       const insertIdx = this.insertCursor + 1;
       const ok = this.track.insertAt(insertIdx, id);
       if (!ok) {
-        this._setStatus('Cannot insert here.', 'err');
+        this._setStatus(this._collisionMessage('Cannot insert here.'), 'err');
         return;
       }
       // Advance the cursor to the newly inserted piece.
@@ -130,7 +130,11 @@ export class Editor {
       this._setStatus('Track ends at the Finish line - undo to extend.', 'err');
       return;
     }
-    this.track.addPiece(id);
+    const ok = this.track.addPiece(id);
+    if (!ok) {
+      this._setStatus(this._collisionMessage('Cannot add that piece.'), 'err');
+      return;
+    }
     this.renderer.rebuildTrack(this.track);
     this.renderer.clearGhost();
     this._setStatus(`Added ${PIECES[id].name}.`, 'ok');
@@ -218,6 +222,27 @@ export class Editor {
     for (const b of this.buttons) {
       b.disabled = !this.enabled || (lockAppend && !editing);
     }
+  }
+
+  /**
+   * Translate the Track's last collision result into a user-facing message.
+   * Read after a mutation method (addPiece/insertAt/replaceAt) returns false.
+   * Floor and overlap rejections get collision-specific copy; an overlap while
+   * editing distinguishes the frozen/downstream region (Requirement 7.3). For
+   * any non-collision rejection (invalid id, out-of-bounds, no collision result)
+   * the caller's generic `fallback` message is used.
+   */
+  private _collisionMessage(fallback: string): string {
+    const r = this.track.lastCollisionResult;
+    if (r && !r.ok) {
+      if (r.reason === 'floor') return 'Cannot place: piece would go below floor level.';
+      if (r.reason === 'overlap') {
+        return this.track.isEditing()
+          ? 'Cannot place: collides with downstream track.'
+          : 'Cannot place: collides with existing track.';
+      }
+    }
+    return fallback;
   }
 
   private _setStatus(msg: string, kind: StatusKind = ''): void {
