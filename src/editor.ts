@@ -32,6 +32,12 @@ export class Editor {
    * inserts *after* it (chaining). Reset on deselect or mode change.
    */
   insertCursor: number | null = null;
+  /**
+   * The highest index that is NOT part of the current insert session — the
+   * floor below which insert-mode undo must not delete. Set when entering
+   * insert mode (delete or replace), cleared on (de)select.
+   */
+  insertAnchor: number | null = null;
   private _statusTimer?: ReturnType<typeof setTimeout>;
 
   constructor({ track, renderer, paletteEl, statusEl, onChange, onSelectionChange }: EditorOptions) {
@@ -80,6 +86,13 @@ export class Editor {
   private _hover(id: PieceId): void {
     if (!this.enabled) return;
     if (this.selectedIndex !== null) return; // in replace mode the ghost (append preview) is misleading
+    if (this.insertCursor !== null) {
+      // Insert (gap-fill) mode: preview the piece at the insert location. Do NOT
+      // gate on canAdd — the frozen suffix may still end in FINISH (canAdd would
+      // be false) yet we must still show a ghost at the gap.
+      this.renderer.rebuildGhostAt(this.track, id, this.insertCursor + 1);
+      return;
+    }
     if (!this.track.canAdd(id)) return;
     this.renderer.rebuildGhost(this.track, id);
   }
@@ -105,6 +118,7 @@ export class Editor {
       this.selectedIndex = null;
       this.renderer.highlightPiece(null);
       this.insertCursor = cursorPos;
+      this.insertAnchor = cursorPos;
       this._refreshButtons();
       this.onChange();
       return;
@@ -149,6 +163,7 @@ export class Editor {
     }
     this.selectedIndex = index;
     this.insertCursor = null; // selecting a new piece exits insert mode
+    this.insertAnchor = null;
     this.renderer.highlightPiece(index);
     this._refreshButtons();
     const name = PIECES[this.track.pieces[index]].name;
@@ -158,6 +173,7 @@ export class Editor {
   deselectPiece(): void {
     this.selectedIndex = null;
     this.insertCursor = null;
+    this.insertAnchor = null;
     this.renderer.highlightPiece(null);
     this._refreshButtons();
     this.onSelectionChange(null);
@@ -177,6 +193,7 @@ export class Editor {
     this.selectedIndex = null;
     this.renderer.highlightPiece(null);
     this.insertCursor = index - 1;
+    this.insertAnchor = index - 1;
     this.renderer.rebuildTrack(this.track);
     this.renderer.clearGhost();
     this._setStatus(`Removed ${PIECES[removed].name} — build into the gap or Rejoin.`, 'ok');
@@ -185,6 +202,34 @@ export class Editor {
   }
 
   undo(): void {
+    // Insert (gap-fill) mode: undo must affect the piece the user just laid into
+    // the gap, NOT the frozen end of the track (e.g. FINISH). Branch BEFORE
+    // deselectPiece() so the insert context (insertCursor / insertAnchor) is
+    // still available.
+    if (this.insertCursor !== null && this.track.isEditing()) {
+      if (this.insertAnchor !== null && this.insertCursor > this.insertAnchor) {
+        // Remove the most-recently-laid live piece at the insert cursor and step
+        // the cursor back; the frozen downstream suffix stays intact and we
+        // remain in editing mode.
+        const removed = this.track.deleteAt(this.insertCursor);
+        this.insertCursor -= 1;
+        this.renderer.rebuildTrack(this.track);
+        this.renderer.clearGhost();
+        if (removed) {
+          this._setStatus(`Removed ${PIECES[removed].name}.`, 'ok');
+        } else {
+          this._setStatus('Nothing to undo.', 'err');
+        }
+        this._refreshButtons();
+        this.onChange();
+        return;
+      }
+      // No piece laid in this session yet — nothing to undo without disturbing
+      // the frozen downstream. Leave the track untouched.
+      this._setStatus('Nothing to undo in this section — Rejoin or keep building.', 'err');
+      return;
+    }
+    // Normal append mode: remove the last appended piece.
     this.deselectPiece();
     const removed = this.track.undo();
     this.renderer.rebuildTrack(this.track);

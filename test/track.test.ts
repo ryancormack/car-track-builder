@@ -240,11 +240,48 @@ test('rejoin clears frozen entries and recomputes downstream when connection mat
   assert.deepEqual(entry1, { gx: 1, gy: 0, gz: 0, dir: 1 });
 });
 
-test('rejoin returns false and stays editing when connection mismatches', () => {
+test('rejoin re-anchors and reconnects after closing a gap of a different length (Bug 4)', () => {
+  // Delete a turning piece so the live exit no longer equals the original frozen
+  // [0] snapshot. The old exact-match gate returned false; the re-anchor fix
+  // reconnects by recomputing the downstream from the live exit.
   const t = new Track();
   t.addPiece('STRAIGHT'); t.addPiece('CURVE_R'); t.addPiece('STRAIGHT');
-  t.deleteAt(1); // delete CURVE_R, now [S, S]: live exit no longer matches frozen entry
+  t.deleteAt(1); // [S, S]; live exit (2,0,0,E) != frozen snapshot (1,1,0,S)
   assert.equal(t.isEditing(), true);
+  assert.equal(t.rejoin(), true);
+  assert.equal(t.isEditing(), false);
+  // The downstream re-anchored onto the live exit: the track is continuous.
+  assert.deepEqual(t.entryStateAt(0), { gx: 0, gy: 0, gz: 0, dir: 1 });
+  assert.deepEqual(t.entryStateAt(1), { gx: 1, gy: 0, gz: 0, dir: 1 });
+});
+
+test('rejoin re-anchors a moved downstream after rebuilding a section of different length (Bug 4)', () => {
+  // Build a track ending in FINISH, delete a mid piece, then rebuild the gap
+  // with TWO pieces (a different length than the single piece removed). The
+  // downstream FINISH re-anchors onto the new live exit and the track reconnects.
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('STRAIGHT'); t.addPiece('FINISH');
+  t.deleteAt(1); // [S, FINISH]; FINISH frozen at (2,0,0,E)
+  assert.equal(t.isEditing(), true);
+  assert.equal(t.insertAt(1, 'STRAIGHT'), true); // [S, S, FINISH]
+  assert.equal(t.insertAt(2, 'STRAIGHT'), true); // [S, S, S, FINISH] — longer than original
+  assert.equal(t.rejoin(), true);
+  assert.equal(t.isEditing(), false);
+  assert.equal(t.isComplete(), true);
+  // FINISH (last piece) re-chains continuously from the rebuilt section.
+  assert.deepEqual(t.entryStateAt(3), { gx: 3, gy: 0, gz: 0, dir: 1 });
+});
+
+test('rejoin returns false and stays editing when the recomputed downstream is invalid', () => {
+  // A genuine non-connect: after re-anchoring, the recomputed chain drives a
+  // piece below the floor. Build [S, RAMP_DN, S] (valid at dropHeight 3), delete
+  // the leading STRAIGHT, then drop the cushion so the re-chained RAMP_DN sinks
+  // below the floor. Rejoin must refuse and stay in editing mode.
+  const t = new Track();
+  t.addPiece('STRAIGHT'); t.addPiece('RAMP_DN'); t.addPiece('STRAIGHT');
+  t.deleteAt(0); // pieces [RAMP_DN, S]; downstream frozen
+  assert.equal(t.isEditing(), true);
+  t.dropHeight = 0; // remove the cushion: RAMP_DN's exit cell now sits below 0
   assert.equal(t.rejoin(), false);
   assert.equal(t.isEditing(), true); // editing mode preserved
 });

@@ -40,53 +40,62 @@ test('cellKey preserves negative coordinates distinctly', () => {
 
 // ---- computeCells ----
 
-test('computeCells(STRAIGHT, forward=1) returns the single entry cell', () => {
+test('computeCells(STRAIGHT, forward=1) returns the entry cell and the exit cell', () => {
   const entry: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
   const cells = computeCells(entry, PIECES.STRAIGHT);
-  assert.deepEqual(cells, [{ gx: 0, gy: 0, gz: 0 }]);
+  assert.deepEqual(cells, [
+    { gx: 0, gy: 0, gz: 0 },
+    { gx: 1, gy: 0, gz: 0 }, // exit cell now owned (forward + 1 cells)
+  ]);
 });
 
-test('computeCells(CORKSCREW, forward=3) steps three cells along the exit dir', () => {
+test('computeCells(CORKSCREW, forward=3) steps four cells (entry..exit) along the exit dir', () => {
   const entry: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
   const cells = computeCells(entry, PIECES.CORKSCREW);
-  assert.equal(cells.length, 3);
+  assert.equal(cells.length, 4);
   assert.deepEqual(cells, [
     { gx: 0, gy: 0, gz: 0 },
     { gx: 1, gy: 0, gz: 0 },
     { gx: 2, gy: 0, gz: 0 },
+    { gx: 3, gy: 0, gz: 0 }, // exit cell
   ]);
 });
 
-test('computeCells(CURVE_R, turn=+1) yields just the entry cell (forward=1)', () => {
-  // CURVE_R has forward=1, so only index 0 (the entry cell) is produced.
-  // The exit direction (East + right = South) only affects pieces that step
-  // more than once; the single owned cell sits at the entry position.
+test('computeCells(CURVE_R, turn=+1) yields the entry cell and the post-turn exit cell', () => {
+  // CURVE_R has forward=1, so the footprint is the entry cell plus the exit cell
+  // one step along the post-turn exit direction (East + right = South, +y).
   const entry: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
   const cells = computeCells(entry, PIECES.CURVE_R);
-  assert.deepEqual(cells, [{ gx: 0, gy: 0, gz: 0 }]);
+  assert.deepEqual(cells, [
+    { gx: 0, gy: 0, gz: 0 },
+    { gx: 0, gy: 1, gz: 0 }, // exit cell, stepped South
+  ]);
 });
 
 test('computeCells steps along the post-turn exit direction for a turning multi-cell piece', () => {
   // Derive a turning multi-cell piece to exercise the exitDir = (dir+turn)%4
   // stepping: entering East with turn=+1 exits South (+y), so cells advance
-  // along +y rather than +x.
+  // along +y rather than +x. forward=2 -> 3 cells (entry, intermediate, exit).
   const turningPiece: Piece = { ...PIECES.CURVE_R, forward: 2 };
   const entry: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
   const cells = computeCells(entry, turningPiece);
   assert.deepEqual(cells, [
     { gx: 0, gy: 0, gz: 0 },
     { gx: 0, gy: 1, gz: 0 }, // stepped South, confirming the +1 turn
+    { gx: 0, gy: 2, gz: 0 }, // exit cell
   ]);
 });
 
-test('computeCells interpolates elevation linearly and rounds per step', () => {
-  // HELIX_UP: forward=3, dz=3 → gz rises by 1 per owned cell (round(3*i/3)).
+test('computeCells interpolates elevation at integer endpoints and includes the exit cell', () => {
+  // HELIX_UP: forward=3, dz=3 -> gz rises by 1 per step; exit cell lands at
+  // entry.gz + dz = 3 exactly (entry.gz + round(dz*i/forward)).
   const entry: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
   const cells = computeCells(entry, PIECES.HELIX_UP);
   assert.deepEqual(cells, [
     { gx: 0, gy: 0, gz: 0 },
     { gx: 1, gy: 0, gz: 1 },
     { gx: 2, gy: 0, gz: 2 },
+    { gx: 3, gy: 0, gz: 3 }, // exit cell at entry.gz + dz
   ]);
 });
 
@@ -186,43 +195,44 @@ test('checkPlacement accepts a valid placement (no floor or overlap violation)',
 
 // ---- buildOccupiedSet ----
 
-test('buildOccupiedSet collects every cell across a straight run', () => {
+test('buildOccupiedSet collects every cell across a straight run (exit-inclusive)', () => {
   const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
+  // Each STRAIGHT owns its entry AND exit cell; the union spans 0..3.
   const set = buildOccupiedSet(['STRAIGHT', 'STRAIGHT', 'STRAIGHT'], start, 0, 3);
-  assert.deepEqual(sortedKeys(set), ['0,0,0', '1,0,0', '2,0,0']);
+  assert.deepEqual(sortedKeys(set), ['0,0,0', '1,0,0', '2,0,0', '3,0,0']);
 });
 
-test('buildOccupiedSet collects all cells of a multi-cell piece', () => {
+test('buildOccupiedSet collects all cells of a multi-cell piece (exit-inclusive)', () => {
   const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 };
   const set = buildOccupiedSet(['CORKSCREW'], start, 0, 1);
-  assert.deepEqual(sortedKeys(set), ['0,0,0', '1,0,0', '2,0,0']);
+  assert.deepEqual(sortedKeys(set), ['0,0,0', '1,0,0', '2,0,0', '3,0,0']);
 });
 
 test('buildOccupiedSet collects only pieces in [fromIndex, toIndex) while advancing the cursor from 0', () => {
   const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 };
-  // Pieces 0 and 1 only advance the cursor; piece 2 is the one collected.
+  // Pieces 0 and 1 only advance the cursor; piece 2 (entry+exit) is collected.
   const set = buildOccupiedSet(['STRAIGHT', 'STRAIGHT', 'STRAIGHT'], start, 2, 3);
-  assert.deepEqual(sortedKeys(set), ['2,0,0']);
+  assert.deepEqual(sortedKeys(set), ['2,0,0', '3,0,0']);
 });
 
 test('buildOccupiedSet clamps toIndex to the pieces length', () => {
   const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 };
   const set = buildOccupiedSet(['STRAIGHT', 'STRAIGHT'], start, 0, 10);
-  assert.deepEqual(sortedKeys(set), ['0,0,0', '1,0,0']);
+  assert.deepEqual(sortedKeys(set), ['0,0,0', '1,0,0', '2,0,0']);
 });
 
 // ---- buildFrozenOccupiedSet ----
 
 test('buildFrozenOccupiedSet uses snapshot entries directly (not re-derived positions)', () => {
   // Frozen pieces sit at an arbitrary snapshot location, decoupled from the
-  // live region. The set is built straight from frozenEntries.
+  // live region. The set is built straight from frozenEntries (exit-inclusive).
   const pieces = ['STRAIGHT', 'STRAIGHT', 'STRAIGHT'] as const;
   const frozenEntries: GridState[] = [
     { gx: 5, gy: 5, gz: 0, dir: 1 },
     { gx: 6, gy: 5, gz: 0, dir: 1 },
   ];
   const set = buildFrozenOccupiedSet([...pieces], frozenEntries, 1);
-  assert.deepEqual(sortedKeys(set), ['5,5,0', '6,5,0']);
+  assert.deepEqual(sortedKeys(set), ['5,5,0', '6,5,0', '7,5,0']);
 });
 
 test('buildFrozenOccupiedSet guards against entries past the end of the pieces array', () => {
@@ -231,5 +241,5 @@ test('buildFrozenOccupiedSet guards against entries past the end of the pieces a
     { gx: 1, gy: 0, gz: 0, dir: 1 }, // index 1 is out of range for a 1-piece track
   ];
   const set = buildFrozenOccupiedSet(['STRAIGHT'], frozenEntries, 0);
-  assert.deepEqual(sortedKeys(set), ['0,0,0']);
+  assert.deepEqual(sortedKeys(set), ['0,0,0', '1,0,0']);
 });

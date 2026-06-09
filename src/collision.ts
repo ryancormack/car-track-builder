@@ -71,22 +71,31 @@ export function cellKey(gx: number, gy: number, gz: number): CellKey {
  *
  * The piece advances `piece.forward` cells along its EXIT direction
  * (`(entry.dir + piece.turn + 4) % 4`), consistent with applyPiece's geometry
- * where movement uses the post-turn heading. Elevation is interpolated
- * linearly from the entry gz toward entry.gz + piece.dz over `forward` steps,
- * so the entry cell (i=0) sits at entry.gz and each subsequent cell rises (or
- * falls) by the per-step fraction `piece.dz / piece.forward`.
+ * where movement uses the post-turn heading. The footprint a piece owns is
+ * EXIT-INCLUSIVE: the entry cell (i=0), every intermediate cell, AND the cell
+ * its body advances into (i=forward) — `piece.forward + 1` cells in total.
+ * including the exit cell means the cell a piece computes as its exit equals the
+ * next piece's entry cell, so crossing/looping pieces agree on shared cells and
+ * a single-cell loop-back is no longer invisible to overlap checks.
  *
- * Returns exactly `piece.forward` cells, the first of which is the entry cell.
+ * Elevation is anchored at the integer endpoints `entry.gz` (i=0) and
+ * `entry.gz + piece.dz` (i=forward): `gz = entry.gz + Math.round(piece.dz * i /
+ * piece.forward)`. The `entry.gz` offset stays OUTSIDE the rounding so the exit
+ * cell lands at exactly `entry.gz + piece.dz` (matching `applyPiece`), and two
+ * crossing pieces interpolate from consistent integer endpoints.
+ *
+ * Returns `piece.forward + 1` cells: the first is the entry cell, the last is
+ * the exit cell.
  */
 export function computeCells(entry: GridState, piece: Piece): GridCell[] {
   const exitDir = (entry.dir + piece.turn + 4) % 4;
   const { dx, dy } = DIRS[exitDir];
   const cells: GridCell[] = [];
-  for (let i = 0; i < piece.forward; i++) {
+  for (let i = 0; i <= piece.forward; i++) {
     cells.push({
       gx: entry.gx + dx * i,
       gy: entry.gy + dy * i,
-      gz: Math.round(entry.gz + (piece.dz * i) / piece.forward),
+      gz: entry.gz + Math.round((piece.dz * i) / piece.forward),
     });
   }
   return cells;

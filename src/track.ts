@@ -189,6 +189,7 @@ export class Track {
     piece: Piece,
     excludeIndex: number | undefined,
     connectionIndex: number,
+    excludeExitSeam: boolean,
   ): CollisionResult {
     const cells = computeCells(entry, piece);
     const exit = applyPiece(entry, piece);
@@ -204,6 +205,20 @@ export class Track {
     // Overlap: against the checked region (live + frozen in editing mode),
     // excluding the connection point shared with the predecessor.
     const occupied = this._buildCheckedCells(excludeIndex);
+
+    // Forward connection seam: a piece placed via INSERT or REPLACE connects its
+    // EXIT cell into the existing downstream track (the successor it leads into,
+    // or the frozen suffix's first entry when refilling a one-cell gap). That
+    // single shared exit cell is a legitimate connection, not an overlap, so it
+    // is dropped from the occupied set before the scan. APPEND has no downstream
+    // ahead of it, so its exit cell stays checked — this is what now catches a
+    // single-cell loop-back onto an already-occupied cell (Bug 1). All other
+    // coincidences (intermediate/landing cells against the frozen region) remain
+    // rejected, preserving the frozen-region auto-detection.
+    if (excludeExitSeam) {
+      occupied.delete(cellKey(exit.gx, exit.gy, exit.gz));
+    }
+
     const excludeCell = this._getExcludeCell(connectionIndex);
     const overlap = checkOverlap(cells, occupied, excludeCell);
     if (overlap !== null) {
@@ -222,7 +237,7 @@ export class Track {
   addPiece(pieceId: string): boolean {
     if (!isPieceId(pieceId) || !this.canAdd(pieceId)) return false;
     const entry = this.cursorState();
-    const result = this._checkPlacement(entry, PIECES[pieceId], undefined, this.pieces.length);
+    const result = this._checkPlacement(entry, PIECES[pieceId], undefined, this.pieces.length, false);
     this.lastCollisionResult = result;
     if (!result.ok) return false;
     this.pieces.push(pieceId);
@@ -288,7 +303,7 @@ export class Track {
     // In editing mode `_buildCheckedCells` includes the frozen suffix, so this
     // auto-detects overlaps with the downstream frozen region (Requirement 7).
     const entry = this.computeEntryAt(index);
-    const result = this._checkPlacement(entry, PIECES[pieceId], undefined, index);
+    const result = this._checkPlacement(entry, PIECES[pieceId], undefined, index, true);
     this.lastCollisionResult = result;
     if (!result.ok) return false;
     // First edit: freeze everything from this index onward (it shifts right).
@@ -314,7 +329,7 @@ export class Track {
     // predecessor). In editing mode `_buildCheckedCells` includes the frozen
     // suffix, auto-detecting overlaps with the downstream region (Requirement 7).
     const entry = this.computeEntryAt(index);
-    const result = this._checkPlacement(entry, PIECES[pieceId], index, index);
+    const result = this._checkPlacement(entry, PIECES[pieceId], index, index, true);
     this.lastCollisionResult = result;
     if (!result.ok) return false;
     if (this.frozenEntries === null) this._freezeFrom(index + 1);
@@ -323,21 +338,64 @@ export class Track {
   }
 
   /**
-   * Rejoin: validate the connection point between the live region and the frozen
-   * suffix, then (on success) clear the frozen entries so everything recomputes
-   * from the actual piece sequence and the downstream repositions to connect to
-   * the new section.
+   * Validate the ENTIRE piece sequence as one continuous chain, ignoring the
+   * frozen snapshots. Chains `applyPiece` from `startState` through every piece
+   * and, for each, checks:
+   *   (a) floor — every cell of `computeCells` satisfies `gz + dropHeight >= 0`;
+   *   (b) overlap — each cell key (excluding the piece's own entry cell, which
+   *       is the legitimate seam shared with its predecessor's exit) is not
+   *       already present in an accumulating occupied set.
+   * Cells are accumulated AFTER the per-piece checks so a piece never collides
+   * with itself. Returns true when the whole recomputed track is valid.
+   */
+  private _validateContinuous(): boolean {
+    const occupied = new Set<CellKey>();
+    let cursor: GridState = { ...this.startState };
+    for (let i = 0; i < this.pieces.length; i++) {
+      const piece = PIECES[this.pieces[i]];
+      const cells = computeCells(cursor, piece);
+
+      // (a) Floor: offset by dropHeight (the build plane sits dropHeight up).
+      for (const c of cells) {
+        if (c.gz + this.dropHeight < 0) return false;
+      }
+
+      // (b) Overlap: exclude the piece's own entry cell (the predecessor seam).
+      const entryKey = cellKey(cursor.gx, cursor.gy, cursor.gz);
+      for (const c of cells) {
+        const key = cellKey(c.gx, c.gy, c.gz);
+        if (key === entryKey) continue;
+        if (occupied.has(key)) return false;
+      }
+
+      // Accumulate this piece's cells only after its own checks pass.
+      for (const c of cells) {
+        occupied.add(cellKey(c.gx, c.gy, c.gz));
+      }
+
+      cursor = applyPiece(cursor, piece);
+    }
+    return true;
+  }
+
+  /**
+   * Rejoin: reconnect the live region to the frozen downstream by RE-ANCHORING
+   * and RECOMPUTING the whole track, then (on success) clear the frozen entries
+   * so everything recomputes from the actual piece sequence and the downstream
+   * repositions to connect to the new section.
    *
-   * Validation (Requirements 7.5, 7.6): the live region's FINAL EXIT state — the
-   * chained state arriving at the frozen boundary, `computeEntryAt(boundary)` —
-   * must match the frozen suffix's FIRST ENTRY snapshot, `frozenEntries[0]`, on
-   * all four GridState fields (gx, gy, gz, dir). If they MISMATCH, the rebuilt
-   * live section does not actually connect to the downstream track, so we keep
-   * `frozenEntries` intact (stay in editing mode) and return `false` — the Editor
-   * surfaces a "doesn't connect" message and the user keeps building or undoes.
+   * Rather than demanding the live exit exactly match the original frozen `[0]`
+   * snapshot, we re-chain the entire `pieces` array from `startState` and accept
+   * the rejoin whenever that recomputed track is valid (no floor or overlap
+   * violation, via `_validateContinuous`). This lets a rebuilt section of a
+   * DIFFERENT length — or simply closing a deleted gap — reconnect: the
+   * downstream re-anchors onto the live exit and the track becomes continuous.
    *
-   * The boundary is computed BEFORE clearing `frozenEntries`, because the
-   * `_frozenBoundary` getter is derived from `frozenEntries.length`.
+   * On success we clear `frozenEntries` so `entryStateAt` recomputes every
+   * piece by chaining (the downstream visually shifts to connect). If the
+   * recomputed downstream would be invalid (it drives below the floor or back
+   * over the live region), we keep `frozenEntries` intact, stay in editing mode,
+   * and return `false`; `main.ts` surfaces the "doesn't connect" status.
    *
    * No-op success cases (return `true` without rejecting):
    * - Not editing (`frozenEntries === null`): nothing to rejoin.
@@ -351,22 +409,14 @@ export class Track {
       this.frozenEntries = null;
       return true;
     }
-    // Compare the live region's final exit (at the boundary) with the frozen
-    // suffix's first entry snapshot. Compute the boundary before any clearing.
-    const boundary = this._frozenBoundary;
-    const liveExit = this.computeEntryAt(boundary);
-    const frozenEntry = this.frozenEntries[0];
-    const matches =
-      liveExit.gx === frozenEntry.gx &&
-      liveExit.gy === frozenEntry.gy &&
-      liveExit.gz === frozenEntry.gz &&
-      liveExit.dir === frozenEntry.dir;
-    if (!matches) {
-      // Mismatch: keep frozen entries intact and stay in editing mode.
-      return false;
+    // Re-anchor and recompute: if the whole chained track is valid, commit by
+    // clearing the frozen snapshots so the downstream repositions to connect.
+    if (this._validateContinuous()) {
+      this.frozenEntries = null;
+      return true;
     }
-    this.frozenEntries = null;
-    return true;
+    // Genuinely cannot connect: stay in editing mode.
+    return false;
   }
 
   // Legacy removePieceAt - now delegates to deleteAt
