@@ -21,9 +21,9 @@ import assert from 'node:assert/strict';
 import { Track } from '../src/track.js';
 import { Editor } from '../src/editor.js';
 import type { Renderer } from '../src/renderer/index.js';
-import type { PieceId } from '../src/types.js';
+import type { GridState, PieceId } from '../src/types.js';
 
-/** Minimal stand-in for a palette <button>: records its click listener + dataset. */
+/** Minimal stand-in for a palette <button>: records click + hover listeners. */
 class FakeButton {
   className = '';
   innerHTML = '';
@@ -31,23 +31,46 @@ class FakeButton {
   dataset: Record<string, string> = {};
   classList = { add: (_c: string) => {}, remove: (_c: string) => {} };
   private _onClick: (() => void) | null = null;
+  private _onEnter: (() => void) | null = null;
+  private _onLeave: (() => void) | null = null;
 
   addEventListener(type: string, handler: () => void): void {
     if (type === 'click') this._onClick = handler;
+    if (type === 'mouseenter') this._onEnter = handler;
+    if (type === 'mouseleave') this._onLeave = handler;
   }
 
   /** Fire the recorded click listener, mimicking a user clicking the button. */
   fireClick(): void {
     if (this._onClick) this._onClick();
   }
+
+  /** Fire the recorded mouseenter listener, mimicking a hover. */
+  fireHover(): void {
+    if (this._onEnter) this._onEnter();
+  }
+
+  /** Fire the recorded mouseleave listener. */
+  fireUnhover(): void {
+    if (this._onLeave) this._onLeave();
+  }
+}
+
+/** Records the anchor + kind of the most recent ghost request. */
+interface GhostRecord {
+  kind: 'append' | 'insert';
+  pieceId: PieceId;
+  anchor: GridState;
 }
 
 interface RendererCalls {
   rebuildTrack: number;
   clearGhost: number;
   rebuildGhost: number;
+  rebuildGhostAt: number;
   highlightPiece: number;
   pickPiece: number;
+  lastGhost: GhostRecord | null;
 }
 
 function makeRenderer(): { renderer: Renderer; calls: RendererCalls } {
@@ -55,13 +78,24 @@ function makeRenderer(): { renderer: Renderer; calls: RendererCalls } {
     rebuildTrack: 0,
     clearGhost: 0,
     rebuildGhost: 0,
+    rebuildGhostAt: 0,
     highlightPiece: 0,
     pickPiece: 0,
+    lastGhost: null,
   };
   const fake = {
     rebuildTrack: () => { calls.rebuildTrack++; },
     clearGhost: () => { calls.clearGhost++; },
-    rebuildGhost: () => { calls.rebuildGhost++; },
+    // Mirror the real renderer's anchor choice (append point = cursorState).
+    rebuildGhost: (track: Track, pieceId: PieceId) => {
+      calls.rebuildGhost++;
+      calls.lastGhost = { kind: 'append', pieceId, anchor: track.cursorState() };
+    },
+    // Mirror the real renderer's anchor choice (insert point = computeEntryAt).
+    rebuildGhostAt: (track: Track, pieceId: PieceId, insertIndex: number) => {
+      calls.rebuildGhostAt++;
+      calls.lastGhost = { kind: 'insert', pieceId, anchor: track.computeEntryAt(insertIndex) };
+    },
     highlightPiece: (_i: number | null) => { calls.highlightPiece++; },
     pickPiece: () => { calls.pickPiece++; return null; },
   };
@@ -74,6 +108,7 @@ interface Harness {
   calls: RendererCalls;
   statusEl: HTMLElement;
   clickPiece: (id: PieceId) => void;
+  hoverPiece: (id: PieceId) => void;
 }
 
 /**
@@ -100,13 +135,15 @@ function setupEditor(opts?: { dropHeight?: number }): Harness {
 
   const editor = new Editor({ track, renderer, paletteEl, statusEl });
 
-  const clickPiece = (id: PieceId): void => {
+  const findBtn = (id: PieceId): FakeButton => {
     const btn = created.find((b) => b.dataset.pieceId === id);
     if (!btn) throw new Error(`no palette button for piece ${id}`);
-    btn.fireClick();
+    return btn;
   };
+  const clickPiece = (id: PieceId): void => { findBtn(id).fireClick(); };
+  const hoverPiece = (id: PieceId): void => { findBtn(id).fireHover(); };
 
-  return { editor, track, calls, statusEl, clickPiece };
+  return { editor, track, calls, statusEl, clickPiece, hoverPiece };
 }
 
 // ---- floor violation feedback (Requirement 4.1) ----
@@ -184,4 +221,145 @@ test('a successful placement rebuilds the track and shows the success message', 
   assert.equal(statusEl.className, 'status ok');
   assert.equal(calls.rebuildTrack, 1);
   assert.equal(calls.clearGhost, 1);
+});
+
+
+
+// ===========================================================================
+// Bug 2 — Ghost preview missing while filling a deleted gap
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Property 3: Bug Condition — Ghost Renders at the Gap in Insert Mode
+// ---------------------------------------------------------------------------
+//
+// In insert mode (insertCursor != null, selectedIndex == null, isEditing),
+// including when the frozen suffix still ends in FINISH, hovering a palette
+// piece SHALL produce a ghost anchored at computeEntryAt(insertCursor + 1).
+// On the unfixed code _hover aborted (canAdd false with a trailing FINISH), so
+// no ghost was built.
+//
+// Validates: Requirements 2.3
+
+test('Bug 2 / Property 3: insert-mode hover builds a ghost at the gap despite a trailing FINISH', () => {
+  const { editor, track, calls, clickPiece, hoverPiece } = setupEditor();
+  clickPiece('STRAIGHT'); // 0
+  clickPiece('STRAIGHT'); // 1
+  clickPiece('FINISH');   // 2
+  editor.selectPiece(1);
+  editor.deleteSelected(); // pieces [S, FINISH]; insertCursor=0; editing; hasFinish
+  assert.equal(track.isEditing(), true);
+  assert.equal(track.hasFinish(), true);
+  assert.equal(editor.insertCursor, 0);
+  assert.equal(editor.selectedIndex, null);
+
+  const ghostBefore = calls.rebuildGhostAt;
+  hoverPiece('STRAIGHT');
+
+  // A ghost was requested at the insert location (insertCursor + 1 = 1).
+  assert.equal(calls.rebuildGhostAt, ghostBefore + 1);
+  assert.ok(calls.lastGhost && calls.lastGhost.kind === 'insert');
+  assert.equal(calls.lastGhost!.pieceId, 'STRAIGHT');
+  assert.deepEqual(calls.lastGhost!.anchor, track.computeEntryAt(editor.insertCursor! + 1));
+  assert.deepEqual(calls.lastGhost!.anchor, { gx: 1, gy: 0, gz: 0, dir: 1 });
+});
+
+// ---------------------------------------------------------------------------
+// Property 4: Preservation — Append Ghost Unchanged
+// ---------------------------------------------------------------------------
+//
+// For a non-editing track that can still accept a piece, hovering a palette
+// piece still requests a ghost anchored at cursorState() (the append point).
+//
+// Validates: Requirements 3.4
+
+test('Bug 2 / Property 4: append-mode hover still anchors the ghost at the cursor (end of track)', () => {
+  const { track, calls, hoverPiece, clickPiece } = setupEditor();
+  clickPiece('STRAIGHT'); // non-editing track that can still accept pieces
+  assert.equal(track.isEditing(), false);
+
+  hoverPiece('CURVE_R');
+
+  assert.equal(calls.rebuildGhost, 1);
+  assert.equal(calls.rebuildGhostAt, 0);
+  assert.ok(calls.lastGhost && calls.lastGhost.kind === 'append');
+  assert.equal(calls.lastGhost!.pieceId, 'CURVE_R');
+  assert.deepEqual(calls.lastGhost!.anchor, track.cursorState());
+});
+
+
+// ===========================================================================
+// Bug 3 — Undo removes the wrong piece in insert mode
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Property 5: Bug Condition — Undo Removes the Just-Laid Piece in Insert Mode
+// ---------------------------------------------------------------------------
+//
+// In insert mode with a session piece laid, Undo SHALL remove the live piece at
+// the insert cursor, step insertCursor back, and leave the frozen downstream
+// suffix (frozenEntries + trailing FINISH) intact and still editing. On the
+// unfixed code Track.undo() popped the trailing FINISH instead.
+//
+// Validates: Requirements 2.4
+
+test('Bug 3 / Property 5: insert-mode undo removes the just-laid piece, keeps FINISH + frozen', () => {
+  const { editor, track, clickPiece } = setupEditor();
+  clickPiece('STRAIGHT'); // 0
+  clickPiece('STRAIGHT'); // 1
+  clickPiece('FINISH');   // 2
+  editor.selectPiece(1);
+  editor.deleteSelected(); // [S, FINISH]; insertCursor=0; editing
+  const frozenBefore = JSON.stringify(track.frozenEntries);
+
+  clickPiece('STRAIGHT'); // insert into the gap -> [S, STRAIGHT, FINISH]; insertCursor=1
+  assert.deepEqual(track.pieces, ['STRAIGHT', 'STRAIGHT', 'FINISH']);
+  assert.equal(editor.insertCursor, 1);
+
+  editor.undo();
+
+  // The just-laid STRAIGHT is removed; the trailing FINISH and the frozen suffix
+  // stay intact; the cursor steps back; still editing.
+  assert.deepEqual(track.pieces, ['STRAIGHT', 'FINISH']);
+  assert.equal(track.hasFinish(), true);
+  assert.equal(editor.insertCursor, 0);
+  assert.equal(track.isEditing(), true);
+  assert.equal(JSON.stringify(track.frozenEntries), frozenBefore);
+});
+
+// ---------------------------------------------------------------------------
+// Property 6: Preservation — Append Undo Unchanged
+// ---------------------------------------------------------------------------
+//
+// For a non-editing track, Undo removes the last appended piece, exactly as
+// before.
+//
+// Validates: Requirements 3.5
+
+test('Bug 3 / Property 6: append-mode undo still removes the last appended piece', () => {
+  const { editor, track, clickPiece } = setupEditor();
+  clickPiece('STRAIGHT');
+  clickPiece('CURVE_R');
+  assert.equal(track.isEditing(), false);
+
+  editor.undo();
+
+  assert.deepEqual(track.pieces, ['STRAIGHT']);
+  assert.equal(track.isEditing(), false);
+});
+
+test('Bug 3: insert-mode undo with no session piece laid leaves the frozen suffix untouched', () => {
+  const { editor, track, clickPiece } = setupEditor();
+  clickPiece('STRAIGHT'); // 0
+  clickPiece('STRAIGHT'); // 1
+  clickPiece('FINISH');   // 2
+  editor.selectPiece(1);
+  editor.deleteSelected(); // [S, FINISH]; insertCursor=0=insertAnchor; nothing laid yet
+  const piecesBefore = [...track.pieces];
+
+  editor.undo(); // no session piece -> must not pop the frozen FINISH
+
+  assert.deepEqual(track.pieces, piecesBefore);
+  assert.equal(track.isEditing(), true);
+  assert.equal(editor.insertCursor, 0);
 });

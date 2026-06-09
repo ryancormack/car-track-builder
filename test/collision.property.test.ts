@@ -68,11 +68,12 @@ export const pieceArb: fc.Arbitrary<Piece> = pieceIdArb.map((id) => PIECES[id]);
 // Smoke property — validates the harness and arbitraries work end-to-end.
 // ---------------------------------------------------------------------------
 
-test('Feature: track-collision-detection, Property 0: computeCells returns piece.forward cells', () => {
+test('Feature: track-collision-detection, Property 0: computeCells returns piece.forward + 1 cells', () => {
   fc.assert(
     fc.property(gridStateArb, pieceIdArb, (entry, id) => {
       const cells = computeCells(entry, PIECES[id]);
-      assert.equal(cells.length, PIECES[id].forward);
+      // Exit-inclusive footprint: entry + intermediates + exit = forward + 1.
+      assert.equal(cells.length, PIECES[id].forward + 1);
     }),
     { numRuns: 100 },
   );
@@ -189,20 +190,23 @@ test('Feature: track-collision-detection, Property 1: Floor Violation Detection'
 // ---------------------------------------------------------------------------
 //
 // For ANY piece with forward N and any valid entry GridState, computeCells
-// produces exactly N cells where, for i in 0..N-1:
+// produces exactly N + 1 cells (exit-inclusive) where, for i in 0..N:
 //
 //   cell_i = (
 //     entry.gx + DIRS[exitDir].dx * i,
 //     entry.gy + DIRS[exitDir].dy * i,
-//     Math.round(entry.gz + piece.dz * i / N),
+//     entry.gz + Math.round(piece.dz * i / N),
 //   )
 //
-// with exitDir = (entry.dir + piece.turn + 4) % 4.
+// with exitDir = (entry.dir + piece.turn + 4) % 4. The elevation is anchored at
+// the integer endpoints entry.gz (i=0) and entry.gz + piece.dz (i=N): the
+// entry.gz offset stays OUTSIDE the rounding so the exit cell lands at exactly
+// entry.gz + piece.dz.
 //
 // We recompute the expected cells INDEPENDENTLY here (mirroring the formula)
 // and assert deepEqual against computeCells, plus that the length equals
-// piece.forward. This pins the geometry contract the rest of the module — floor
-// and overlap detection, occupied-set construction — relies upon.
+// piece.forward + 1. This pins the geometry contract the rest of the module —
+// floor and overlap detection, occupied-set construction — relies upon.
 //
 // Validates: Requirements 2.2, 2.3, 2.5, 5.1, 5.2, 5.3
 
@@ -212,17 +216,17 @@ test('Feature: track-collision-detection, Property 2: Cell Computation Correctne
       const exitDir = (entry.dir + piece.turn + 4) % 4;
       const { dx, dy } = DIRS[exitDir];
       const expected: GridCell[] = [];
-      for (let i = 0; i < piece.forward; i++) {
+      for (let i = 0; i <= piece.forward; i++) {
         expected.push({
           gx: entry.gx + dx * i,
           gy: entry.gy + dy * i,
-          gz: Math.round(entry.gz + (piece.dz * i) / piece.forward),
+          gz: entry.gz + Math.round((piece.dz * i) / piece.forward),
         });
       }
 
       const actual = computeCells(entry, piece);
 
-      assert.equal(actual.length, piece.forward);
+      assert.equal(actual.length, piece.forward + 1);
       assert.deepEqual(actual, expected);
     }),
     { numRuns: 100 },
@@ -240,37 +244,26 @@ test('Feature: track-collision-detection, Property 2: Cell Computation Correctne
 //   - ENTRY seam: the FIRST cell returned by computeCells is the entry cell,
 //     i.e. exactly (entry.gx, entry.gy, entry.gz).
 //
-//   - EXIT seam: the position one exitDir step beyond the LAST cell coincides
-//     with the (gx, gy) of applyPiece(entry, piece) — the entry of the NEXT
-//     piece. With exitDir = (entry.dir + piece.turn + 4) % 4 and {dx,dy} =
-//     DIRS[exitDir], the last owned cell sits at index forward-1
-//     (last.gx = entry.gx + dx*(forward-1)), so stepping one more cell forward
-//     lands on entry.gx + dx*forward = exit.gx (and likewise for gy).
-//
-// The exit elevation is governed solely by the piece's dz: exit.gz =
-// entry.gz + piece.dz. We deliberately do NOT compare the last owned cell's gz
-// against exit.gz — computeCells rounds an interpolated gz over `forward`
-// steps, whereas the exit gz is the next piece's entry elevation. Those differ
-// by design, so we assert only what the property states.
+//   - EXIT seam: the footprint is now exit-inclusive, so the LAST cell returned
+//     by computeCells IS the exit cell — it coincides exactly with
+//     applyPiece(entry, piece) on all of (gx, gy, gz). With exitDir =
+//     (entry.dir + piece.turn + 4) % 4 the last cell sits at index `forward`,
+//     and its gz is anchored at entry.gz + piece.dz.
 //
 // Validates: Requirements 5.5
 
 test('Feature: track-collision-detection, Property 3: Cell Computation Consistency with applyPiece', () => {
   fc.assert(
     fc.property(gridStateArb, pieceArb, (entry, piece) => {
-      const exitDir = (entry.dir + piece.turn + 4) % 4;
-      const { dx, dy } = DIRS[exitDir];
-
       const cells = computeCells(entry, piece);
       const exit = applyPiece(entry, piece);
 
       // ENTRY seam: first cell equals the entry cell.
       assert.deepEqual(cells[0], { gx: entry.gx, gy: entry.gy, gz: entry.gz });
 
-      // EXIT seam: one exitDir step beyond the last cell equals exit (gx, gy).
+      // EXIT seam: the last (exit-inclusive) cell equals applyPiece (gx, gy, gz).
       const last = cells[cells.length - 1];
-      assert.equal(last.gx + dx, exit.gx);
-      assert.equal(last.gy + dy, exit.gy);
+      assert.deepEqual(last, { gx: exit.gx, gy: exit.gy, gz: exit.gz });
 
       // Exit elevation is entry.gz + piece.dz.
       assert.equal(exit.gz, entry.gz + piece.dz);
@@ -562,12 +555,13 @@ test('Feature: track-collision-detection, Property 7: Frozen Region Auto-Detecti
       assert.notEqual(t.frozenEntries, null);
 
       // Ground the frozen footprint directly: buildFrozenOccupiedSet over the
-      // snapshot entries must be exactly { {k+1,0,0} .. {n-1,0,0} }.
+      // snapshot entries is now EXIT-INCLUSIVE, so each frozen STRAIGHT owns its
+      // entry and its exit cell. The union spans { {k+1,0,0} .. {n,0,0} }.
       const boundary = t.pieces.length - t.frozenEntries!.length;
       assert.equal(boundary, k);
       const frozenSet = buildFrozenOccupiedSet(t.pieces, t.frozenEntries!, boundary);
       const expectedKeys: CellKey[] = [];
-      for (let gx = k + 1; gx <= n - 1; gx++) expectedKeys.push(cellKey(gx, 0, 0));
+      for (let gx = k + 1; gx <= n; gx++) expectedKeys.push(cellKey(gx, 0, 0));
       assert.equal(frozenSet.size, expectedKeys.length);
       for (const key of expectedKeys) {
         assert.ok(frozenSet.has(key), `frozen set should contain ${key}`);
@@ -683,4 +677,237 @@ test('Feature: track-collision-detection, Property 9: Valid Placements Accepted'
     }),
     { numRuns: 100 },
   );
+});
+
+
+
+// ===========================================================================
+// Track-editing bugfix — Bug 1: Collision detection accepts overlapping pieces
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Property 1: Bug Condition — Overlap Reliably Rejected
+// ---------------------------------------------------------------------------
+//
+// For any track state and candidate placement whose TRUE (exit-inclusive,
+// integer-consistent) footprint contains a non-seam cell already occupied by
+// another piece, the fixed Track placement path SHALL reject it with
+// reason 'overlap' and leave the track unchanged.
+//
+// On the UNFIXED code the loop-back below was wrongly ACCEPTED (the candidate's
+// only cell was its entry, masked by the predecessor-seam exclusion). With the
+// exit-inclusive footprint the loop-back is caught the moment a piece's exit
+// re-enters an occupied cell.
+//
+// Validates: Requirements 1.1, 1.2, 2.1, 2.2
+
+/** All non-meta build pieces, the realistic candidate set for a random track. */
+const BUILD_PIECE_IDS: PieceId[] = [
+  'STRAIGHT', 'CURVE_L', 'CURVE_R', 'RAMP_UP', 'RAMP_DN',
+  'LOOP', 'CORKSCREW', 'JUMP', 'STEEP_HILL', 'HELIX_UP', 'HELIX_DN',
+];
+const buildPieceIdArb: fc.Arbitrary<PieceId> = fc.constantFrom(...BUILD_PIECE_IDS);
+
+test('Feature: track-editing-bugs, Property 1: Bug Condition — Overlap Reliably Rejected', () => {
+  // (a) Deterministic single-cell loop-back. Four CURVE_R from the default
+  //     start trace a closed square back onto the start cell (0,0,0). The
+  //     closing curve's EXIT cell re-enters (0,0,0) — owned by the first curve —
+  //     so the placement is rejected as an overlap (caught one piece earlier
+  //     than the would-be STRAIGHT, per the design's footprint analysis).
+  const loop = new Track();
+  assert.equal(loop.addPiece('CURVE_R'), true);
+  assert.equal(loop.addPiece('CURVE_R'), true);
+  assert.equal(loop.addPiece('CURVE_R'), true);
+  const before = [...loop.pieces];
+  assert.equal(loop.addPiece('CURVE_R'), false); // would close the loop onto (0,0,0)
+  const loopRes = loop.lastCollisionResult;
+  assert.ok(loopRes && !loopRes.ok && loopRes.reason === 'overlap');
+  assert.deepEqual(loop.pieces, before); // unchanged
+
+  // (b) Deterministic multi-cell crossover. A JUMP (forward=2) whose landing
+  //     cell falls on an already-occupied cell is rejected — its intermediate
+  //     cell is now represented in the footprint.
+  const cross = new Track();
+  // U-turn back toward the start column (geometry verified in track.test.ts):
+  assert.equal(cross.addPiece('STRAIGHT'), true);
+  assert.equal(cross.addPiece('CURVE_R'), true);
+  assert.equal(cross.addPiece('STRAIGHT'), true);
+  assert.equal(cross.addPiece('CURVE_R'), true);
+  assert.equal(cross.addPiece('CURVE_R'), true);
+  assert.deepEqual(cross.cursorState(), { gx: 0, gy: 1, gz: 0, dir: 0 });
+  const crossBefore = [...cross.pieces];
+  assert.equal(cross.addPiece('JUMP'), false); // landing cell (0,0,0) occupied
+  const crossRes = cross.lastCollisionResult;
+  assert.ok(crossRes && !crossRes.ok && crossRes.reason === 'overlap');
+  assert.deepEqual(cross.pieces, crossBefore);
+
+  // (c) Property form — the maintained invariant: any track built by accepting
+  //     only valid addPiece placements is OVERLAP-FREE. Concretely, no grid cell
+  //     (under the exit-inclusive footprint) is owned by two NON-ADJACENT
+  //     pieces; the only legitimate sharing is the single seam cell between two
+  //     consecutive pieces (predecessor exit == successor entry). This FAILS on
+  //     the unfixed code (which accepts loop-backs) and holds after the fix.
+  fc.assert(
+    fc.property(fc.array(buildPieceIdArb, { minLength: 0, maxLength: 12 }), (ids) => {
+      const t = new Track();
+      for (const id of ids) t.addPiece(id); // invalid placements are rejected
+
+      const owners = new Map<CellKey, Set<number>>();
+      let cursor: GridState = { ...t.startState };
+      for (let i = 0; i < t.pieces.length; i++) {
+        const piece = PIECES[t.pieces[i]];
+        for (const c of computeCells(cursor, piece)) {
+          const key = cellKey(c.gx, c.gy, c.gz);
+          const set = owners.get(key) ?? new Set<number>();
+          set.add(i);
+          owners.set(key, set);
+        }
+        cursor = applyPiece(cursor, piece);
+      }
+
+      for (const [key, idxSet] of owners) {
+        const idxs = [...idxSet].sort((a, b) => a - b);
+        for (let a = 0; a < idxs.length; a++) {
+          for (let b = a + 1; b < idxs.length; b++) {
+            assert.equal(
+              idxs[b] - idxs[a],
+              1,
+              `cell ${key} shared by non-adjacent pieces ${idxs[a]} and ${idxs[b]}`,
+            );
+          }
+        }
+      }
+    }),
+    { numRuns: 200 },
+  );
+});
+
+
+// ---------------------------------------------------------------------------
+// Property 2: Preservation — Valid Placements, Seams, Floor, Elevation
+// ---------------------------------------------------------------------------
+//
+// The fix must preserve: disjoint footprints accepted; a candidate coinciding
+// ONLY at the predecessor seam accepted; a sub-floor placement rejected as
+// 'floor' (ahead of overlap); and two cells sharing (gx, gy) at different gz
+// not colliding.
+//
+// Validates: Requirements 3.1, 3.2, 3.3, 3.7
+
+test('Feature: track-editing-bugs, Property 2: Preservation — valid placements, seams, floor, elevation', () => {
+  // Disjoint footprints accepted: a straight chain extends cleanly. Each new
+  // STRAIGHT shares only the predecessor seam (its entry == previous exit).
+  const chain = new Track();
+  for (let i = 0; i < 6; i++) {
+    assert.equal(chain.addPiece('STRAIGHT'), true, `straight ${i} should extend cleanly`);
+  }
+  assert.equal(chain.pieces.length, 6);
+
+  // Seam-only acceptance: appending after a turn still only shares the seam.
+  const seam = new Track();
+  assert.equal(seam.addPiece('STRAIGHT'), true);
+  assert.equal(seam.addPiece('CURVE_L'), true);
+  assert.equal(seam.addPiece('STRAIGHT'), true);
+  assert.equal(seam.pieces.length, 3);
+
+  // Floor rejected ahead of overlap: SPIRAL (dz=-2) at the build plane with
+  // dropHeight 0 dips below the floor; even when a cell also overlaps, floor
+  // wins. (Mirrors the floor-before-overlap contract.)
+  const floor = new Track();
+  floor.dropHeight = 0;
+  const ok = floor.addPiece('SPIRAL');
+  assert.equal(ok, false);
+  const fres = floor.lastCollisionResult;
+  assert.ok(fres && !fres.ok && fres.reason === 'floor');
+
+  // Elevation separation: a JUMP looping back over a column at a DIFFERENT gz is
+  // accepted (same gx,gy but distinct gz -> distinct 3D cells).
+  const elev = new Track();
+  assert.equal(elev.addPiece('RAMP_UP'), true);
+  assert.equal(elev.addPiece('CURVE_R'), true);
+  assert.equal(elev.addPiece('STRAIGHT'), true);
+  assert.equal(elev.addPiece('CURVE_R'), true);
+  assert.equal(elev.addPiece('CURVE_R'), true);
+  assert.deepEqual(elev.cursorState(), { gx: 0, gy: 1, gz: 1, dir: 0 });
+  assert.equal(elev.addPiece('JUMP'), true); // lands at (0,0,1), separate from (0,0,0)
+});
+
+
+// ===========================================================================
+// Track-editing bugfix — Bug 4: Rejoin re-anchors and reconnects (Properties 7-8)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Property 7: Bug Condition — Rejoin Re-anchors and Reconnects
+// ---------------------------------------------------------------------------
+//
+// For any editing track whose downstream, re-anchored onto the live exit and
+// recomputed by chaining, is a valid track, rejoin SHALL succeed, clear
+// frozenEntries, and yield a continuous track. On the unfixed code the
+// all-four-fields exact-match gate returned false and the track stayed split.
+//
+// Validates: Requirements 2.5
+
+test('Feature: track-editing-bugs, Property 7: Bug Condition — Rejoin re-anchors and reconnects', () => {
+  // (a) Close-the-gap: delete a turning piece so the live exit no longer equals
+  //     the original frozen [0] snapshot, then rejoin. The downstream re-anchors
+  //     and the track becomes continuous (this returns false on unfixed code).
+  const gap = new Track();
+  gap.addPiece('STRAIGHT'); gap.addPiece('CURVE_R'); gap.addPiece('STRAIGHT');
+  gap.deleteAt(1); // [S, S]; frozen suffix snapshot was at (1,1,0,S)
+  assert.equal(gap.isEditing(), true);
+  assert.equal(gap.rejoin(), true);
+  assert.equal(gap.isEditing(), false);
+  // Recomputed continuous track: piece 1 entry chains from piece 0's exit.
+  assert.deepEqual(gap.entryStateAt(1), { gx: 1, gy: 0, gz: 0, dir: 1 });
+
+  // (b) Property form over straight tracks of varying length: deleting any
+  //     middle piece leaves a shorter-but-valid straight chain, so rejoin always
+  //     succeeds and the downstream first entry chains from the live exit.
+  fc.assert(
+    fc.property(straightTrackArb, ({ n, k }) => {
+      const t = new Track();
+      for (let i = 0; i < n; i++) t.addPiece('STRAIGHT');
+      t.deleteAt(k);
+      assert.equal(t.isEditing(), true);
+      const boundary = t.pieces.length - (t.frozenEntries?.length ?? 0);
+      const liveExit = t.computeEntryAt(boundary);
+      assert.equal(t.rejoin(), true);
+      assert.equal(t.isEditing(), false);
+      // The piece that was first in the frozen suffix now chains from the live
+      // exit (re-anchored): its recomputed entry equals the live exit.
+      assert.deepEqual(t.entryStateAt(boundary), liveExit);
+    }),
+    { numRuns: 100 },
+  );
+});
+
+
+// ---------------------------------------------------------------------------
+// Property 8: Preservation — Rejoin No-op and Genuine Non-connect
+// ---------------------------------------------------------------------------
+//
+// Rejoin while not editing or with an empty frozen suffix is a successful
+// no-op (true); and an editing track whose re-anchored, recomputed downstream
+// would be invalid (floor or overlap) returns false and stays editing.
+//
+// Validates: Requirements 2.5, 3.6
+
+test('Feature: track-editing-bugs, Property 8: Preservation — Rejoin no-op and genuine non-connect', () => {
+  // No-op: not editing -> true, nothing changes.
+  const fresh = new Track();
+  fresh.addPiece('STRAIGHT'); fresh.addPiece('FINISH');
+  assert.equal(fresh.isEditing(), false);
+  assert.equal(fresh.rejoin(), true);
+  assert.equal(fresh.isEditing(), false);
+
+  // Genuine non-connect (floor): after re-anchoring, the recomputed chain drives
+  // a piece below the floor -> rejoin refuses and stays editing.
+  const bad = new Track();
+  bad.addPiece('STRAIGHT'); bad.addPiece('RAMP_DN'); bad.addPiece('STRAIGHT');
+  bad.deleteAt(0); // [RAMP_DN, S], downstream frozen
+  assert.equal(bad.isEditing(), true);
+  bad.dropHeight = 0; // RAMP_DN's exit cell now sinks below the floor
+  assert.equal(bad.rejoin(), false);
+  assert.equal(bad.isEditing(), true);
 });

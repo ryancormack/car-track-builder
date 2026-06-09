@@ -137,6 +137,23 @@ export class Renderer implements CameraControlHost {
     this.ghostGroup.add(buildGhostPiece(resolvedPath, track.cursorState()));
   }
 
+  /**
+   * Preview a ghost at an explicit INSERT index (gap-fill / insert mode). Unlike
+   * `rebuildGhost` (which previews the append point), this anchors the ghost at
+   * `track.computeEntryAt(insertIndex)` and resolves the path against a
+   * hypothetical piece list with the piece spliced in at that index (so ramp
+   * neighbour context is correct). It deliberately does NOT apply the `canAdd`
+   * guard, because in insert mode the frozen suffix may still end in FINISH.
+   */
+  rebuildGhostAt(track: Track, pieceId: string | null, insertIndex: number): void {
+    this._clearGroup(this.ghostGroup);
+    if (!pieceId || !isPieceId(pieceId)) return;
+    const hyp = [...track.pieces];
+    hyp.splice(insertIndex, 0, pieceId as PieceId);
+    const resolvedPath = resolvePathLocal(hyp, insertIndex);
+    this.ghostGroup.add(buildGhostPiece(resolvedPath, track.computeEntryAt(insertIndex)));
+  }
+
   clearGhost(): void { this._clearGroup(this.ghostGroup); }
 
   pickPiece(event: MouseEvent): number | null {
