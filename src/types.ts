@@ -135,6 +135,7 @@ export interface UIElements {
   canvas: HTMLCanvasElement;
   modeBuild: HTMLElement;
   modePlay: HTMLElement;
+  envToggle: HTMLElement;
   hudSpeed: HTMLElement;
   hudScore: HTMLElement;
   hudPieces: HTMLElement;

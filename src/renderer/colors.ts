@@ -36,4 +36,30 @@ export const COLORS = {
   rim: 0x3da9fc,
   hemiSky: 0x9bb8ff,
   hemiGround: 0x14121f,
+
+  // ---- Living-room environment (optional backdrop) ----
+  roomFloor: 0xb07a48,      // warm wood floor
+  roomFloorAlt: 0x9c6a3c,   // plank shading
+  roomWall: 0xe7d9c3,       // soft warm off-white wall
+  roomWallAlt: 0xd8c6aa,    // second wall, slightly deeper
+  roomBaseboard: 0xf3ece0,  // pale trim
+  rug: 0x3f6f7d,            // teal area rug under the track
+  rugTrim: 0x2c5560,
+  windowFrame: 0xf3ece0,
+  windowSky: 0xbfe3ff,      // daytime sky seen through the window
+  windowSkyEm: 0x9fd0f5,
+  sofa: 0x6d5a8c,           // muted plum sofa
+  sofaCushion: 0x8270a0,
+  tvUnit: 0x4a3526,         // dark wood TV stand
+  tvScreen: 0x10141c,
+  tvScreenEm: 0x1b2740,
+  coffeeTable: 0x6b4a30,
+  shelf: 0x4a3526,
+  plantPot: 0xc4663b,
+  plantLeaf: 0x4f8a4c,
+  lamp: 0xf0e2c0,
+  lampGlow: 0xffd9a0,       // warm point-light tint
+  roomFog: 0x4a3b46,        // warm fog so far walls fade naturally
+  roomHemiSky: 0xfff0d8,    // warm indoor sky/ceiling bounce
+  roomHemiGround: 0x4a3325, // floor bounce
 } as const;

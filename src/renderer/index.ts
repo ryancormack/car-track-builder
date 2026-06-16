@@ -7,6 +7,7 @@ import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
 import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
+import { buildLivingRoom } from './environment.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
@@ -31,6 +32,16 @@ export class Renderer implements CameraControlHost {
   ghostGroup: THREE.Group;
   startGroup: THREE.Group;
   car: THREE.Group;
+
+  // Optional living-room backdrop. Hidden by default; toggled via
+  // setEnvironmentVisible(). Repositioned to the track centroid on each rebuild.
+  environment: THREE.Group;
+  private _environmentVisible = false;
+  private _ground!: THREE.Mesh;
+  private _grid!: THREE.GridHelper;
+  private _hemiLight!: THREE.HemisphereLight;
+  private _outdoorFog!: THREE.Fog;
+  private _indoorFog!: THREE.Fog;
 
   private _highlightedIndex: number | null = null;
   private _savedEmissives: Map<THREE.Mesh, { intensity: number; color: THREE.Color }> = new Map();
@@ -57,7 +68,11 @@ export class Renderer implements CameraControlHost {
     this.scene = new THREE.Scene();
     // No opaque background: the canvas is transparent so the CSS stage gradient
     // shows through behind the scene. Fog fades distant geometry into it.
-    this.scene.fog = new THREE.Fog(COLORS.bg, 20, 54);
+    this._outdoorFog = new THREE.Fog(COLORS.bg, 20, 54);
+    // Warm fog used while the living-room backdrop is shown, so the far walls
+    // fade naturally rather than snapping to the cool stage gradient.
+    this._indoorFog = new THREE.Fog(COLORS.roomFog, 26, 70);
+    this.scene.fog = this._outdoorFog;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -85,6 +100,11 @@ export class Renderer implements CameraControlHost {
     this._addLights();
     this._addGround();
 
+    // Optional living-room backdrop, hidden until toggled on.
+    this.environment = buildLivingRoom();
+    this.environment.visible = false;
+    this.scene.add(this.environment);
+
     this.trackGroup = new THREE.Group(); this.scene.add(this.trackGroup);
     this.ghostGroup = new THREE.Group(); this.scene.add(this.ghostGroup);
     this.startGroup = new THREE.Group(); this.scene.add(this.startGroup);
@@ -109,6 +129,33 @@ export class Renderer implements CameraControlHost {
   setCar(visible: boolean, sample: TrackFrame | null = null): void {
     this.car.visible = !!visible;
     if (visible && sample) placeCar(this.car, sample);
+  }
+
+  /**
+   * Show or hide the living-room backdrop. When shown, the scene swaps to an
+   * indoor palette (warm fog + warm hemisphere bounce) and the outdoor ground
+   * plane and build grid are hidden (the room supplies its own floor). When
+   * hidden, the original outdoor stage is restored — including the build grid,
+   * which remains the snapping aid for Build mode.
+   */
+  setEnvironmentVisible(visible: boolean): void {
+    this._environmentVisible = visible;
+    this.environment.visible = visible;
+    this.scene.fog = visible ? this._indoorFog : this._outdoorFog;
+    if (visible) {
+      this._hemiLight.color.set(COLORS.roomHemiSky);
+      this._hemiLight.groundColor.set(COLORS.roomHemiGround);
+    } else {
+      this._hemiLight.color.set(COLORS.hemiSky);
+      this._hemiLight.groundColor.set(COLORS.hemiGround);
+    }
+    this._ground.visible = !visible;
+    this._grid.visible = !visible;
+  }
+
+  /** Whether the living-room backdrop is currently shown. */
+  isEnvironmentVisible(): boolean {
+    return this._environmentVisible;
   }
 
   rebuildTrack(track: Track): void {
@@ -437,6 +484,11 @@ export class Renderer implements CameraControlHost {
       }
       this.cameraTarget.set(cx / n, cz / n, cy / n);
     }
+    // Keep the living-room backdrop centred under the current track so it always
+    // frames the scene regardless of track size/position.
+    if (this.environment) {
+      this.environment.position.set(this.cameraTarget.x, 0, this.cameraTarget.z);
+    }
     this.updateCamera();
   }
 
@@ -444,7 +496,8 @@ export class Renderer implements CameraControlHost {
 
   private _addLights(): void {
     // Hemisphere gives a soft sky/ground gradient; a low ambient lifts shadows.
-    this.scene.add(new THREE.HemisphereLight(COLORS.hemiSky, COLORS.hemiGround, 0.9));
+    this._hemiLight = new THREE.HemisphereLight(COLORS.hemiSky, COLORS.hemiGround, 0.9);
+    this.scene.add(this._hemiLight);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.18));
 
     const sun = new THREE.DirectionalLight(COLORS.sun, 1.6);
@@ -475,6 +528,7 @@ export class Renderer implements CameraControlHost {
     ground.position.y = -0.02;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this._ground = ground;
 
     const grid = new THREE.GridHelper(120, 120, COLORS.gridCenter, COLORS.grid);
     const gridMat = grid.material as THREE.Material;
@@ -482,6 +536,7 @@ export class Renderer implements CameraControlHost {
     gridMat.opacity = 0.5;
     grid.position.y = 0;
     this.scene.add(grid);
+    this._grid = grid;
   }
 
   private _clearGroup(group: THREE.Group): void {

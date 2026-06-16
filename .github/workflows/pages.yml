@@ -25,17 +25,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # Assemble the static site: the entry HTML, styles, and compiled JS.
-      # Three.js is loaded from a CDN via the import map, so it isn't bundled.
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          cp index.html styles.css _site/
-          cp -r dist _site/dist
+      # `vite build` emits a complete static site (HTML, hashed JS/CSS, bundled
+      # Three.js) into dist/, which we publish directly.
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: dist
 
   deploy:
     needs: build

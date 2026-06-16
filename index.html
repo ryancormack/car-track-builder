@@ -15,6 +15,8 @@
       <button id="mode-play" class="mode-btn" data-mode="play">▶ Play</button>
     </div>
 
+    <button id="env-toggle" class="env-toggle" title="Cycle the room backdrop: Auto (room only in Play) → On → Off">🛋 Room: Auto</button>
+
     <div class="hud">
       <div class="hud-item"><span class="hud-label">Speed</span><span id="hud-speed" class="hud-value">0</span></div>
       <div class="hud-item"><span class="hud-label">Score</span><span id="hud-score" class="hud-value">0</span></div>
@@ -81,14 +83,6 @@
     <span>Drag to pan · Scroll to zoom · <kbd>R</kbd> rotate · <kbd>Space</kbd> play · Click a piece to edit · <kbd>Del</kbd> delete</span>
   </footer>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.162.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
-    }
-  }
-  </script>
-  <script type="module" src="dist/main.js"></script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

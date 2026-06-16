@@ -1,19 +1,19 @@
 # Hot Track Builder
 
-A browser-based, 2.5D car track builder inspired by classic Hot Wheels sets and Rollercoaster Tycoon. Snap orange track pieces together on a grid, drop your car from a tower or a booster, and watch it tear through loops, corkscrews, and jumps. Written in TypeScript and compiled to native ES modules (no bundler); Three.js is loaded from a CDN via an import map.
+A browser-based, 2.5D car track builder inspired by classic Hot Wheels sets and Rollercoaster Tycoon. Snap orange track pieces together on a grid, drop your car from a tower or a booster, and watch it tear through loops, corkscrews, and jumps. Written in TypeScript and built with [Vite](https://vite.dev/); Three.js is installed from npm and bundled into the build (no CDN).
 
 ## Play
 
-GitHub Pages: enable Pages on this repo with the included workflow (Settings → Pages → "GitHub Actions") and push. The workflow compiles the TypeScript and publishes the site; the URL appears in the action summary.
+GitHub Pages: enable Pages on this repo with the included workflow (Settings → Pages → "GitHub Actions") and push. The workflow runs `vite build` and publishes the `dist/` output; the URL appears in the action summary.
 
-Local dev: install dependencies, build once (or watch), then serve the folder with any static file server.
+Local dev: install dependencies and start the Vite dev server (with hot-module reload).
 
 ```bash
 npm install
-npm run build        # or: npm run dev  (recompiles on change)
-python3 -m http.server     # then open http://localhost:8000
-# or
-npx serve .
+npm run dev          # Vite dev server with HMR, prints a localhost URL
+# production build + local preview:
+npm run build        # type-checks, then bundles into dist/
+npm run preview      # serves the production build locally
 ```
 
 ## Controls
@@ -27,7 +27,7 @@ npx serve .
 ## Layout
 
 ```
-src/                           TypeScript sources (compiled to dist/)
+src/                           TypeScript sources (Vite entry: src/main.ts)
 ├── main.ts                    app entry; wires the modules together
 ├── types.ts                   shared domain types (Piece, GridState, scores, …)
 ├── constants.ts               shared physics constants (g, friction, drag, loop radius)
@@ -59,13 +59,14 @@ test/                          node:test suites, run via tsx
 ├── physics.test.ts
 └── scoring.test.ts
 
-dist/                          tsc build output (git-ignored); index.html loads dist/main.js
+dist/                          Vite build output (git-ignored); created by `npm run build`
 ```
 
 ## Tooling
 
-- `npm run build` — type-check and compile `src/` → `dist/` (native ES modules).
-- `npm run dev` — same, in watch mode.
+- `npm run dev` — start the Vite dev server with hot-module reload.
+- `npm run build` — type-check (`tsc --noEmit`), then bundle `src/` + Three.js into `dist/` with Vite.
+- `npm run preview` — serve the production `dist/` build locally.
 - `npm run typecheck` — type-check sources and tests without emitting.
 - `npm test` — type-check, then run the test suite with `tsx`.
 

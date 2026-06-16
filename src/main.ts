@@ -10,6 +10,13 @@ import { SPEED_SCALE } from './constants.js';
 import { Hud } from './app/hud.js';
 import { ResultOverlay } from './app/overlay.js';
 import { saveTrackJSON, loadTrackJSON } from './app/storage.js';
+import {
+  environmentVisible,
+  cycleOverride,
+  loadEnvOverride,
+  saveEnvOverride,
+  type EnvOverride,
+} from './app/environment.js';
 import type { ScoreResult, UIElements } from './types.js';
 
 type Mode = 'build' | 'play';
@@ -30,6 +37,7 @@ const els: UIElements = {
   canvas: el<HTMLCanvasElement>('canvas'),
   modeBuild: el('mode-build'),
   modePlay: el('mode-play'),
+  envToggle: el('env-toggle'),
   hudSpeed: el('hud-speed'),
   hudScore: el('hud-score'),
   hudPieces: el('hud-pieces'),
@@ -122,6 +130,7 @@ function updateInsertModeUI(): void {
 }
 
 let mode: Mode = 'build';
+let envOverride: EnvOverride = loadEnvOverride();
 let sim: Simulator | null = null;
 let runResult: RunResult | null = null;
 let wipeoutPlaying = false;
@@ -142,6 +151,7 @@ syncDropUi();
 renderer.rebuildTrack(track);
 editor.refresh();
 refreshHud();
+applyEnvironment();
 
 // ---------- Event wiring ----------
 
@@ -171,6 +181,11 @@ els.btnLoad.addEventListener('click', () => {
 
 els.modeBuild.addEventListener('click', () => switchMode('build'));
 els.modePlay.addEventListener('click', () => switchMode('play'));
+els.envToggle.addEventListener('click', () => {
+  envOverride = cycleOverride(envOverride);
+  saveEnvOverride(envOverride);
+  applyEnvironment();
+});
 els.overlayClose.addEventListener('click', () => {
   overlay.hide();
   switchMode('build');
@@ -278,6 +293,7 @@ function switchMode(next: Mode): void {
     wipeoutPlaying = false;
     sim = null;
   }
+  applyEnvironment();
   refreshHud();
 }
 
@@ -295,6 +311,25 @@ function refreshHud(): void {
 function syncDropUi(): void {
   els.drop.value = String(track.dropHeight);
   els.dropVal.textContent = String(track.dropHeight);
+}
+
+/** Apply the current environment override for the active mode + refresh the toggle UI. */
+function applyEnvironment(): void {
+  const visible = environmentVisible(envOverride, mode);
+  renderer.setEnvironmentVisible(visible);
+  document.body.classList.toggle('env-room', visible);
+  updateEnvButton(visible);
+}
+
+/** Update the toggle button's label and lit state. */
+function updateEnvButton(visible: boolean): void {
+  const labels: Record<EnvOverride, string> = {
+    auto: '🛋 Room: Auto',
+    on: '🛋 Room: On',
+    off: '🛋 Room: Off',
+  };
+  els.envToggle.textContent = labels[envOverride];
+  els.envToggle.classList.toggle('env-active', visible);
 }
 
 // ---------- Run loop ----------
