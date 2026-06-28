@@ -2,7 +2,7 @@
   "id": "FEAT-001",
   "type": "feat",
   "description": "Dynamic living room scaling: make the room walls, floor, and furniture scale to always enclose the entire track, no matter how large or spread out it gets. Also add smooth camera follow in play mode so the camera tracks the car as it moves.",
-  "status": "completed",
+  "status": "in_progress",
   "steps": [
     "1. In src/renderer/environment.ts, refactor buildLivingRoom() to accept a size/extent parameter (e.g., { halfX: number, halfZ: number, height: number }) that controls the room dimensions instead of using the hardcoded ROOM_HALF=16, WALL_HEIGHT=9, FLOOR_SIZE=72 constants. The walls, floor, rug, furniture positions, window position, and room lights should all scale proportionally based on this extent. Export a new function or modify buildLivingRoom to accept these dimensions.",
     "2. In src/renderer/index.ts, compute the track's bounding extent (min/max of all piece entry positions in world X and Z) during _recenterCamera or a new helper. Use this extent (with padding) to determine the room size parameter. Instead of building the environment once in the constructor, rebuild/rescale it each time rebuildTrack is called, OR update the room group's scale to fit the track extent. The room must always be large enough that all track pieces appear inside the walls.",

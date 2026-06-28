@@ -45,6 +45,8 @@ export class Renderer implements CameraControlHost {
 
   private _highlightedIndex: number | null = null;
   private _savedEmissives: Map<THREE.Mesh, { intensity: number; color: THREE.Color }> = new Map();
+  private _currentRoomHalf: number = 16;
+  private _sun!: THREE.DirectionalLight;
 
   private _launchAnim: {
     startTime: number;
@@ -466,12 +468,15 @@ export class Renderer implements CameraControlHost {
   /**
    * Smoothly lerp the camera target toward the car's current world position.
    * Call each frame during play mode to track the car.
+   *
+   * carPos is in grid space (x=wx, y=wy/forward, z=wz/up). We apply the same
+   * Y/Z swap as placeCar and _recenterCamera: grid z -> Three.js y, grid y -> Three.js z.
    */
   followCar(carPos: { x: number; y: number; z: number }, dt: number): void {
     const lerpFactor = 1 - Math.exp(-4 * dt); // smooth exponential interpolation
     this.cameraTarget.x += (carPos.x - this.cameraTarget.x) * lerpFactor;
-    this.cameraTarget.y += (carPos.y - this.cameraTarget.y) * lerpFactor;
-    this.cameraTarget.z += (carPos.z - this.cameraTarget.z) * lerpFactor;
+    this.cameraTarget.y += (carPos.z - this.cameraTarget.y) * lerpFactor;
+    this.cameraTarget.z += (carPos.y - this.cameraTarget.z) * lerpFactor;
     this.updateCamera();
   }
 
@@ -519,7 +524,8 @@ export class Renderer implements CameraControlHost {
   /**
    * Compute the track's XZ bounding box from all piece entry states, then
    * rebuild the living-room environment with a roomHalf large enough to
-   * enclose the entire track (with padding).
+   * enclose the entire track (with padding). Skips the rebuild if the
+   * computed roomHalf hasn't changed since the last call.
    */
   private _rebuildEnvironmentForTrack(track: Track): void {
     let minX = 0, maxX = 0, minZ = 0, maxZ = 0;
@@ -545,6 +551,11 @@ export class Renderer implements CameraControlHost {
     const padding = 8;
     const minRoomHalf = 16; // never smaller than the default
     const roomHalf = Math.max(minRoomHalf, Math.ceil(Math.max(extentX, extentZ) + padding));
+
+    // Skip the expensive dispose/rebuild if the room size hasn't changed.
+    if (roomHalf === this._currentRoomHalf) return;
+    this._currentRoomHalf = roomHalf;
+
     // Scale wall height proportionally for very large rooms.
     const wallHeight = Math.max(9, roomHalf * (9 / 16));
 
@@ -559,6 +570,15 @@ export class Renderer implements CameraControlHost {
     if (this._environmentVisible) {
       this.scene.fog = this._indoorFog;
     }
+
+    // Scale the directional light's shadow frustum to cover the room.
+    const shadowExtent = Math.max(18, roomHalf * 1.2);
+    this._sun.shadow.camera.left = -shadowExtent;
+    this._sun.shadow.camera.right = shadowExtent;
+    this._sun.shadow.camera.top = shadowExtent;
+    this._sun.shadow.camera.bottom = -shadowExtent;
+    this._sun.shadow.camera.far = Math.max(70, shadowExtent * 3);
+    this._sun.shadow.camera.updateProjectionMatrix();
 
     // Remove the old environment and build a new one.
     const wasVisible = this.environment.visible;
@@ -603,6 +623,7 @@ export class Renderer implements CameraControlHost {
     sun.shadow.camera.near = 1;
     sun.shadow.camera.far = 70;
     this.scene.add(sun);
+    this._sun = sun;
 
     const rim = new THREE.DirectionalLight(COLORS.rim, 0.5);
     rim.position.set(-8, 5, -10);
