@@ -96,9 +96,10 @@ export class Simulator {
         this.failPieceIndex = this.pieceIndex;
         return;
       }
-      if (piece.boostEnergy > 0) {
+      if (piece.boostEnergy !== 0) {
         this.v2 += piece.boostEnergy;
-        this.boostersUsed++;
+        if (this.v2 < 0) this.v2 = 0;
+        if (piece.boostEnergy > 0) this.boostersUsed++;
       }
     }
 

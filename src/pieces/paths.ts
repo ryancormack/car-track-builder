@@ -3,7 +3,7 @@
 // Pure functions of t — easy to unit-test for continuity and end-points.
 
 import type { LocalPoint, PathFn } from '../types.js';
-import { SPIRAL_RADIUS, HELIX_RADIUS, SPIRAL_TOWER_RADIUS } from '../constants.js';
+import { SPIRAL_RADIUS, HELIX_RADIUS, SPIRAL_TOWER_RADIUS, GIANT_LOOP_RADIUS } from '../constants.js';
 
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
@@ -155,3 +155,30 @@ export const pathSpiralTower: PathFn = (t) =>
   // over 4 cells (2 per turn) and dropping 2 per turn, the coils have room to
   // separate so the double coil reads cleanly as a spiral tower.
   barrelHelix(t, 4, SPIRAL_TOWER_RADIUS, 2, -4);
+
+export const pathGiantLoop: PathFn = (t) => {
+  // Giant loop: 3x bigger than the standard loop. Radius R=1.5, spans 3 forward
+  // cells (lx: 0->3). Same approach/loop/depart structure as pathLoop.
+  // Approach (0..0.1): straight from back edge to loop bottom (lx=1.5, lz=0).
+  // Loop (0.1..0.9): full 360 vertical circle, radius R=1.5, centre at (1.5, 0, R).
+  // Depart (0.9..1.0): straight from loop bottom to front edge (lx=3, lz=0).
+  const R = GIANT_LOOP_RADIUS;
+  if (t < 0.1) return { lx: (t / 0.1) * 1.5, ly: 0, lz: 0, banking: 0 };
+  if (t > 0.9) return { lx: 1.5 + ((t - 0.9) / 0.1) * 1.5, ly: 0, lz: 0, banking: 0 };
+  const u = (t - 0.1) / 0.8;
+  const a = -Math.PI / 2 + 2 * Math.PI * u;
+  return {
+    lx: 1.5 + R * Math.cos(a),
+    ly: 0,
+    lz: R + R * Math.sin(a),
+    banking: 0,
+  };
+};
+
+export const pathGiantJump: PathFn = (t) => {
+  // Giant jump: spans 3 cells (lx: 0->3) with a taller ballistic arc than the
+  // standard jump. The wider gap creates a more dramatic airborne section.
+  const lx = 3 * t;
+  const lz = 1.8 * Math.sin(Math.PI * t);
+  return { lx, ly: 0, lz, banking: 0 };
+};

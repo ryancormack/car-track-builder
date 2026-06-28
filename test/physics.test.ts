@@ -171,3 +171,52 @@ test('STEEP_HILL fails with insufficient speed', () => {
   runToCompletion(sim);
   assert.equal(sim.failed, true);
 });
+
+// --- BRAKE physics tests ---
+
+test('BRAKE reduces car speed (v2 decreases after passing through BRAKE)', () => {
+  const sim = new Simulator(trackOf(['BRAKE', 'STRAIGHT', 'FINISH'], 5));
+  const initialV2 = sim.v2;
+  sim.step(1 / 240); // triggers entry check, applies boostEnergy=-40
+  // After entering the brake, v2 should be reduced by 40
+  assert.ok(sim.v2 < initialV2, 'v2 should decrease after BRAKE');
+  assert.ok(sim.v2 <= initialV2 - 40 + 1, 'v2 should drop by approximately 40');
+  // boostersUsed should NOT be incremented for a brake
+  assert.equal(sim.boostersUsed, 0, 'brake should not count as a booster');
+  // Car should finish successfully
+  runToCompletion(sim);
+  assert.equal(sim.finished, true);
+  assert.equal(sim.failed, false);
+});
+
+test('BRAKE does not make v2 go negative', () => {
+  // Very low drop height so v2 starts small (2*G*1 = 19.6) and brake subtracts 40
+  const sim = new Simulator(trackOf(['BRAKE', 'FINISH'], 1));
+  sim.step(1 / 240);
+  assert.ok(sim.v2 >= 0, `v2 should not go negative, got ${sim.v2}`);
+});
+
+test('BRAKE does not increment boostersUsed', () => {
+  const sim = new Simulator(trackOf(['BRAKE', 'FINISH'], 5));
+  runToCompletion(sim);
+  assert.equal(sim.boostersUsed, 0);
+});
+
+// --- GIANT_LOOP physics tests ---
+
+test('GIANT_LOOP fails the run when entry speed is too low', () => {
+  // Drop height 2 -> v2 = 2*G*2 = 39.2, but GIANT_LOOP needs 5*G*1.5 = 73.5
+  const sim = new Simulator(trackOf(['GIANT_LOOP', 'FINISH'], 2));
+  sim.step(1 / 240);
+  assert.equal(sim.failed, true);
+  assert.equal(sim.failType, 'speed_gate');
+  assert.match(sim.failReason ?? '', /Giant Loop/i);
+});
+
+test('GIANT_LOOP succeeds when starting from a high enough drop', () => {
+  // Drop height 12 -> v2 = 2*G*12 = 235.2, well above 73.5
+  const sim = new Simulator(trackOf(['STRAIGHT', 'GIANT_LOOP', 'STRAIGHT', 'FINISH'], 12));
+  runToCompletion(sim);
+  assert.equal(sim.failed, false);
+  assert.equal(sim.finished, true);
+});

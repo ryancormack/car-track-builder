@@ -9,6 +9,7 @@ import {
   pathLoop, pathCorkscrew, pathJump,
   pathSpiral, pathSteepHill,
   pathHelixUp, pathHelixDown, pathSpiralTower,
+  pathGiantLoop, pathGiantJump,
   easedProgress,
   makeRampUpPath,
 } from '../src/pieces/paths.js';
@@ -17,7 +18,8 @@ import type { PieceId } from '../src/types.js';
 
 const samplers = [pathStraight, pathCurveR, pathCurveL, pathRampUp, pathRampDown,
                   pathLoop, pathCorkscrew, pathJump, pathSpiral, pathSteepHill,
-                  pathHelixUp, pathHelixDown, pathSpiralTower];
+                  pathHelixUp, pathHelixDown, pathSpiralTower,
+                  pathGiantLoop, pathGiantJump];
 
 test('every path sampler returns finite numeric coordinates across [0,1]', () => {
   for (const fn of samplers) {
@@ -408,4 +410,69 @@ test('pathSpiralTower is continuous (no jumps between adjacent samples)', () => 
     assert.ok(dist < 0.15, `spiral tower discontinuity at t=${t.toFixed(3)}: dist=${dist.toFixed(4)}`);
     prev = curr;
   }
+});
+
+// --- Giant Loop path tests ---
+
+test('pathGiantLoop starts at (0,0,0), ends at (3,0,0), and reaches peak height ~3.0', () => {
+  const a = pathGiantLoop(0);
+  const b = pathGiantLoop(1);
+  assert.deepEqual({ lx: a.lx, lz: a.lz }, { lx: 0, lz: 0 });
+  assert.ok(Math.abs(b.lx - 3) < 1e-9);
+  assert.ok(Math.abs(b.lz) < 1e-9);
+
+  // Peak height across the path should be ~3 (loop diameter = 2R = 3).
+  let peak = 0;
+  for (let t = 0; t <= 1; t += 0.01) peak = Math.max(peak, pathGiantLoop(t).lz);
+  assert.ok(peak > 2.99 && peak < 3.01, `giant loop peak should be ~3, got ${peak}`);
+});
+
+test('pathGiantLoop is continuous at both segment seams', () => {
+  const epsilon = 1e-6;
+  const beforeApproach = pathGiantLoop(0.1 - epsilon);
+  const afterApproach = pathGiantLoop(0.1 + epsilon);
+  assert.ok(Math.abs(beforeApproach.lx - afterApproach.lx) < 1e-3);
+  assert.ok(Math.abs(beforeApproach.lz - afterApproach.lz) < 1e-3);
+
+  const beforeDepart = pathGiantLoop(0.9 - epsilon);
+  const afterDepart = pathGiantLoop(0.9 + epsilon);
+  assert.ok(Math.abs(beforeDepart.lx - afterDepart.lx) < 1e-3);
+  assert.ok(Math.abs(beforeDepart.lz - afterDepart.lz) < 1e-3);
+});
+
+test('pathGiantLoop spans 3 cells (3x bigger than standard loop)', () => {
+  const end = pathGiantLoop(1);
+  assert.ok(Math.abs(end.lx - 3) < 1e-9, 'should span 3 cells forward');
+});
+
+// --- Giant Jump path tests ---
+
+test('pathGiantJump starts and ends at ground level and rises in the middle', () => {
+  assert.equal(pathGiantJump(0).lz, 0);
+  assert.ok(Math.abs(pathGiantJump(1).lz) < 1e-9);
+  assert.ok(pathGiantJump(0.5).lz > 1.5, 'giant jump should rise above 1.5 units at the apex');
+});
+
+test('pathGiantJump spans 3 cells (wider than standard jump)', () => {
+  const end = pathGiantJump(1);
+  assert.ok(Math.abs(end.lx - 3) < 1e-9, 'should span 3 cells forward');
+});
+
+test('pathGiantJump lx is monotonically increasing from 0 to 3', () => {
+  let prev = -Infinity;
+  for (let t = 0; t <= 1; t += 0.01) {
+    const p = pathGiantJump(t);
+    assert.ok(p.lx >= prev - 1e-9, `giant jump lx not monotonic at t=${t}`);
+    prev = p.lx;
+  }
+});
+
+test('pathGiantJump peak is taller than standard jump peak', () => {
+  let giantPeak = 0;
+  let standardPeak = 0;
+  for (let t = 0; t <= 1; t += 0.01) {
+    giantPeak = Math.max(giantPeak, pathGiantJump(t).lz);
+    standardPeak = Math.max(standardPeak, pathJump(t).lz);
+  }
+  assert.ok(giantPeak > standardPeak, `giant jump peak (${giantPeak}) should be taller than standard (${standardPeak})`);
 });
