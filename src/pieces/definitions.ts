@@ -56,6 +56,14 @@ const HELIX_UP_MIN_V2 =
   2 * FRICTION * RAMP_FRICTION_MULT * HELIX_UP_LEN +
   6;
 
+// Entry-speed gate for Giant Jump: hand-tuned gameplay threshold scaled up from
+// the standard JUMP's minV2 of 18 (which spans 2 cells). For 3 cells, linear
+// scaling gives 27 and quadratic (energy-based) scaling gives ~40.5. The value
+// 30 sits just above linear, providing a noticeable difficulty increase without
+// requiring an excessive run-up. This is a gameplay feel choice, not a strict
+// physical derivation.
+const GIANT_JUMP_MIN_V2 = 30;
+
 // Arc length of the Spiral Tower (2 turns, r=0.85, over 4 cells), measured
 // numerically. It descends, so no climb gate is needed (gravity assists).
 const SPIRAL_TOWER_LEN = 12.18;
@@ -148,7 +156,7 @@ export const PIECES: Record<PieceId, Piece> = {
   GIANT_JUMP: {
     id: 'GIANT_JUMP', name: 'Giant Jump', icon: '⤴', category: 'stunt', featured: true,
     forward: 3, turn: 0, dz: 0,
-    pathLen: 4.5, excitement: 20, minV2: 30, boostEnergy: 0,
+    pathLen: 4.5, excitement: 20, minV2: GIANT_JUMP_MIN_V2, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathGiantJump,
   },

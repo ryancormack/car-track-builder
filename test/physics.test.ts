@@ -220,3 +220,22 @@ test('GIANT_LOOP succeeds when starting from a high enough drop', () => {
   assert.equal(sim.failed, false);
   assert.equal(sim.finished, true);
 });
+
+// --- GIANT_JUMP physics tests ---
+
+test('GIANT_JUMP fails the run when entry speed is too low', () => {
+  // Drop height 1 -> v2 = 2*G*1 = 19.6, below GIANT_JUMP's minV2 of 30
+  const sim = new Simulator(trackOf(['GIANT_JUMP', 'FINISH'], 1));
+  sim.step(1 / 240);
+  assert.equal(sim.failed, true);
+  assert.equal(sim.failType, 'speed_gate');
+  assert.match(sim.failReason ?? '', /Giant Jump/i);
+});
+
+test('GIANT_JUMP succeeds when starting from a high enough drop', () => {
+  // Drop height 5 -> v2 = 2*G*5 = 98.0, well above minV2 of 30
+  const sim = new Simulator(trackOf(['STRAIGHT', 'GIANT_JUMP', 'STRAIGHT', 'FINISH'], 5));
+  runToCompletion(sim);
+  assert.equal(sim.failed, false);
+  assert.equal(sim.finished, true);
+});
