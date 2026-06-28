@@ -299,8 +299,10 @@ function buildRoomLights(roomHalf: number): THREE.Group {
   g.add(lamp);
 
   // Cool daylight spilling in through the window (matches buildWindow pos).
+  // Kept ~1.5 units IN FRONT of the back wall (which sits at z = -roomHalf) so
+  // it lights the wall and window from inside the room rather than from behind.
   const windowFill = new THREE.PointLight(COLORS.windowSky, 16, 44 * scale, 2);
-  windowFill.position.set(5.5 * scale, 5, -roomHalf - 0.5);
+  windowFill.position.set(5.5 * scale, 5, -roomHalf + 1.5);
   g.add(windowFill);
 
   return g;
