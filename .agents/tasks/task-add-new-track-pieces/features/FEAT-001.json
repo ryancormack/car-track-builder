@@ -1,0 +1,37 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Add three new track pieces: BRAKE, GIANT_LOOP, and GIANT_JUMP. The BRAKE piece slows the car down (useful before corners). The GIANT_LOOP is 3x bigger than the current LOOP (taller and longer). The GIANT_JUMP has a much wider gap than the current JUMP piece.",
+  "status": "completed",
+  "steps": [
+    "Step 1: Add 'BRAKE' | 'GIANT_LOOP' | 'GIANT_JUMP' to the PieceId union type in src/types.ts",
+    "Step 2: Add a GIANT_LOOP_RADIUS constant (= 1.5, which is 3x LOOP_RADIUS=0.5) to src/constants.ts",
+    "Step 3: Create pathGiantLoop in src/pieces/paths.ts following the same structure as pathLoop but using R=1.5 (3x), spanning 3 forward cells (lx: 0->3 instead of 0->1). The loop apex will be at 2*R=3.0 height. Use approach/depart segments similar to pathLoop.",
+    "Step 4: Create pathGiantJump in src/pieces/paths.ts following pathJump but spanning 3-4 forward cells with a wider gap (higher arc). The current JUMP spans 2 cells with lz = 1.15*sin(pi*t); the giant version should span at least 3 cells with a proportionally taller arc.",
+    "Step 5: In src/pieces/definitions.ts, add BRAKE piece definition: forward=1, turn=0, dz=0, pathLen=1, uses pathStraight for its path, category='special', excitement=0, minV2=0, boostEnergy=-40 (negative energy to slow the car). Give it a distinct color (e.g. '#cc3333' red) and an appropriate icon.",
+    "Step 6: In src/pieces/definitions.ts, add GIANT_LOOP piece definition: forward=3, turn=0, dz=0, pathLen derived from 2*pi*1.5 + approach/depart segments (~12.42), excitement=50 (higher than regular loop's 30), minV2=5*G*GIANT_LOOP_RADIUS (=73.5), boostEnergy=0, category='stunt', featured=true, color='#3da9fc'.",
+    "Step 7: In src/pieces/definitions.ts, add GIANT_JUMP piece definition: forward=3 (or 4 if the wider gap needs more space), turn=0, dz=0, pathLen appropriate for the arc, excitement=20 (higher than regular jump's 12), minV2 scaled up from jump's 18 (e.g. 30), boostEnergy=0, category='stunt', featured=true.",
+    "Step 8: Add BRAKE, GIANT_LOOP, and GIANT_JUMP to the PALETTE_ORDER array in src/pieces/definitions.ts. Place BRAKE near BOOSTER, and the giant pieces near their regular counterparts.",
+    "Step 9: Update src/physics.ts to handle negative boostEnergy (the brake). Currently the code only fires on `piece.boostEnergy > 0`. Change the condition to `piece.boostEnergy !== 0` so that negative boostEnergy reduces v2. Add a floor of 0 to prevent negative v2. Do NOT increment boostersUsed for negative boostEnergy (brakes).",
+    "Step 10: Add the new path functions (pathGiantLoop, pathGiantJump) to the export list in src/pieces/paths.ts and import them in src/pieces/definitions.ts.",
+    "Step 11: Optionally add renderer handling in src/renderer/meshes.ts for the new pieces: BRAKE could have a similar look to BOOSTER but with red color and backward-facing chevrons; GIANT_LOOP and GIANT_JUMP should use higher segment counts for smooth curves (like LOOP uses 64 segments, GIANT_LOOP should use 128+; GIANT_JUMP should use buildJumpPiece pattern with adjusted tStart/tEnd for the wider gap).",
+    "Step 12: Add tests in test/pieces.paths.test.ts for pathGiantLoop (start at (0,0,0), end at (3,0,0), peak height ~3.0, continuity at seams) and pathGiantJump (start/end at ground level, spans expected cells, rises in middle).",
+    "Step 13: Add a physics test in test/physics.test.ts for the BRAKE piece confirming it reduces speed, and for GIANT_LOOP confirming it fails with insufficient speed and succeeds with enough speed."
+  ],
+  "acceptance_criteria": [
+    "TypeScript compiles cleanly with 'npm run typecheck'",
+    "All existing 207 tests still pass",
+    "New tests for pathGiantLoop and pathGiantJump pass (endpoint, continuity, monotonicity checks)",
+    "New physics test confirms BRAKE reduces car speed (v2 decreases after passing through BRAKE)",
+    "New physics test confirms GIANT_LOOP speed gate works (fails with low drop, succeeds with high drop)",
+    "BRAKE piece has negative boostEnergy that slows the car without making v2 go negative",
+    "GIANT_LOOP is 3x bigger than LOOP (radius 1.5 vs 0.5, spans 3 cells vs 1 cell)",
+    "GIANT_JUMP has a wider gap than JUMP (spans more cells)"
+  ],
+  "verification": [
+    "npm run typecheck",
+    "npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "All 219 tests pass (207 original + 12 new). Removed the lx-monotonicity test for pathGiantLoop because vertical loops inherently go backward on x during the inverted section (same as the standard loop). The standard pathLoop test also does not check lx monotonicity."
+}
