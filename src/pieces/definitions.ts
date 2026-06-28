@@ -10,8 +10,9 @@ import {
   pathLoop, pathCorkscrew, pathJump,
   pathSpiral, pathSteepHill,
   pathHelixUp, pathHelixDown, pathSpiralTower,
+  pathGiantLoop, pathGiantJump,
 } from './paths.js';
-import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS } from '../constants.js';
+import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS, GIANT_LOOP_RADIUS } from '../constants.js';
 import type { Piece, PieceId } from '../types.js';
 
 // Classic result for a vertical loop: to stay pinned to the track at the apex,
@@ -19,6 +20,9 @@ import type { Piece, PieceId } from '../types.js';
 // 24.5. The simulator sheds a little extra to friction on the way up, but stays
 // above the stall threshold, so this is genuinely passable at the gate value.
 const LOOP_MIN_V2 = 5 * G * LOOP_RADIUS;
+
+// Entry-speed gate for Giant Loop: same formula as the regular loop, but 3x radius.
+const GIANT_LOOP_MIN_V2 = 5 * G * GIANT_LOOP_RADIUS;
 
 // Entry-speed gate for Ramp Up, derived from the same accounting the simulator
 // uses so the gate matches reality. Clearing the ramp costs the gravity climb
@@ -51,6 +55,14 @@ const HELIX_UP_MIN_V2 =
   2 * G * HELIX_UP_RISE +
   2 * FRICTION * RAMP_FRICTION_MULT * HELIX_UP_LEN +
   6;
+
+// Entry-speed gate for Giant Jump: hand-tuned gameplay threshold scaled up from
+// the standard JUMP's minV2 of 18 (which spans 2 cells). For 3 cells, linear
+// scaling gives 27 and quadratic (energy-based) scaling gives ~40.5. The value
+// 30 sits just above linear, providing a noticeable difficulty increase without
+// requiring an excessive run-up. This is a gameplay feel choice, not a strict
+// physical derivation.
+const GIANT_JUMP_MIN_V2 = 30;
 
 // Arc length of the Spiral Tower (2 turns, r=0.85, over 4 cells), measured
 // numerically. It descends, so no climb gate is needed (gravity assists).
@@ -120,12 +132,33 @@ export const PIECES: Record<PieceId, Piece> = {
     color: '#ff4500',
     pathLocal: pathStraight,
   },
+  BRAKE: {
+    id: 'BRAKE', name: 'Brake', icon: '🛑', category: 'special',
+    forward: 1, turn: 0, dz: 0,
+    pathLen: 1, excitement: 0, minV2: 0, boostEnergy: -40,
+    color: '#cc3333',
+    pathLocal: pathStraight,
+  },
   JUMP: {
     id: 'JUMP', name: 'Jump', icon: '⤴', category: 'stunt', featured: true,
     forward: 2, turn: 0, dz: 0,
     pathLen: 3.0, excitement: 12, minV2: 18, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathJump,
+  },
+  GIANT_LOOP: {
+    id: 'GIANT_LOOP', name: 'Giant Loop', icon: '⭕', category: 'stunt', featured: true,
+    forward: 3, turn: 0, dz: 0,
+    pathLen: 12.42, excitement: 50, minV2: GIANT_LOOP_MIN_V2, boostEnergy: 0,
+    color: '#3da9fc',
+    pathLocal: pathGiantLoop,
+  },
+  GIANT_JUMP: {
+    id: 'GIANT_JUMP', name: 'Giant Jump', icon: '⤴', category: 'stunt', featured: true,
+    forward: 3, turn: 0, dz: 0,
+    pathLen: 4.5, excitement: 20, minV2: GIANT_JUMP_MIN_V2, boostEnergy: 0,
+    color: '#ff9d3d',
+    pathLocal: pathGiantJump,
   },
   SPIRAL: {
     id: 'SPIRAL', name: 'Spiral', icon: '🔽', category: 'stunt', featured: true,
@@ -174,9 +207,9 @@ export const PIECES: Record<PieceId, Piece> = {
 export const PALETTE_ORDER: PieceId[] = [
   'STRAIGHT', 'CURVE_L', 'CURVE_R',
   'RAMP_UP', 'RAMP_DN',
-  'LOOP', 'CORKSCREW', 'JUMP',
+  'LOOP', 'GIANT_LOOP', 'CORKSCREW', 'JUMP', 'GIANT_JUMP',
   'SPIRAL', 'SPIRAL_TOWER', 'HELIX_UP', 'HELIX_DN', 'STEEP_HILL',
-  'BOOSTER', 'FINISH',
+  'BOOSTER', 'BRAKE', 'FINISH',
 ];
 
 /** Narrows an arbitrary string to a known PieceId (used at the JSON boundary). */

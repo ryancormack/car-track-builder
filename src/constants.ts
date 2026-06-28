@@ -25,6 +25,10 @@ export const HELIX_RADIUS = 1.0;
 // turns over 4 forward cells so consecutive coils have room to separate.
 export const SPIRAL_TOWER_RADIUS = 0.85;
 
+// Radius of the giant vertical loop (3x the normal LOOP_RADIUS).
+// The giant loop spans 3 forward cells with peak height 2*R = 3.0.
+export const GIANT_LOOP_RADIUS = 1.5;
+
 // Scale factor applied to simulation time in the run loop (main.ts).
 // A value < 1 makes the car traverse the track more slowly, giving a more
 // dramatic and watchable run without altering the underlying physics.

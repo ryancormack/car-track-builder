@@ -1,0 +1,26 @@
+{
+  "project_type": "TypeScript browser game (2.5D car track builder) with Vite bundler and Three.js renderer",
+  "language": "TypeScript",
+  "build_system": "npm + Vite + tsc",
+  "test_framework": "Node.js built-in test runner (node:test + node:assert/strict) with tsx loader, test files in test/",
+  "build_command": "npm run typecheck",
+  "test_command": "npm test",
+  "verification_instructions": "1. Run 'npm run typecheck' to ensure no TS errors. 2. Run 'npm test' to confirm all tests pass (currently 207).",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "cd /projects/sandbox/car-track-builder && npm install",
+  "environment_constraints": "None significant - standard npm/Node.js environment available.",
+  "contribution_requirements": "Follow existing code patterns: add PieceId to union type, create PathFn, add definition to PIECES record and PALETTE_ORDER array.",
+  "key_patterns": "Adding a new piece requires: (1) Add PieceId string to the union in src/types.ts, (2) Create a PathFn in src/pieces/paths.ts, (3) Add piece definition in src/pieces/definitions.ts with all Piece properties (id, name, icon, category, forward, turn, dz, pathLen, excitement, minV2, boostEnergy, color, pathLocal), (4) Add to PALETTE_ORDER array in definitions.ts, (5) Optionally add renderer-specific code in src/renderer/meshes.ts. Physics uses boostEnergy field on piece entry: if boostEnergy > 0, v2 += boostEnergy. For a brake, a negative boostEnergy or a dedicated brakeEnergy field with corresponding physics handling is needed. Tests follow the pattern in test/pieces.paths.test.ts (endpoint checks, continuity, monotonicity).",
+  "relevant_files": [
+    "src/types.ts",
+    "src/constants.ts",
+    "src/pieces/paths.ts",
+    "src/pieces/definitions.ts",
+    "src/physics.ts",
+    "src/renderer/meshes.ts",
+    "src/renderer/colors.ts",
+    "test/pieces.paths.test.ts",
+    "test/physics.test.ts"
+  ],
+  "directory_structure": "src/ - main source: types.ts, constants.ts, physics.ts, scoring.ts, track.ts, pieces/ (definitions.ts, paths.ts, resolve.ts, frames.ts, geometry.ts, sampling.ts, index.ts), renderer/ (meshes.ts, colors.ts, car.ts, controls.ts, environment.ts, index.ts). test/ - all test files."
+}

@@ -282,6 +282,42 @@ function buildBoosterPiece(path: PathFn, entry: GridState): THREE.Group {
   return group;
 }
 
+function buildBrakePiece(path: PathFn, entry: GridState): THREE.Group {
+  const group = buildRailedTrack(path, entry, COLORS.brake, {
+    emissive: COLORS.brakeEm,
+    emissiveIntensity: 0.7,
+  });
+  // Backward-facing red chevrons (pointing against the direction of travel).
+  const arrowMat = new THREE.MeshStandardMaterial({
+    color: COLORS.brakeArrow,
+    emissive: COLORS.brakeArrowEm,
+    emissiveIntensity: 0.9,
+    metalness: 0.2,
+    roughness: 0.4,
+  });
+  for (const t of [0.25, 0.5, 0.75]) {
+    const { pos, tang } = frameAt(path, entry, t);
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), arrowMat);
+    arrow.position.copy(pos).addScaledVector(new THREE.Vector3(0, 1, 0), 0.24);
+    // Point backward (against travel direction)
+    arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tang.clone().negate());
+    arrow.castShadow = true;
+    group.add(arrow);
+  }
+  return group;
+}
+
+function buildGiantJumpPiece(path: PathFn, entry: GridState): THREE.Group {
+  const group = new THREE.Group();
+  const color = COLORS.trackOrangeBright;
+  // Take-off ramp + landing ramp, leaving a visible gap (no track) in between.
+  group.add(buildRailedTrack(path, entry, color, { tStart: 0, tEnd: 0.25, segments: 14 }));
+  group.add(buildRailedTrack(path, entry, color, { tStart: 0.75, tEnd: 1, segments: 14 }));
+  group.add(buildJumpLip(path, entry, 0.25));
+  group.add(buildJumpLip(path, entry, 0.75));
+  return group;
+}
+
 /** A small glowing cross-bar marking the take-off / landing edge of a jump. */
 function buildJumpLip(path: PathFn, entry: GridState, t: number): THREE.Mesh {
   const { pos, tang, up, side } = frameAt(path, entry, t);
@@ -344,8 +380,10 @@ function buildFinishPiece(path: PathFn, entry: GridState): THREE.Group {
 
 export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): THREE.Group {
   if (piece.id === 'BOOSTER') return buildBoosterPiece(path, entry);
+  if (piece.id === 'BRAKE') return buildBrakePiece(path, entry);
   if (piece.id === 'FINISH') return buildFinishPiece(path, entry);
   if (piece.id === 'JUMP') return buildJumpPiece(path, entry);
+  if (piece.id === 'GIANT_JUMP') return buildGiantJumpPiece(path, entry);
   if (piece.id === 'SPIRAL') {
     return buildRailedTrack(path, entry, COLORS.trackBlue, {
       emissive: COLORS.trackBlue,
@@ -370,6 +408,13 @@ export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): TH
       emissive: COLORS.trackBlue,
       emissiveIntensity: 0.12,
       segments: 256,
+    });
+  }
+  if (piece.id === 'GIANT_LOOP') {
+    return buildRailedTrack(path, entry, COLORS.trackBlue, {
+      emissive: COLORS.trackBlue,
+      emissiveIntensity: 0.12,
+      segments: 128,
     });
   }
   if (piece.id === 'LOOP' || piece.id === 'CORKSCREW') {
