@@ -2,7 +2,7 @@
   "id": "FEAT-002",
   "type": "fix",
   "description": "Address code review findings: add GIANT_JUMP physics tests and document the minV2 derivation.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Step 1: Add GIANT_JUMP physics tests in test/physics.test.ts following the GIANT_LOOP test pattern: one test for speed gate rejection (low speed entry), one test for successful traversal with sufficient speed.",
     "Step 2: Add a derivation comment in src/pieces/definitions.ts explaining the GIANT_JUMP minV2=30 value (scaled from JUMP's minV2=18 for a 3-cell span vs 2-cell span)."
@@ -18,5 +18,5 @@
     "npm test"
   ],
   "blocked_reason": null,
-  "findings": null
+  "findings": "Added 2 GIANT_JUMP physics tests (reject underspeed at minV2=30, succeed with drop=5). Extracted GIANT_JUMP_MIN_V2 constant with derivation comment. All 221 tests pass. Review issue #3 (brake icon) left as-is per low priority assessment."
 }
