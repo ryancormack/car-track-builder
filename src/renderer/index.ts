@@ -7,7 +7,7 @@ import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
 import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
-import { buildLivingRoom } from './environment.js';
+import { buildLivingRoom, type RoomExtent } from './environment.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
@@ -463,6 +463,26 @@ export class Renderer implements CameraControlHost {
     this._updateFrustum();
   }
 
+  /**
+   * Smoothly lerp the camera target toward the car's current world position.
+   * Call each frame during play mode to track the car.
+   */
+  followCar(carPos: { x: number; y: number; z: number }, dt: number): void {
+    const lerpFactor = 1 - Math.exp(-4 * dt); // smooth exponential interpolation
+    this.cameraTarget.x += (carPos.x - this.cameraTarget.x) * lerpFactor;
+    this.cameraTarget.y += (carPos.y - this.cameraTarget.y) * lerpFactor;
+    this.cameraTarget.z += (carPos.z - this.cameraTarget.z) * lerpFactor;
+    this.updateCamera();
+  }
+
+  /**
+   * Reset the camera target to the track centroid. Used when switching back to
+   * build mode after play mode ends.
+   */
+  resetCameraToTrack(track: Track): void {
+    this._recenterCamera(track);
+  }
+
   _updateFrustum(): void {
     const aspect = this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1);
     const f = this.frustumSize / this.cameraZoom;
@@ -484,12 +504,82 @@ export class Renderer implements CameraControlHost {
       }
       this.cameraTarget.set(cx / n, cz / n, cy / n);
     }
+
+    // Compute the track's bounding extent and rebuild the environment to fit.
+    this._rebuildEnvironmentForTrack(track);
+
     // Keep the living-room backdrop centred under the current track so it always
     // frames the scene regardless of track size/position.
     if (this.environment) {
       this.environment.position.set(this.cameraTarget.x, 0, this.cameraTarget.z);
     }
     this.updateCamera();
+  }
+
+  /**
+   * Compute the track's XZ bounding box from all piece entry states, then
+   * rebuild the living-room environment with a roomHalf large enough to
+   * enclose the entire track (with padding).
+   */
+  private _rebuildEnvironmentForTrack(track: Track): void {
+    let minX = 0, maxX = 0, minZ = 0, maxZ = 0;
+    if (track.pieces.length > 0) {
+      const s0 = track.entryStateAt(0);
+      // Note: gx maps to world X, gy maps to world Z in the renderer.
+      minX = maxX = s0.gx;
+      minZ = maxZ = s0.gy;
+      for (let i = 1; i <= track.pieces.length; i++) {
+        const s = track.entryStateAt(i);
+        if (s.gx < minX) minX = s.gx;
+        if (s.gx > maxX) maxX = s.gx;
+        if (s.gy < minZ) minZ = s.gy;
+        if (s.gy > maxZ) maxZ = s.gy;
+      }
+    }
+
+    // Determine the required room half-size: the max extent from centroid + padding.
+    const centroidX = (minX + maxX) / 2;
+    const centroidZ = (minZ + maxZ) / 2;
+    const extentX = Math.max(Math.abs(minX - centroidX), Math.abs(maxX - centroidX));
+    const extentZ = Math.max(Math.abs(minZ - centroidZ), Math.abs(maxZ - centroidZ));
+    const padding = 8;
+    const minRoomHalf = 16; // never smaller than the default
+    const roomHalf = Math.max(minRoomHalf, Math.ceil(Math.max(extentX, extentZ) + padding));
+    // Scale wall height proportionally for very large rooms.
+    const wallHeight = Math.max(9, roomHalf * (9 / 16));
+
+    const extent: RoomExtent = { roomHalf, wallHeight };
+
+    // Update the indoor fog range to match the room size.
+    this._indoorFog = new THREE.Fog(
+      this._indoorFog.color,
+      roomHalf * 1.5,
+      roomHalf * 4.2,
+    );
+    if (this._environmentVisible) {
+      this.scene.fog = this._indoorFog;
+    }
+
+    // Remove the old environment and build a new one.
+    const wasVisible = this.environment.visible;
+    this.scene.remove(this.environment);
+    this._disposeGroup(this.environment);
+    this.environment = buildLivingRoom(extent);
+    this.environment.visible = wasVisible;
+    this.scene.add(this.environment);
+  }
+
+  /** Dispose all geometry and materials in a group (for cleanup on rebuild). */
+  private _disposeGroup(group: THREE.Group): void {
+    group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      const material = mesh.material;
+      if (material) {
+        if (Array.isArray(material)) material.forEach((m) => m.dispose());
+        else (material as THREE.Material).dispose?.();
+      }
+    });
   }
 
   // -------- internals --------

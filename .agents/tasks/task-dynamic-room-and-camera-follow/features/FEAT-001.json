@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Dynamic living room scaling: make the room walls, floor, and furniture scale to always enclose the entire track, no matter how large or spread out it gets. Also add smooth camera follow in play mode so the camera tracks the car as it moves.",
+  "status": "in_progress",
+  "steps": [
+    "1. In src/renderer/environment.ts, refactor buildLivingRoom() to accept a size/extent parameter (e.g., { halfX: number, halfZ: number, height: number }) that controls the room dimensions instead of using the hardcoded ROOM_HALF=16, WALL_HEIGHT=9, FLOOR_SIZE=72 constants. The walls, floor, rug, furniture positions, window position, and room lights should all scale proportionally based on this extent. Export a new function or modify buildLivingRoom to accept these dimensions.",
+    "2. In src/renderer/index.ts, compute the track's bounding extent (min/max of all piece entry positions in world X and Z) during _recenterCamera or a new helper. Use this extent (with padding) to determine the room size parameter. Instead of building the environment once in the constructor, rebuild/rescale it each time rebuildTrack is called, OR update the room group's scale to fit the track extent. The room must always be large enough that all track pieces appear inside the walls.",
+    "3. In src/renderer/index.ts, add a method for smooth camera follow during play mode. This should smoothly lerp the cameraTarget toward the car's current world position (from the TrackFrame.pos) each frame. The method signature could be something like: followCar(carPos: {x: number, y: number, z: number}, dt: number). Use a smooth interpolation factor (e.g., lerp with factor ~3-6 * dt) so the camera gently tracks rather than snapping.",
+    "4. In src/main.ts, during the play-mode branch of the frame() function (where sim.isRunning() and the car sample is obtained), call the new camera follow method on the renderer, passing the car's position from the TrackFrame sample. This integrates the camera follow into the existing run loop. Make sure this only happens during play mode and not during build mode.",
+    "5. Ensure the camera target is reset back to the track centroid when switching from play mode back to build mode (in the switchMode function in main.ts), so the view returns to the overview after playing.",
+    "6. Run 'npm run typecheck' and 'npm run build' to verify no type errors."
+  ],
+  "acceptance_criteria": [
+    "Building a very large or long track keeps all pieces visually inside the living room walls when the room is visible",
+    "The room walls, floor, and furniture scale proportionally to enclose tracks of any size",
+    "During play mode, the camera smoothly follows the car as it moves along the track",
+    "When switching back to build mode, the camera returns to the track centroid overview",
+    "npm run typecheck passes with no errors",
+    "npm run build succeeds",
+    "npm test passes all existing 221 tests"
+  ],
+  "verification": [
+    "npm run typecheck",
+    "npm test",
+    "npm run build"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

@@ -290,6 +290,7 @@ function switchMode(next: Mode): void {
     renderer.setCar(false);
     renderer.stopLauncher();
     renderer.cleanupWipeout();
+    renderer.resetCameraToTrack(track);
     wipeoutPlaying = false;
     sim = null;
   }
@@ -344,7 +345,10 @@ function frame(now: number): void {
       const sdt = (dt * SPEED_SCALE) / subSteps;
       for (let i = 0; i < subSteps && sim.isRunning(); i++) sim.step(sdt);
       const sample = sim.carSample();
-      if (sample) renderer.setCar(true, sample);
+      if (sample) {
+        renderer.setCar(true, sample);
+        renderer.followCar(sample.pos, dt);
+      }
       els.hudSpeed.textContent = sim.speed.toFixed(1);
     } else if (wipeoutPlaying) {
       const still = renderer.updateWipeoutAnimation(dt * SPEED_SCALE);
