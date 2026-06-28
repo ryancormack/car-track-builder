@@ -1,0 +1,14 @@
+{
+  "task_id": "task-dynamic-room-and-camera-follow",
+  "task_description": "Make the living room backdrop dynamically scale to always enclose the entire track regardless of size, and add smooth camera follow in play mode so the camera tracks the car as it zooms along.",
+  "status": "completed",
+  "feature_order": ["FEAT-001"],
+  "blocked_reason": null,
+  "verification": {
+    "build": "pass",
+    "tests": "pass",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "npm run typecheck passes, all 221 tests pass, npm run build succeeds. Semantic review v2 APPROVED. No new tests needed as the changes are rendering/UI-only (no pure-logic modules modified)."
+  }
+}

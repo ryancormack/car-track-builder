@@ -1,0 +1,26 @@
+{
+  "project_type": "TypeScript browser game (2.5D car track builder) using Three.js",
+  "language": "TypeScript",
+  "build_system": "Vite with tsc for type checking",
+  "test_framework": "node:test with tsx, test files in test/ directory",
+  "build_command": "npm run build",
+  "test_command": "npm test",
+  "verification_instructions": "1. Run 'npm run typecheck' to check types. 2. Run 'npm test' to run all 221 tests. 3. Run 'npm run build' for a full production build.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "npm install (already done)",
+  "environment_constraints": "No Docker daemon available. Use host-based validation (typecheck + tests + build).",
+  "contribution_requirements": "TypeScript throughout, Three.js for rendering, no CDN imports, no textures/assets (procedural geometry only).",
+  "key_patterns": "Renderer class in src/renderer/index.ts owns the scene/camera. Environment is a THREE.Group built by buildLivingRoom() in src/renderer/environment.ts. The group is repositioned to the track centroid on each rebuildTrack. The camera is orthographic with isometric parameters (azimuth, polar, zoom, frustumSize). The run loop in main.ts steps the physics simulator and calls renderer.setCar() each frame. CameraControlHost interface defines what camera controls can mutate.",
+  "relevant_files": [
+    "src/renderer/environment.ts",
+    "src/renderer/index.ts",
+    "src/main.ts",
+    "src/renderer/controls.ts",
+    "src/track.ts",
+    "src/physics.ts",
+    "src/renderer/colors.ts",
+    "src/pieces/frames.ts",
+    "src/app/environment.ts"
+  ],
+  "directory_structure": "src/ has main.ts (app entry + run loop), renderer/ (Three.js scene, camera, environment, car, controls, meshes), pieces/ (geometry, paths, definitions, frames), app/ (hud, overlay, storage, environment toggle), physics.ts, track.ts, types.ts. Tests live in test/ using node:test."
+}

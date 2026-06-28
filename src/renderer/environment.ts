@@ -10,11 +10,17 @@
 import * as THREE from 'three';
 import { COLORS } from './colors.js';
 
-// Room dimensions (local space, centred on origin).
-const ROOM_HALF = 16;     // walls sit this far out on the -x and -z sides
-const WALL_HEIGHT = 9;
+// Default room dimensions (local space, centred on origin).
+const DEFAULT_ROOM_HALF = 16;
+const DEFAULT_WALL_HEIGHT = 9;
 const FLOOR_SIZE = 72;    // generously large so it always fills the view
 const WALL_THICK = 0.3;
+
+/** Parameters controlling the dynamic room extent. */
+export interface RoomExtent {
+  roomHalf: number;
+  wallHeight: number;
+}
 
 function stdMat(color: number, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0.0, ...opts });
@@ -30,9 +36,9 @@ function cyl(rTop: number, rBot: number, h: number, material: THREE.Material, se
 
 // ---- Shell pieces ----
 
-function buildFloor(): THREE.Mesh {
+function buildFloor(floorSize: number): THREE.Mesh {
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE),
+    new THREE.PlaneGeometry(floorSize, floorSize),
     stdMat(COLORS.roomFloor, { roughness: 0.82 }),
   );
   floor.rotation.x = -Math.PI / 2;
@@ -42,60 +48,65 @@ function buildFloor(): THREE.Mesh {
   return floor;
 }
 
-function buildRug(): THREE.Group {
+function buildRug(roomHalf: number): THREE.Group {
   const g = new THREE.Group();
   g.name = 'rug';
+  // Scale the rug proportionally with the room size.
+  const scale = roomHalf / DEFAULT_ROOM_HALF;
+  const trimSize = 21 * scale;
+  const topSize = 19 * scale;
   // Kept just above the floor (y=-0.015) but below the track surface (~y=0) so
   // flat pieces never poke through the rug.
-  const trim = box(21, 0.012, 21, stdMat(COLORS.rugTrim, { roughness: 1.0 }));
+  const trim = box(trimSize, 0.012, trimSize, stdMat(COLORS.rugTrim, { roughness: 1.0 }));
   trim.position.y = -0.009;
   trim.receiveShadow = true;
-  const top = box(19, 0.012, 19, stdMat(COLORS.rug, { roughness: 1.0 }));
+  const top = box(topSize, 0.012, topSize, stdMat(COLORS.rug, { roughness: 1.0 }));
   top.position.y = -0.004;
   top.receiveShadow = true;
   g.add(trim, top);
   return g;
 }
 
-function buildWalls(): THREE.Group {
+function buildWalls(roomHalf: number, wallHeight: number): THREE.Group {
   const g = new THREE.Group();
   g.name = 'walls';
 
   // Back wall (perpendicular to z, on the -z side), faces +z toward the camera.
-  const backWall = box(ROOM_HALF * 2, WALL_HEIGHT, WALL_THICK, stdMat(COLORS.roomWall, { roughness: 1.0 }));
-  backWall.position.set(0, WALL_HEIGHT / 2, -ROOM_HALF);
+  const backWall = box(roomHalf * 2, wallHeight, WALL_THICK, stdMat(COLORS.roomWall, { roughness: 1.0 }));
+  backWall.position.set(0, wallHeight / 2, -roomHalf);
   backWall.receiveShadow = true;
   g.add(backWall);
 
   // Left wall (perpendicular to x, on the -x side), faces +x toward the camera.
-  const leftWall = box(WALL_THICK, WALL_HEIGHT, ROOM_HALF * 2, stdMat(COLORS.roomWallAlt, { roughness: 1.0 }));
-  leftWall.position.set(-ROOM_HALF, WALL_HEIGHT / 2, 0);
+  const leftWall = box(WALL_THICK, wallHeight, roomHalf * 2, stdMat(COLORS.roomWallAlt, { roughness: 1.0 }));
+  leftWall.position.set(-roomHalf, wallHeight / 2, 0);
   leftWall.receiveShadow = true;
   g.add(leftWall);
 
   // Baseboards (pale trim along the foot of each wall).
   const baseMat = stdMat(COLORS.roomBaseboard, { roughness: 0.8 });
-  const backBase = box(ROOM_HALF * 2, 0.5, WALL_THICK + 0.06, baseMat);
-  backBase.position.set(0, 0.25, -ROOM_HALF + 0.03);
+  const backBase = box(roomHalf * 2, 0.5, WALL_THICK + 0.06, baseMat);
+  backBase.position.set(0, 0.25, -roomHalf + 0.03);
   g.add(backBase);
-  const leftBase = box(WALL_THICK + 0.06, 0.5, ROOM_HALF * 2, baseMat);
-  leftBase.position.set(-ROOM_HALF + 0.03, 0.25, 0);
+  const leftBase = box(WALL_THICK + 0.06, 0.5, roomHalf * 2, baseMat);
+  leftBase.position.set(-roomHalf + 0.03, 0.25, 0);
   g.add(leftBase);
 
   return g;
 }
 
-function buildWindow(): THREE.Group {
+function buildWindow(roomHalf: number): THREE.Group {
   const g = new THREE.Group();
   g.name = 'window';
 
   // Mounted on the back wall (-z), inset toward the room so it reads in front
-  // of the wall surface. Offset to one side to leave room for furniture.
+  // of the wall surface. Scale position proportionally to the room size.
+  const scale = roomHalf / DEFAULT_ROOM_HALF;
   const winW = 7;
   const winH = 4.5;
-  const cx = 5.5;
+  const cx = 5.5 * scale;
   const cy = 5;
-  const z = -ROOM_HALF + WALL_THICK / 2 + 0.06;
+  const z = -roomHalf + WALL_THICK / 2 + 0.06;
 
   // Glowing sky pane.
   const sky = box(winW, winH, 0.08, stdMat(COLORS.windowSky, {
@@ -121,11 +132,6 @@ function buildWindow(): THREE.Group {
 
   return g;
 }
-
-/**
- * Build the full living-room backdrop group. Furniture is collected in a named
- * `furniture` subgroup so it can be reasoned about/tested independently.
- */
 
 // ---- Furniture ----
 
@@ -237,34 +243,38 @@ function buildFloorLamp(): THREE.Group {
 }
 
 /** Arrange the furniture around the walls, clear of the central track/rug. */
-function buildFurniture(): THREE.Group {
+function buildFurniture(roomHalf: number): THREE.Group {
   const furniture = new THREE.Group();
   furniture.name = 'furniture';
 
+  // Scale furniture positions proportionally with room size so they stay
+  // against the walls regardless of extent.
+  const scale = roomHalf / DEFAULT_ROOM_HALF;
+
   const sofa = buildSofa();
-  sofa.position.set(-6, 0, -13.2); // against the back wall, left of the window
+  sofa.position.set(-6 * scale, 0, -13.2 * scale); // against the back wall, left of the window
   furniture.add(sofa);
 
   const table = buildCoffeeTable();
-  table.position.set(-6, 0, -9.6); // in front of the sofa
+  table.position.set(-6 * scale, 0, -9.6 * scale); // in front of the sofa
   furniture.add(table);
 
   const tv = buildTvUnit();
-  tv.position.set(-14.2, 0, 4);    // against the left wall...
+  tv.position.set(-14.2 * scale, 0, 4 * scale);    // against the left wall...
   tv.rotation.y = Math.PI / 2;     // ...screen facing into the room (+x)
   furniture.add(tv);
 
   const shelf = buildBookshelf();
-  shelf.position.set(-14.2, 0, -7);
+  shelf.position.set(-14.2 * scale, 0, -7 * scale);
   shelf.rotation.y = Math.PI / 2;
   furniture.add(shelf);
 
   const plant = buildPlant();
-  plant.position.set(-13.8, 0, -13.8); // far corner
+  plant.position.set(-13.8 * scale, 0, -13.8 * scale); // far corner
   furniture.add(plant);
 
   const lamp = buildFloorLamp();
-  lamp.position.set(-1.5, 0, -13.6);   // beside the sofa, under the window
+  lamp.position.set(-1.5 * scale, 0, -13.6 * scale);   // beside the sofa, under the window
   furniture.add(lamp);
 
   // Furniture casts (and receives) shadows for grounding.
@@ -277,18 +287,22 @@ function buildFurniture(): THREE.Group {
 }
 
 /** Indoor accent lights, parented to the room so they toggle with its visibility. */
-function buildRoomLights(): THREE.Group {
+function buildRoomLights(roomHalf: number): THREE.Group {
   const g = new THREE.Group();
   g.name = 'roomLights';
 
+  const scale = roomHalf / DEFAULT_ROOM_HALF;
+
   // Warm glow emanating from the floor-lamp shade (matches buildFloorLamp pos).
-  const lamp = new THREE.PointLight(COLORS.lampGlow, 26, 26, 2);
-  lamp.position.set(-1.5, 4.1, -13.6);
+  const lamp = new THREE.PointLight(COLORS.lampGlow, 26, 26 * scale, 2);
+  lamp.position.set(-1.5 * scale, 4.1, -13.6 * scale);
   g.add(lamp);
 
   // Cool daylight spilling in through the window (matches buildWindow pos).
-  const windowFill = new THREE.PointLight(COLORS.windowSky, 16, 44, 2);
-  windowFill.position.set(5.5, 5, -14.5);
+  // Kept ~1.5 units IN FRONT of the back wall (which sits at z = -roomHalf) so
+  // it lights the wall and window from inside the room rather than from behind.
+  const windowFill = new THREE.PointLight(COLORS.windowSky, 16, 44 * scale, 2);
+  windowFill.position.set(5.5 * scale, 5, -roomHalf + 1.5);
   g.add(windowFill);
 
   return g;
@@ -297,17 +311,24 @@ function buildRoomLights(): THREE.Group {
 /**
  * Build the full living-room backdrop group. Furniture is collected in a named
  * `furniture` subgroup so it can be reasoned about/tested independently.
+ *
+ * @param extent - optional room extent to scale dynamically. Defaults to the
+ * original hardcoded dimensions if not provided.
  */
-export function buildLivingRoom(): THREE.Group {
+export function buildLivingRoom(extent?: RoomExtent): THREE.Group {
+  const roomHalf = extent?.roomHalf ?? DEFAULT_ROOM_HALF;
+  const wallHeight = extent?.wallHeight ?? DEFAULT_WALL_HEIGHT;
+  const floorSize = Math.max(FLOOR_SIZE, roomHalf * 4.5);
+
   const room = new THREE.Group();
   room.name = 'livingRoom';
 
-  room.add(buildFloor());
-  room.add(buildRug());
-  room.add(buildWalls());
-  room.add(buildWindow());
-  room.add(buildFurniture());
-  room.add(buildRoomLights());
+  room.add(buildFloor(floorSize));
+  room.add(buildRug(roomHalf));
+  room.add(buildWalls(roomHalf, wallHeight));
+  room.add(buildWindow(roomHalf));
+  room.add(buildFurniture(roomHalf));
+  room.add(buildRoomLights(roomHalf));
 
   return room;
 }

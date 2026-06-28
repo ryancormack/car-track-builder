@@ -7,7 +7,8 @@ import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
 import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
-import { buildLivingRoom } from './environment.js';
+import { buildLivingRoom, type RoomExtent } from './environment.js';
+import { computeRoomLayout, type RoomLayout } from './roomLayout.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
@@ -45,6 +46,8 @@ export class Renderer implements CameraControlHost {
 
   private _highlightedIndex: number | null = null;
   private _savedEmissives: Map<THREE.Mesh, { intensity: number; color: THREE.Color }> = new Map();
+  private _currentRoomHalf: number = 16;
+  private _sun!: THREE.DirectionalLight;
 
   private _launchAnim: {
     startTime: number;
@@ -463,6 +466,38 @@ export class Renderer implements CameraControlHost {
     this._updateFrustum();
   }
 
+  /**
+   * Smoothly lerp the camera target toward the car's current world position.
+   * Call each frame during play mode to track the car.
+   *
+   * carPos is in grid space (x = forward, y = lateral, z = up), matching
+   * `placeCar`. We apply the same axis swap onto Three.js space: grid z -> Y
+   * (height), grid y -> Z (depth), grid x -> X.
+   *
+   * Horizontal tracking (X/Z) is responsive so the car stays framed as it drives
+   * around the floor. The vertical component (Y) is damped much more gently so
+   * the view holds a steadier height: on a loop or jump the car shoots up and
+   * back down within a fraction of a second, and a slow vertical lerp barely
+   * reacts to that transient instead of bobbing up and down with it, while still
+   * easing toward sustained elevation changes (e.g. climbing a helix).
+   */
+  followCar(carPos: { x: number; y: number; z: number }, dt: number): void {
+    const horizFactor = 1 - Math.exp(-4 * dt);   // responsive horizontal follow
+    const vertFactor = 1 - Math.exp(-1.2 * dt);  // gentle, damped vertical follow
+    this.cameraTarget.x += (carPos.x - this.cameraTarget.x) * horizFactor;
+    this.cameraTarget.z += (carPos.y - this.cameraTarget.z) * horizFactor;
+    this.cameraTarget.y += (carPos.z - this.cameraTarget.y) * vertFactor;
+    this.updateCamera();
+  }
+
+  /**
+   * Reset the camera target to the track centroid. Used when switching back to
+   * build mode after play mode ends.
+   */
+  resetCameraToTrack(track: Track): void {
+    this._recenterCamera(track);
+  }
+
   _updateFrustum(): void {
     const aspect = this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1);
     const f = this.frustumSize / this.cameraZoom;
@@ -474,22 +509,93 @@ export class Renderer implements CameraControlHost {
   }
 
   private _recenterCamera(track: Track): void {
-    if (track.pieces.length === 0) {
-      this.cameraTarget.set(0, 0, 0);
-    } else {
-      let cx = 0, cy = 0, cz = 0, n = 0;
-      for (let i = 0; i <= track.pieces.length; i++) {
-        const s = track.entryStateAt(i);
-        cx += s.gx; cy += s.gy; cz += s.gz; n++;
-      }
-      this.cameraTarget.set(cx / n, cz / n, cy / n);
-    }
-    // Keep the living-room backdrop centred under the current track so it always
-    // frames the scene regardless of track size/position.
+    // One computed layout drives all three centres: the camera target, the room
+    // anchor, and the wall-sizing centre are the SAME bounding-box midpoint, so
+    // the track is always enclosed by the full padding (no dependence on a
+    // drifting joint-mean). See roomLayout.ts.
+    const layout = computeRoomLayout(track);
+    this.cameraTarget.set(layout.centerX, layout.centerY, layout.centerZ);
+
+    // Rebuild (if needed) the living-room environment sized to this layout.
+    this._rebuildEnvironmentForTrack(layout);
+
+    // Anchor the backdrop and the sun on the same horizontal centre so the room
+    // frames the track and its shadows stay aligned regardless of track size or
+    // position.
     if (this.environment) {
-      this.environment.position.set(this.cameraTarget.x, 0, this.cameraTarget.z);
+      this.environment.position.set(layout.centerX, 0, layout.centerZ);
     }
+    this._recenterSun(layout.centerX, layout.centerZ);
+
     this.updateCamera();
+  }
+
+  /**
+   * Recentre the sun (and its shadow target) on the track's horizontal centre.
+   * The shadow frustum is sized in `_rebuildEnvironmentForTrack`; this keeps it
+   * pointed at the track so off-origin tracks stay inside the shadow volume.
+   * The light keeps its original relative offset so the lighting direction is
+   * unchanged.
+   */
+  private _recenterSun(centerX: number, centerZ: number): void {
+    this._sun.position.set(centerX + 10, 18, centerZ + 8);
+    this._sun.target.position.set(centerX, 0, centerZ);
+    this._sun.target.updateMatrixWorld();
+  }
+
+  /**
+   * Rebuild the living-room environment to the supplied layout. Skips the
+   * expensive dispose/rebuild when the computed roomHalf is unchanged since the
+   * last call (the common case of recentering on an unchanged track).
+   */
+  private _rebuildEnvironmentForTrack(layout: RoomLayout): void {
+    const { roomHalf, wallHeight } = layout;
+
+    // Skip the expensive dispose/rebuild if the room size hasn't changed.
+    if (roomHalf === this._currentRoomHalf) return;
+    this._currentRoomHalf = roomHalf;
+
+    const extent: RoomExtent = { roomHalf, wallHeight };
+
+    // Update the indoor fog range to match the room size.
+    this._indoorFog = new THREE.Fog(
+      this._indoorFog.color,
+      roomHalf * 1.5,
+      roomHalf * 4.2,
+    );
+    if (this._environmentVisible) {
+      this.scene.fog = this._indoorFog;
+    }
+
+    // Scale the directional light's shadow frustum to cover the room.
+    const shadowExtent = Math.max(18, roomHalf * 1.2);
+    this._sun.shadow.camera.left = -shadowExtent;
+    this._sun.shadow.camera.right = shadowExtent;
+    this._sun.shadow.camera.top = shadowExtent;
+    this._sun.shadow.camera.bottom = -shadowExtent;
+    this._sun.shadow.camera.far = Math.max(70, shadowExtent * 3);
+    this._sun.shadow.camera.updateProjectionMatrix();
+
+    // Remove the old environment and build a new one.
+    const wasVisible = this.environment.visible;
+    this.scene.remove(this.environment);
+    this._disposeObject(this.environment);
+    this.environment = buildLivingRoom(extent);
+    this.environment.visible = wasVisible;
+    this.scene.add(this.environment);
+  }
+
+  /** Dispose all geometry and materials reachable from an object. */
+  private _disposeObject(obj: THREE.Object3D): void {
+    obj.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      const material = mesh.material;
+      if (material) {
+        if (Array.isArray(material)) material.forEach((m) => m.dispose());
+        else (material as THREE.Material).dispose?.();
+      }
+    });
   }
 
   // -------- internals --------
@@ -513,6 +619,10 @@ export class Renderer implements CameraControlHost {
     sun.shadow.camera.near = 1;
     sun.shadow.camera.far = 70;
     this.scene.add(sun);
+    // Add the light's target to the scene so it can be repositioned (and have
+    // its world matrix tracked) when the track is recentred — see _recenterSun.
+    this.scene.add(sun.target);
+    this._sun = sun;
 
     const rim = new THREE.DirectionalLight(COLORS.rim, 0.5);
     rim.position.set(-8, 5, -10);
@@ -544,15 +654,7 @@ export class Renderer implements CameraControlHost {
       const c = group.children.pop();
       if (!c) break;
       group.remove(c);
-      c.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        mesh.geometry?.dispose?.();
-        const material = mesh.material;
-        if (material) {
-          if (Array.isArray(material)) material.forEach((m) => m.dispose());
-          else material.dispose();
-        }
-      });
+      this._disposeObject(c);
     }
   }
 
