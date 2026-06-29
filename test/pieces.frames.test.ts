@@ -55,6 +55,27 @@ test('corkscrew rolls a full turn: upright at both ends, fully inverted mid-way'
   assert.ok(minUpZ < -0.9, `passes through inverted (minUpZ=${minUpZ})`);
 });
 
+test('helix & spiral pieces keep the car upright (a spiral ramp, never inverted)', () => {
+  // Unlike the loop/corkscrew, the true helixes are vertical-axis spiral ramps:
+  // the car circles around staying upright. up.z must remain firmly positive at
+  // every sample — it never rolls onto its side or inverts.
+  for (const id of ['SPIRAL', 'HELIX_UP', 'HELIX_DN', 'SPIRAL_TOWER'] as PieceId[]) {
+    let minUpZ = 1;
+    for (const f of trackFrames(PIECES[id].pathLocal, ENTRY, 240)) minUpZ = Math.min(minUpZ, f.up.z);
+    assert.ok(minUpZ > 0.4, `${id} should stay upright through the spiral (minUpZ=${minUpZ})`);
+  }
+});
+
+test('helix & spiral frames are continuous (no orientation flips through the coil)', () => {
+  for (const id of ['SPIRAL', 'HELIX_UP', 'HELIX_DN', 'SPIRAL_TOWER'] as PieceId[]) {
+    const frames = trackFrames(PIECES[id].pathLocal, ENTRY, 360);
+    for (let i = 1; i < frames.length; i++) {
+      assert.ok(dot(frames[i].up, frames[i - 1].up) > 0.9, `${id}: up jumped at i=${i}`);
+      assert.ok(dot(frames[i].side, frames[i - 1].side) > 0.9, `${id}: side jumped at i=${i}`);
+    }
+  }
+});
+
 test('loop and corkscrew frames are continuous (no orientation flips)', () => {
   for (const id of ['LOOP', 'CORKSCREW'] as PieceId[]) {
     const frames = trackFrames(PIECES[id].pathLocal, ENTRY, 240);

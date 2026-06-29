@@ -108,35 +108,41 @@ export const pathJump: PathFn = (t) => {
   return { lx, ly: 0, lz, banking: 0 };
 };
 
-// --- Barrel-helix construction (shared by spiral + helix) ---------------------
-// A descending/ascending coil built exactly like the corkscrew: the cross-section
-// (ly, lz_barrel) traces a circle of radius r whose centre sits one radius above
-// the centreline, so the surface normal {0, -sin θ, cos θ} points radially to the
-// coil axis at every sample. Net elevation is added as dz·p, a uniform vertical
-// shift of BOTH the centreline and the (conceptual) coil axis — this keeps the
-// normal radial, so the road renders cleanly (the same reason the corkscrew works).
+// --- True helix construction (shared by spiral + helix + spiral tower) --------
+// A real vertical-axis helix (a spiral ramp, like a parking-garage ramp), NOT a
+// barrel roll. The path projects to a CIRCLE in the horizontal (lx, ly) plane —
+// radius r, centred one radius to the right at (centre, r) — while the elevation
+// climbs/descends linearly in lz. Because the turning happens in the ground
+// plane, the road surface stays level (banking = 0): the car drives around and
+// up/down a spiral ramp staying upright, instead of being rolled upside-down as
+// the old barrel-coil did. (frames.ts derives the car's "up" from the tangent
+// and world-up, so a banking-free horizontal turn keeps the car upright, gently
+// pitched by the climb grade — which is exactly how a helix should feel.)
 //
-// Using easedProgress for the angle makes the roll-rate (and the lateral/vertical
-// velocity) ease to zero at both seams, so the piece joins flat track without a
-// kink. With an integer number of turns, ly and the barrel term both return to 0
-// at t=1, leaving a clean net elevation change of exactly dz.
-function barrelHelix(t: number, forward: number, r: number, turns: number, dz: number): LocalPoint {
-  const p = easedProgress(t);
-  const theta = turns * 2 * Math.PI * p;
+// Parametrisation: angle a sweeps `turns` full revolutions, starting at -π/2 so
+// the path begins at the near edge of the circle heading +x. A linear forward
+// drift (forward·t) carries the coil along the grid so it advances exactly
+// `forward` cells while it spins. Endpoints (cos/sin of -π/2 = 0/-1):
+//   t=0 → (0,           0,  0)
+//   t=1 → (forward,     0,  dz)
+// Heading genuinely sweeps a full 360° per turn (lx dips back through the loop),
+// which is what makes it read as a coil rather than a forward S-bend. The drift
+// is kept below the circle's reach so the footprint never pokes behind the entry
+// or past the exit: lx stays within [0, forward].
+function helixCoil(t: number, forward: number, r: number, turns: number, dz: number): LocalPoint {
+  const a = -Math.PI / 2 + turns * 2 * Math.PI * t;
   return {
-    lx: forward * t,
-    ly: r * Math.sin(theta),
-    lz: r * (1 - Math.cos(theta)) + dz * p,
-    banking: theta,
+    lx: forward * t + r * Math.cos(a),
+    ly: r + r * Math.sin(a),
+    lz: dz * t,
+    banking: 0,
   };
 }
 
 export const pathSpiral: PathFn = (t) =>
-  // One clean descending loop over 2 cells, dropping 2 units. A single full turn
-  // (like the helix and corkscrew) reads clearly in the iso view; an earlier
-  // 2-turn version packed two coils into 2 cells and looked tangled even though
-  // each frame was individually correct.
-  barrelHelix(t, 2, SPIRAL_RADIUS, 1, -2);
+  // One clean descending helical loop over 2 cells, dropping 2 units. The car
+  // spirals down a level ramp (upright), not a barrel roll.
+  helixCoil(t, 2, SPIRAL_RADIUS, 1, -2);
 
 export const pathSteepHill: PathFn = (t) => {
   // Steep symmetric hill: rises to 1.5 units at midpoint, returns to 0.
@@ -144,19 +150,20 @@ export const pathSteepHill: PathFn = (t) => {
 };
 
 export const pathHelixDown: PathFn = (t) =>
-  // One big descending coil over 3 cells, dropping 3 units. Parking-garage style
-  // but built as a barrel coil so the banked road surface renders correctly.
-  barrelHelix(t, 3, HELIX_RADIUS, 1, -3);
+  // One full descending helix over 3 cells, dropping 3 units. Parking-garage
+  // style spiral ramp: the car circles down a level road staying upright.
+  helixCoil(t, 3, HELIX_RADIUS, 1, -3);
 
 export const pathHelixUp: PathFn = (t) =>
-  // One big ascending coil over 3 cells, climbing 3 units. Needs real entry speed.
-  barrelHelix(t, 3, HELIX_RADIUS, 1, 3);
+  // One full ascending helix over 3 cells, climbing 3 units. The car spirals up
+  // a level ramp; it needs real entry speed to make the climb.
+  helixCoil(t, 3, HELIX_RADIUS, 1, 3);
 
 export const pathSpiralTower: PathFn = (t) =>
-  // Tall multi-coil descent: 2 full turns dropping 4 units over 4 cells. Spread
-  // over 4 cells (2 per turn) and dropping 2 per turn, the coils have room to
-  // separate so the double coil reads cleanly as a spiral tower.
-  barrelHelix(t, 4, SPIRAL_TOWER_RADIUS, 2, -4);
+  // Tall multi-coil descent: 2 full helical turns dropping 4 units over 4 cells.
+  // Two stacked coils (2 cells / 2 units each) that read clearly as a spiral
+  // tower the car winds down while staying upright.
+  helixCoil(t, 4, SPIRAL_TOWER_RADIUS, 2, -4);
 
 export const pathGiantLoop: PathFn = (t) => {
   // Giant loop: 3x bigger than the standard loop. Radius R=1.5, spans 3 forward
