@@ -205,7 +205,7 @@ test('BRAKE does not increment boostersUsed', () => {
 // --- GIANT_LOOP physics tests ---
 
 test('GIANT_LOOP fails the run when entry speed is too low', () => {
-  // Drop height 2 -> v2 = 2*G*2 = 39.2, but GIANT_LOOP needs 5*G*1.5 = 73.5
+  // Drop height 2 -> v2 = 2*G*2 = 39.2, well below GIANT_LOOP's apex-contact gate
   const sim = new Simulator(trackOf(['GIANT_LOOP', 'FINISH'], 2));
   sim.step(1 / 240);
   assert.equal(sim.failed, true);

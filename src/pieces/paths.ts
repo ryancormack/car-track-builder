@@ -3,20 +3,22 @@
 // Pure functions of t — easy to unit-test for continuity and end-points.
 
 import type { LocalPoint, PathFn } from '../types.js';
-import { SPIRAL_RADIUS, HELIX_RADIUS, SPIRAL_TOWER_RADIUS, GIANT_LOOP_RADIUS } from '../constants.js';
+import { CURVE_RADIUS, SPIRAL_RADIUS, HELIX_RADIUS, SPIRAL_TOWER_RADIUS, GIANT_LOOP_RADIUS } from '../constants.js';
 
 export const pathStraight: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
 export const pathCurveR: PathFn = (t) => {
-  // Quarter circle from (0, 0) to (0.5, 0.5), centred at (0, 0.5), radius 0.5.
+  // Quarter circle from (0, 0) to (R, R), centred at (0, R), radius R.
+  const R = CURVE_RADIUS;
   const a = -Math.PI / 2 + (Math.PI / 2) * t;
-  return { lx: 0.5 * Math.cos(a), ly: 0.5 + 0.5 * Math.sin(a), lz: 0, banking: 0 };
+  return { lx: R * Math.cos(a), ly: R + R * Math.sin(a), lz: 0, banking: 0 };
 };
 
 export const pathCurveL: PathFn = (t) => {
-  // Quarter circle from (0, 0) to (0.5, -0.5), centred at (0, -0.5), radius 0.5.
+  // Quarter circle from (0, 0) to (R, -R), centred at (0, -R), radius R.
+  const R = CURVE_RADIUS;
   const a = Math.PI / 2 - (Math.PI / 2) * t;
-  return { lx: 0.5 * Math.cos(a), ly: -0.5 + 0.5 * Math.sin(a), lz: 0, banking: 0 };
+  return { lx: R * Math.cos(a), ly: -R + R * Math.sin(a), lz: 0, banking: 0 };
 };
 
 // Ramps change elevation by one unit. The elevation profile is a cubic Hermite

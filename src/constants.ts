@@ -6,8 +6,30 @@
 
 export const G = 9.8;                    // gravity (grid units / s²)
 export const FRICTION = 0.55;            // energy lost per unit length of track
-export const RAMP_FRICTION_MULT = 1.1;   // ramps are slightly costlier
+export const RAMP_FRICTION_MULT = 1.1;   // ramps/coils are slightly costlier (steeper grade)
 export const DRAG = 0.0008;              // tiny v²-proportional drag, keeps things bounded
+
+// Maximum launch (drop) height in grid units. Single source of truth shared by
+// the simulator's corner threshold, the track JSON clamp (track.ts), and the
+// drop-height slider (index.html `max`). Bump this in one place to raise the
+// ceiling everywhere.
+export const MAX_DROP_HEIGHT = 6;
+
+// Below this speed the car is treated as stopped (stall). Kept as a named knob
+// rather than a literal so the stall point is obvious and tunable.
+export const STALL_SPEED = 0.1;
+
+// Radius of the flat quarter-turn pieces (CURVE_L / CURVE_R) in grid units.
+// Must match the geometry in pathCurveR/pathCurveL (pieces/paths.ts).
+export const CURVE_RADIUS = 0.5;
+
+// Speed gate (in v²) above which a FLAT corner throws the car off the edge.
+// Flat curves have no banking, so this is a gameplay safety valve rather than a
+// hard physical grip limit (the implied lateral grip, CORNER_MAX_V2 / CURVE_RADIUS
+// / G ≈ 24.5 g, is deliberately arcade-high). It is pinned to the drop ceiling:
+// the fastest a plain drop can produce is 2·g·MAX_DROP_HEIGHT, so any legal drop
+// alone always clears a corner, while stacking a booster on top sends you over.
+export const CORNER_MAX_V2 = 2 * G * MAX_DROP_HEIGHT + 2.4;
 
 // Radius of the vertical loop, in grid units. Must match `R` in pathLoop()
 // (pieces/paths.ts): the loop apex sits at 2·R = 1.0.

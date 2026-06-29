@@ -7,6 +7,7 @@
 // piece sequence. No shadows, no ghosts, no gap placeholders.
 
 import { PIECES, applyPiece, isPieceId } from './pieces/index.js';
+import { MAX_DROP_HEIGHT } from './constants.js';
 import {
   buildOccupiedSet,
   buildFrozenOccupiedSet,
@@ -473,7 +474,7 @@ export class Track {
     if (!data || typeof data !== 'object') return;
     const obj = data as Record<string, unknown>;
     const dh = typeof obj.dropHeight === 'number' ? obj.dropHeight : 3;
-    this.dropHeight = Math.max(0, Math.min(6, dh));
+    this.dropHeight = Math.max(0, Math.min(MAX_DROP_HEIGHT, dh));
     const rawPieces = obj.pieces;
     this.pieces = Array.isArray(rawPieces)
       ? rawPieces.filter((id): id is PieceId => typeof id === 'string' && isPieceId(id))
