@@ -35,19 +35,19 @@ export const CORNER_MAX_V2 = 2 * G * MAX_DROP_HEIGHT + 2.4;
 // (pieces/paths.ts): the loop apex sits at 2·R = 1.0.
 export const LOOP_RADIUS = 0.5;
 
-// Radius of the spiral coil's horizontal circle (grid units). The spiral is a
-// true vertical-axis helix; this is the radius of its plan-view circle. Sized so
-// the single descending loop reads as a full, open coil within its 2-cell span.
-export const SPIRAL_RADIUS = 0.6;
+// Radius of the spiral's horizontal circle (grid units). The spiral is a true
+// vertical-axis helix inscribed in a square footprint, so the radius is half the
+// piece's forward span (forward 2 → r 1.0): the circle touches all four edges.
+export const SPIRAL_RADIUS = 1.0;
 
 // Radius of the helix's horizontal circle (grid units) — a parking-garage style
-// spiral ramp. This is the plan-view circle radius the car winds around.
-export const HELIX_RADIUS = 1.0;
+// spiral ramp inscribed in a 3×3 square (forward 3 → r 1.5). The car winds two
+// full turns (720°) around this circle.
+export const HELIX_RADIUS = 1.5;
 
-// Radius of the tall multi-coil spiral tower's horizontal circle (grid units).
-// The tower spreads its two turns over 4 forward cells so consecutive coils have
-// room to separate.
-export const SPIRAL_TOWER_RADIUS = 0.85;
+// Radius of the tall spiral tower's horizontal circle (grid units), inscribed in
+// a 4×4 square (forward 4 → r 2.0). Two full turns (720°) stack into the square.
+export const SPIRAL_TOWER_RADIUS = 2.0;
 
 // Radius of the giant vertical loop (3x the normal LOOP_RADIUS).
 // The giant loop spans 3 forward cells with peak height 2*R = 3.0.
