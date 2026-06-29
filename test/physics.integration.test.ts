@@ -90,7 +90,8 @@ test('SPIRAL: car gains net energy from gravity descent (exits faster than entry
   runToCompletion(sim);
   assert.ok(!sim.failed, `should not fail: ${sim.failReason}`);
   // dz=-2 gives gravity gain of 2*G*2 = 39.2
-  // Friction cost: 2*FRICTION*pathLen ~ 2*0.55*4.22 = 4.64 (no ramp mult for spiral)
+  // Friction cost: 2*FRICTION*RAMP_FRICTION_MULT*pathLen ~ 2*0.55*1.1*4.72 = 5.71
+  // (coils pay the graded-surface surcharge, same as ramps/helixes)
   // Net gain should be positive => exit v2 > entry v2
   assert.ok(sim.v2 > entryV2,
     `spiral should gain speed from descent: entry=${entryV2.toFixed(1)}, exit=${sim.v2.toFixed(1)}`);
@@ -192,8 +193,8 @@ test('SPIRAL (dz=-2): car exits with more v2 than it entered (gravity > friction
   runToCompletion(sim);
   assert.ok(!sim.failed, `should complete: ${sim.failReason}`);
   // Gravity gain: 2*G*2 = 39.2
-  // Friction cost: 2*FRICTION*4.22 = 4.64
-  // Net gain: ~34.5 (plus small drag loss)
+  // Friction cost: 2*FRICTION*RAMP_FRICTION_MULT*4.72 ~ 5.71 (graded-surface surcharge)
+  // Net gain: ~33 (plus small drag loss)
   const gain = sim.v2 - entryV2;
   assert.ok(gain > 20,
     `spiral should gain significant energy from descent: gain=${gain.toFixed(2)}`);

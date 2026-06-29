@@ -15,14 +15,30 @@ import {
 import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS, GIANT_LOOP_RADIUS } from '../constants.js';
 import type { Piece, PieceId } from '../types.js';
 
-// Classic result for a vertical loop: to stay pinned to the track at the apex,
-// the car needs v² ≥ 5·g·R at the bottom (entry). With g=9.8 and R=0.5 that's
-// 24.5. The simulator sheds a little extra to friction on the way up, but stays
-// above the stall threshold, so this is genuinely passable at the gate value.
-const LOOP_MIN_V2 = 5 * G * LOOP_RADIUS;
+// A vertical loop only stays "stuck to the track" while the car is fast enough
+// that the required centripetal pull doesn't exceed what gravity + the track can
+// supply. The binding point is the APEX, where contact needs v² ≥ g·R (the
+// classic result). The naive frictionless entry gate (5·g·R) ignores the energy
+// burned climbing to the apex: gravity over the 2·R rise AND friction along the
+// ~R·(1+π) of track from the entry seam to the top (an R-long approach plus a
+// half-circumference π·R). Folding that toll back in gives an entry gate that
+// genuinely guarantees apex contact, which the mid-loop contact check in
+// physics.ts then enforces step-by-step. A small buffer keeps a car that *just*
+// passes the gate comfortably pinned rather than skimming the detach threshold.
+const LOOP_APEX_BUFFER = 2;
+function loopEntryGate(radius: number): number {
+  const arcToApex = radius * (1 + Math.PI);
+  return (
+    5 * G * radius +                                  // 5·g·R: apex contact + climb (frictionless)
+    2 * FRICTION * arcToApex +                        // friction toll up to the apex
+    LOOP_APEX_BUFFER
+  );
+}
 
-// Entry-speed gate for Giant Loop: same formula as the regular loop, but 3x radius.
-const GIANT_LOOP_MIN_V2 = 5 * G * GIANT_LOOP_RADIUS;
+const LOOP_MIN_V2 = loopEntryGate(LOOP_RADIUS);
+
+// Entry-speed gate for Giant Loop: same apex-contact derivation, 3x radius.
+const GIANT_LOOP_MIN_V2 = loopEntryGate(GIANT_LOOP_RADIUS);
 
 // Entry-speed gate for Ramp Up, derived from the same accounting the simulator
 // uses so the gate matches reality. Clearing the ramp costs the gravity climb
