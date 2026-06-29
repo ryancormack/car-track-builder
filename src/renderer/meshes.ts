@@ -400,7 +400,7 @@ export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): TH
     return buildRailedTrack(path, entry, COLORS.trackBlue, {
       emissive: COLORS.trackBlue,
       emissiveIntensity: 0.12,
-      segments: 128,
+      segments: 256,
     });
   }
   if (piece.id === 'SPIRAL_TOWER') {

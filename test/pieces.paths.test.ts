@@ -228,10 +228,13 @@ test('resolvePathLocal: non-ramp pieces return default pathLocal', () => {
 // --- Spiral path tests ---
 
 // A "true helix" piece (spiral / helix up+down / spiral tower) is a vertical-axis
-// spiral ramp: its plan-view (lx, ly) trace is a circle of radius R that sweeps
-// its full diameter (2R) laterally and returns to ly=0; the road never banks
-// (banking stays 0 so the car rides upright); forward progress dips back through
-// each loop (a genuine 360° turn); and the footprint stays within [0, forward].
+// spiral ramp inscribed in a SQUARE forward×forward footprint: its plan-view
+// (lx, ly) trace is a fixed circle of radius R = forward/2 that sweeps its full
+// diameter (2R = forward) laterally and returns to ly=0; the coil winds `turns`
+// full revolutions (e.g. 720° for 2 turns); the road never banks (banking stays
+// 0 so the car rides upright); forward progress dips back through each loop (a
+// genuine 360° turn each); and the footprint is square and bounded by [0,
+// forward] in both lx and ly.
 function assertTrueHelix(fn: (t: number) => { lx: number; ly: number; lz: number; banking: number },
                          forward: number, radius: number, turns: number, dz: number): void {
   const start = fn(0);
@@ -243,24 +246,33 @@ function assertTrueHelix(fn: (t: number) => { lx: number; ly: number; lz: number
 
   let maxLy = -Infinity, minLy = Infinity, minLx = Infinity, maxLx = -Infinity, maxBank = 0;
   let reversed = false, prevLx = start.lx;
-  for (let i = 0; i <= 2000; i++) {
-    const t = i / 2000;
+  let revolutions = 0, atFarEdge = false;
+  for (let i = 0; i <= 4000; i++) {
+    const t = i / 4000;
     const p = fn(t);
     maxLy = Math.max(maxLy, p.ly); minLy = Math.min(minLy, p.ly);
     minLx = Math.min(minLx, p.lx); maxLx = Math.max(maxLx, p.lx);
     maxBank = Math.max(maxBank, Math.abs(p.banking));
     if (p.lx < prevLx - 1e-6) reversed = true;
     prevLx = p.lx;
+    // Count revolutions: one per visit to the circle's far edge (ly ≈ 2R),
+    // re-armed each time the path returns to the near half (ly < R).
+    if (p.ly > 2 * radius - 0.05) { if (!atFarEdge) { revolutions++; atFarEdge = true; } }
+    else if (p.ly < radius) { atFarEdge = false; }
   }
   // Plan-view circle: bulges to its full diameter (2R) and the near edge touches ly=0.
   assert.ok(Math.abs(maxLy - 2 * radius) < 0.02, `helix should sweep full diameter 2R=${2 * radius}, got ${maxLy}`);
   assert.ok(minLy > -1e-6, `helix circle should stay on one side (minLy=${minLy})`);
   // Level ramp — no barrel-roll banking, so the car stays upright.
   assert.ok(maxBank < 1e-9, `true helix must not bank/roll (maxBank=${maxBank})`);
-  // Genuine full revolution: forward progress dips back through the loop.
-  assert.ok(reversed, `helix should reverse heading through the loop (lx must dip back), turns=${turns}`);
-  // Footprint stays within its forward cells.
+  // Genuine full revolution(s): forward progress dips back through the loop.
+  assert.ok(reversed, `helix should reverse heading through the loop (lx must dip back)`);
+  assert.equal(revolutions, turns, `helix should wind ${turns} full revolution(s), counted ${revolutions}`);
+  // Footprint stays within its forward cells …
   assert.ok(minLx > -1e-6 && maxLx < forward + 1e-6, `helix lx out of [0,${forward}]: [${minLx}, ${maxLx}]`);
+  // … and is SQUARE: equal extent (= forward) in lx and ly.
+  assert.ok(Math.abs((maxLx - minLx) - forward) < 0.02, `helix x-extent should be ${forward}, got ${(maxLx - minLx).toFixed(3)}`);
+  assert.ok(Math.abs((maxLy - minLy) - forward) < 0.02, `helix should fill a square (y-extent ${forward}), got ${(maxLy - minLy).toFixed(3)}`);
 }
 
 test('pathSpiral starts at (0,0,0) and ends at (2,~0,-2)', () => {
@@ -341,8 +353,8 @@ test('pathHelixDown starts at (0,0,0) and ends at (3,~0,-3), staying level (bank
   assert.ok(Math.abs(end.banking) < 1e-9, `helix must stay level (banking 0), got ${end.banking}`);
 });
 
-test('pathHelixDown is a true (upright) helix sweeping a full plan-view circle', () => {
-  assertTrueHelix(pathHelixDown, 3, HELIX_RADIUS, 1, -3);
+test('pathHelixDown is a true upright helix winding two full turns (720°) in a 3×3 square', () => {
+  assertTrueHelix(pathHelixDown, 3, HELIX_RADIUS, 2, -3);
 });
 
 test('pathHelixDown descends monotonically (lz decreases steadily)', () => {
@@ -384,8 +396,8 @@ test('pathHelixUp starts at (0,0,0) and ends at (3,~0,+3), staying level (bankin
   assert.ok(Math.abs(end.banking) < 1e-9, `helix must stay level (banking 0), got ${end.banking}`);
 });
 
-test('pathHelixUp is a true (upright) helix sweeping a full plan-view circle', () => {
-  assertTrueHelix(pathHelixUp, 3, HELIX_RADIUS, 1, 3);
+test('pathHelixUp is a true upright helix winding two full turns (720°) in a 3×3 square', () => {
+  assertTrueHelix(pathHelixUp, 3, HELIX_RADIUS, 2, 3);
 });
 
 test('pathHelixUp climbs monotonically (lz increases steadily)', () => {

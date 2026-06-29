@@ -109,39 +109,52 @@ export const pathJump: PathFn = (t) => {
 };
 
 // --- True helix construction (shared by spiral + helix + spiral tower) --------
-// A real vertical-axis helix (a spiral ramp, like a parking-garage ramp), NOT a
-// barrel roll. The path projects to a CIRCLE in the horizontal (lx, ly) plane —
-// radius r, centred one radius to the right at (centre, r) — while the elevation
-// climbs/descends linearly in lz. Because the turning happens in the ground
-// plane, the road surface stays level (banking = 0): the car drives around and
-// up/down a spiral ramp staying upright, instead of being rolled upside-down as
-// the old barrel-coil did. (frames.ts derives the car's "up" from the tangent
-// and world-up, so a banking-free horizontal turn keeps the car upright, gently
-// pitched by the climb grade — which is exactly how a helix should feel.)
+// A real vertical-axis helix — a parking-garage spiral RAMP, not a barrel roll —
+// laid out to fill a SQUARE forward×forward footprint:
 //
-// Parametrisation: angle a sweeps `turns` full revolutions, starting at -π/2 so
-// the path begins at the near edge of the circle heading +x. A linear forward
-// drift (forward·t) carries the coil along the grid so it advances exactly
-// `forward` cells while it spins. Endpoints (cos/sin of -π/2 = 0/-1):
-//   t=0 → (0,           0,  0)
-//   t=1 → (forward,     0,  dz)
-// Heading genuinely sweeps a full 360° per turn (lx dips back through the loop),
-// which is what makes it read as a coil rather than a forward S-bend. The drift
-// is kept below the circle's reach so the footprint never pokes behind the entry
-// or past the exit: lx stays within [0, forward].
+//   • a short straight LEAD-IN along the near (y=0) edge, from the entry corner
+//     (0,0) to the circle's near point (r, 0);
+//   • `turns` full revolutions (e.g. 2 turns = 720°) around a FIXED horizontal
+//     circle of radius r = forward/2, centred at (r, r) so it is inscribed in
+//     the square (it touches all four edges, sweeping x,y ∈ [0, 2r] = [0,
+//     forward]). The coils stack directly on top of each other while the
+//     elevation climbs/descends linearly — a clean vertical spiral;
+//   • a short straight LEAD-OUT back along the near edge to the exit corner
+//     (forward, 0).
+//
+// Because all the turning is in the ground plane, the road stays level (banking
+// = 0): the car circles up/down the ramp staying upright (frames.ts derives the
+// car's "up" from the tangent and world-up), instead of being rolled like the
+// old barrel coil. Endpoints: t=0 → (0,0,0) heading +x; t=1 → (forward,0,dz)
+// heading +x, so it joins flat track cleanly with only a grade break (like a
+// ramp). The lead-in/out fraction `ta` is the straights' share of the total arc
+// (2 straights of length r vs a coil of length ~2π·r·turns), so the parameter t
+// advances at near-constant speed along the whole path.
 function helixCoil(t: number, forward: number, r: number, turns: number, dz: number): LocalPoint {
-  const a = -Math.PI / 2 + turns * 2 * Math.PI * t;
+  const ta = 1 / (2 + 2 * Math.PI * turns);
+  if (t < ta) {
+    // Lead-in: straight along the near edge from the entry corner to (r, 0).
+    return { lx: (t / ta) * r, ly: 0, lz: 0, banking: 0 };
+  }
+  if (t > 1 - ta) {
+    // Lead-out: straight along the near edge from (r, 0) to the exit corner.
+    const u = (t - (1 - ta)) / ta;
+    return { lx: r + u * (forward - r), ly: 0, lz: dz, banking: 0 };
+  }
+  // Coil: `turns` revolutions around the fixed inscribed circle, climbing dz.
+  const u = (t - ta) / (1 - 2 * ta);
+  const a = -Math.PI / 2 + turns * 2 * Math.PI * u;
   return {
-    lx: forward * t + r * Math.cos(a),
+    lx: r + r * Math.cos(a),
     ly: r + r * Math.sin(a),
-    lz: dz * t,
+    lz: dz * u,
     banking: 0,
   };
 }
 
 export const pathSpiral: PathFn = (t) =>
-  // One clean descending helical loop over 2 cells, dropping 2 units. The car
-  // spirals down a level ramp (upright), not a barrel roll.
+  // One descending helical loop (360°) filling a 2×2 square, dropping 2 units.
+  // The car spirals down a level ramp, upright.
   helixCoil(t, 2, SPIRAL_RADIUS, 1, -2);
 
 export const pathSteepHill: PathFn = (t) => {
@@ -150,19 +163,18 @@ export const pathSteepHill: PathFn = (t) => {
 };
 
 export const pathHelixDown: PathFn = (t) =>
-  // One full descending helix over 3 cells, dropping 3 units. Parking-garage
-  // style spiral ramp: the car circles down a level road staying upright.
-  helixCoil(t, 3, HELIX_RADIUS, 1, -3);
+  // Two full descending revolutions (720°) filling a 3×3 square, dropping 3
+  // units. A dramatic parking-garage spiral the car winds down staying upright.
+  helixCoil(t, 3, HELIX_RADIUS, 2, -3);
 
 export const pathHelixUp: PathFn = (t) =>
-  // One full ascending helix over 3 cells, climbing 3 units. The car spirals up
-  // a level ramp; it needs real entry speed to make the climb.
-  helixCoil(t, 3, HELIX_RADIUS, 1, 3);
+  // Two full ascending revolutions (720°) filling a 3×3 square, climbing 3
+  // units. The car spirals up a level ramp; it needs real entry speed to climb.
+  helixCoil(t, 3, HELIX_RADIUS, 2, 3);
 
 export const pathSpiralTower: PathFn = (t) =>
-  // Tall multi-coil descent: 2 full helical turns dropping 4 units over 4 cells.
-  // Two stacked coils (2 cells / 2 units each) that read clearly as a spiral
-  // tower the car winds down while staying upright.
+  // Tall two-revolution descent (720°) filling a 4×4 square, dropping 4 units.
+  // The widest coil — clearly reads as a spiral tower the car winds down.
   helixCoil(t, 4, SPIRAL_TOWER_RADIUS, 2, -4);
 
 export const pathGiantLoop: PathFn = (t) => {

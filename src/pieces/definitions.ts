@@ -64,9 +64,11 @@ const STEEP_HILL_MIN_V2 =
   5;
 
 // Entry-speed gate for Helix Up: must climb 3 units with friction along the
-// full helical path (~7.35 arc length of the spiral ramp, verified numerically).
+// full helical path (~22.09 arc length of the 720°, 3×3 spiral ramp, verified
+// numerically). The long two-turn coil makes this a demanding climb — a tall
+// drop or a booster is needed to enter.
 const HELIX_UP_RISE = 3;
-const HELIX_UP_LEN = 7.35;
+const HELIX_UP_LEN = 22.09;
 const HELIX_UP_MIN_V2 =
   2 * G * HELIX_UP_RISE +
   2 * FRICTION * RAMP_FRICTION_MULT * HELIX_UP_LEN +
@@ -80,9 +82,10 @@ const HELIX_UP_MIN_V2 =
 // physical derivation.
 const GIANT_JUMP_MIN_V2 = 30;
 
-// Arc length of the Spiral Tower (2 helical turns, r=0.85, over 4 cells),
-// measured numerically. It descends, so no climb gate is needed (gravity assists).
-const SPIRAL_TOWER_LEN = 11.80;
+// Arc length of the Spiral Tower (2 helical turns, r=2.0, inscribed in a 4×4
+// square), measured numerically. It descends, so no climb gate is needed
+// (gravity assists).
+const SPIRAL_TOWER_LEN = 29.45;
 
 export const PIECES: Record<PieceId, Piece> = {
   START: {
@@ -179,7 +182,7 @@ export const PIECES: Record<PieceId, Piece> = {
   SPIRAL: {
     id: 'SPIRAL', name: 'Spiral', icon: '🔽', category: 'stunt', featured: true,
     forward: 2, turn: 0, dz: -2,
-    pathLen: 4.56, excitement: 25, minV2: 12, boostEnergy: 0,
+    pathLen: 8.59, excitement: 25, minV2: 12, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathSpiral,
   },
@@ -200,14 +203,14 @@ export const PIECES: Record<PieceId, Piece> = {
   HELIX_UP: {
     id: 'HELIX_UP', name: 'Helix Up', icon: '🌀⬆', category: 'stunt', featured: true,
     forward: 3, turn: 0, dz: 3,
-    pathLen: 7.35, excitement: 28, minV2: HELIX_UP_MIN_V2, boostEnergy: 0,
+    pathLen: 22.09, excitement: 32, minV2: HELIX_UP_MIN_V2, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathHelixUp,
   },
   HELIX_DN: {
     id: 'HELIX_DN', name: 'Helix Down', icon: '🌀⬇', category: 'stunt', featured: true,
     forward: 3, turn: 0, dz: -3,
-    pathLen: 7.35, excitement: 28, minV2: 12, boostEnergy: 0,
+    pathLen: 22.09, excitement: 32, minV2: 12, boostEnergy: 0,
     color: '#3da9fc',
     pathLocal: pathHelixDown,
   },
