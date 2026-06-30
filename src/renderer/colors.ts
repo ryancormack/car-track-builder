@@ -41,6 +41,11 @@ export const COLORS = {
   fireFlame: 0xff6a1a,      // flame mid
   fireFlameHot: 0xffd24a,   // flame core
   fireFlameEm: 0xff4500,
+  // ---- Water Splash ----
+  waterPool: 0x2f7fd6,      // shallow puddle
+  waterPoolEm: 0x0a2a4a,
+  waterDroplet: 0x8fd0ff,   // flung droplets / spray
+  waterRipple: 0xbfe6ff,    // expanding ripple rings
   car: 0x00ffd5,
   carEm: 0x004455,
   carAccent: 0xff3c00,

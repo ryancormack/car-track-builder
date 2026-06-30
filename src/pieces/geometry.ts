@@ -37,19 +37,21 @@ export function localToWorld(state: GridState, lx: number, ly: number, lz: numbe
  * which is what makes curves correctly land in the cell on the side of the turn.
  *
  * A piece may ALSO advance `entryAdvance` cells along the ENTRY direction before
- * turning (0 for everything except wide turns). This lets a wide turn be a true
- * circular quarter-arc that moves diagonally — forward along both the entry and
- * exit axes — rather than a tight in-place pivot.
+ * turning (wide turns, for a diagonal circular arc) and `sideAdvance` cells
+ * along the entry's RIGHT axis (the Top Hat tower, so its reversed exit lands in
+ * a parallel lane). Both default to 0, so ordinary pieces are unaffected.
  */
 export function applyPiece(state: GridState, piece: Piece): GridState {
   const newDir = ((state.dir + piece.turn + 4) % 4) as Dir;
   const entryV = DIRS[state.dir];
   const exitV = DIRS[newDir];
+  const rightV = rightOf(state.dir);
   const fe = piece.entryAdvance ?? 0;
   const fwd = piece.forward;
+  const fs = piece.sideAdvance ?? 0;
   return {
-    gx: state.gx + entryV.dx * fe + exitV.dx * fwd,
-    gy: state.gy + entryV.dy * fe + exitV.dy * fwd,
+    gx: state.gx + entryV.dx * fe + exitV.dx * fwd + rightV.dx * fs,
+    gy: state.gy + entryV.dy * fe + exitV.dy * fwd + rightV.dy * fs,
     gz: state.gz + piece.dz,
     dir: newDir,
   };

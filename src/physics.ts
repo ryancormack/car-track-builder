@@ -34,7 +34,7 @@ export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' 
 // that every coil is treated consistently.
 export function isRampGrade(id: string): boolean {
   return id === 'RAMP_UP' || id === 'RAMP_DN' || id === 'STEEP_HILL'
-    || id === 'STEEP_RAMP_UP' || id === 'STEEP_RAMP_DN'
+    || id === 'STEEP_RAMP_UP' || id === 'STEEP_RAMP_DN' || id === 'TOP_HAT'
     || id === 'HELIX_UP' || id === 'HELIX_DN' || id === 'SPIRAL' || id === 'SPIRAL_TOWER';
 }
 
@@ -42,7 +42,7 @@ export function isRampGrade(id: string): boolean {
 // or coiling around). These are the only pieces where running out of speed
 // means rolling back down rather than peeling off or stalling.
 export function isHill(id: string): boolean {
-  return id === 'RAMP_UP' || id === 'STEEP_RAMP_UP' || id === 'STEEP_HILL' || id === 'HELIX_UP';
+  return id === 'RAMP_UP' || id === 'STEEP_RAMP_UP' || id === 'STEEP_HILL' || id === 'HELIX_UP' || id === 'TOP_HAT';
 }
 
 export class Simulator {

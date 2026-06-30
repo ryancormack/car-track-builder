@@ -511,8 +511,82 @@ export function buildRingOfFire(path: PathFn, entry: GridState): FireRingHandle 
   return { group, flames, glowMats };
 }
 
-// ---------- Public dispatcher ----------
+// ---------- Water Splash (decoration) ----------
 
+/** Animatable handles for a water-splash decoration, consumed by the renderer. */
+export interface WaterSplashHandle {
+  group: THREE.Group;
+  /** World centre of the puddle (for spawning a splash burst as the car passes). */
+  center: THREE.Vector3;
+  /** Road "up" at the puddle (splash direction). */
+  up: THREE.Vector3;
+  /** Expanding ripple rings. */
+  ripples: { mesh: THREE.Mesh; phase: number }[];
+  /** Bobbing spray droplets. */
+  droplets: { mesh: THREE.Mesh; baseScale: number; phase: number }[];
+  /** The puddle material (its sheen is pulsed). */
+  poolMat: THREE.MeshStandardMaterial;
+}
+
+/**
+ * A shallow water puddle lying on the road that the car drives through. Returns
+ * the group plus handles the renderer animates each frame (expanding ripples +
+ * bobbing droplets) and uses to fire a splash burst as the car passes. Purely
+ * decorative.
+ */
+export function buildWaterSplash(path: PathFn, entry: GridState): WaterSplashHandle {
+  const { pos, up } = frameAt(path, entry, 0.5);
+  const group = new THREE.Group();
+  const upN = up.clone().normalize();
+  const center = pos.clone().addScaledVector(upN, 0.03);
+  // A flat geometry's local +z normal is laid onto the road by aligning to up.
+  const flat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), upN);
+
+  // Shallow puddle disc.
+  const poolMat = new THREE.MeshStandardMaterial({
+    color: COLORS.waterPool, transparent: true, opacity: 0.62,
+    emissive: COLORS.waterPoolEm, emissiveIntensity: 0.3, roughness: 0.18, metalness: 0.35,
+  });
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(0.5, 28), poolMat);
+  pool.quaternion.copy(flat);
+  pool.position.copy(center);
+  group.add(pool);
+
+  // Expanding ripple rings (thin tori lying flat on the puddle).
+  const ripples: WaterSplashHandle['ripples'] = [];
+  for (let i = 0; i < 3; i++) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: COLORS.waterRipple, emissive: COLORS.waterRipple, emissiveIntensity: 0.5,
+      transparent: true, opacity: 0.6, roughness: 0.3,
+    });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.02, 8, 28), mat);
+    ring.quaternion.copy(flat);
+    ring.position.copy(center).addScaledVector(upN, 0.012);
+    group.add(ring);
+    ripples.push({ mesh: ring, phase: i / 3 });
+  }
+
+  // A few spray droplets that bob just above the puddle.
+  const droplets: WaterSplashHandle['droplets'] = [];
+  const dropMat = new THREE.MeshStandardMaterial({
+    color: COLORS.waterDroplet, emissive: COLORS.waterDroplet, emissiveIntensity: 0.4,
+    transparent: true, opacity: 0.85, roughness: 0.2,
+  });
+  for (let i = 0; i < 7; i++) {
+    const d = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), dropMat.clone());
+    const ang = (i / 7) * Math.PI * 2;
+    const r = 0.18 + Math.random() * 0.22;
+    // Offset around the puddle in the road plane, then raised along up.
+    const offset = new THREE.Vector3(Math.cos(ang) * r, Math.sin(ang) * r, 0).applyQuaternion(flat);
+    d.position.copy(center).add(offset).addScaledVector(upN, 0.1 + Math.random() * 0.1);
+    group.add(d);
+    droplets.push({ mesh: d, baseScale: 0.7 + Math.random() * 0.6, phase: Math.random() * Math.PI * 2 });
+  }
+
+  return { group, center, up: upN, ripples, droplets, poolMat };
+}
+
+// ---------- Public dispatcher ----------
 export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): THREE.Group {
   if (piece.id === 'BOOSTER') return buildBoosterPiece(path, entry);
   if (piece.id === 'BRAKE') return buildBrakePiece(path, entry);
@@ -520,6 +594,11 @@ export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): TH
   if (piece.id === 'JUMP') return buildJumpPiece(path, entry);
   if (piece.id === 'GIANT_JUMP') return buildGiantJumpPiece(path, entry);
   if (piece.id === 'WALL') return buildWallPiece(path, entry);
+  if (piece.id === 'TOP_HAT') {
+    return buildRailedTrack(path, entry, COLORS.trackOrange, {
+      emissive: COLORS.trackOrange, emissiveIntensity: 0.1, segments: 200,
+    });
+  }
   if (piece.id === 'STEEP_RAMP_UP' || piece.id === 'STEEP_RAMP_DN') {
     return buildRailedTrack(path, entry, COLORS.trackOrangeBright, { segments: 40 });
   }

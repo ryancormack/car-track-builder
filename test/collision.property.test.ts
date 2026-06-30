@@ -902,12 +902,11 @@ test('Feature: track-editing-bugs, Property 8: Preservation — Rejoin no-op and
   assert.equal(fresh.isEditing(), false);
 
   // Genuine non-connect (floor): after re-anchoring, the recomputed chain drives
-  // a piece below the floor -> rejoin refuses and stays editing.
+  // a piece below the floor (gz = 0) -> rejoin refuses and stays editing.
   const bad = new Track();
-  bad.addPiece('STRAIGHT'); bad.addPiece('RAMP_DN'); bad.addPiece('STRAIGHT');
-  bad.deleteAt(0); // [RAMP_DN, S], downstream frozen
+  bad.addPiece('RAMP_UP'); bad.addPiece('RAMP_DN'); bad.addPiece('STRAIGHT');
+  bad.deleteAt(0); // [RAMP_DN, S], downstream frozen; re-chained RAMP_DN sinks to gz -1
   assert.equal(bad.isEditing(), true);
-  bad.dropHeight = 0; // RAMP_DN's exit cell now sinks below the floor
   assert.equal(bad.rejoin(), false);
   assert.equal(bad.isEditing(), true);
 });

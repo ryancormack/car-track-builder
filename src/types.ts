@@ -63,6 +63,7 @@ export type PieceId =
   | 'BRAKE'
   | 'JUMP'
   | 'WALL'
+  | 'TOP_HAT'
   | 'GIANT_LOOP'
   | 'GIANT_JUMP'
   | 'SPIRAL'
@@ -77,7 +78,7 @@ export type PieceId =
  * themselves). They are stored in a parallel array on the Track, aligned with
  * `pieces` by index.
  */
-export type DecorationId = 'RING_OF_FIRE';
+export type DecorationId = 'RING_OF_FIRE' | 'WATER_SPLASH';
 
 export type PieceCategory =
   | 'meta'
@@ -102,7 +103,13 @@ export interface Piece {
    * along both the entry and exit axes) instead of a kinked lateral sweep.
    */
   entryAdvance?: number;
-  /** Turn applied to the heading: -1 left, 0 straight, +1 right. */
+  /**
+   * Cells advanced along the entry's RIGHT (lateral) axis. 0 for almost every
+   * piece; used by the Top Hat tower so its reversed exit lands in a parallel
+   * lane beside the approach (rather than doubling back on top of it).
+   */
+  sideAdvance?: number;
+  /** Turn applied to the heading: -1 left, 0 straight, +1 right (2 = 180° U-turn). */
   turn: number;
   /** Elevation change in grid units. */
   dz: number;
