@@ -10,6 +10,7 @@ import {
 } from '../src/pieces/paths.js';
 import { PIECES, canDecorate } from '../src/pieces/definitions.js';
 import { applyPiece, localToWorld } from '../src/pieces/geometry.js';
+import { resolvePathLocal } from '../src/pieces/resolve.js';
 import { Track } from '../src/track.js';
 import { Simulator } from '../src/physics.js';
 import { computeScore, designScore } from '../src/scoring.js';
@@ -39,6 +40,38 @@ test('steep ramp up is steeper than the standard ramp up at the midpoint', () =>
 test('steep ramp up has a higher entry-speed gate than the standard ramp up', () => {
   assert.ok(PIECES.STEEP_RAMP_UP.minV2 > PIECES.RAMP_UP.minV2,
     'steeper, taller climb needs more entry speed');
+});
+
+// Chaining: consecutive ramps of the SAME type must form one continuous slope,
+// with no flat-spot "bump" at the shared joints (the bug in the screenshot).
+test('consecutive steep ramps chain into one continuous slope (no bump)', () => {
+  const pieces: PieceId[] = ['STRAIGHT', 'STEEP_RAMP_UP', 'STEEP_RAMP_UP', 'STEEP_RAMP_UP', 'STRAIGHT'];
+  const d = 1e-3;
+  // Interior ramp (index 2): both neighbours are the same ramp, so it should be
+  // a straight constant-grade segment (slope = dz/dt = 2) at BOTH ends.
+  const mid = resolvePathLocal(pieces, 2);
+  const slopeStart = (mid(d).lz - mid(0).lz) / d;
+  const slopeEnd = (mid(1).lz - mid(1 - d).lz) / d;
+  assert.ok(Math.abs(slopeStart - 2) < 0.05, `interior enters at slope 2, got ${slopeStart.toFixed(3)}`);
+  assert.ok(Math.abs(slopeEnd - 2) < 0.05, `interior exits at slope 2, got ${slopeEnd.toFixed(3)}`);
+  // First ramp (index 1): eases in from the flat straight, but exits at full slope
+  // (no ease) so it meets the next ramp with matching grade.
+  const first = resolvePathLocal(pieces, 1);
+  assert.ok(Math.abs((first(d).lz - first(0).lz) / d) < 0.05, 'first ramp eases in from flat');
+  assert.ok(Math.abs((first(1).lz - first(1 - d).lz) / d - 2) < 0.05, 'first ramp exits at full slope');
+});
+
+test('chained ramp joints have matching slopes on both sides (up and steep)', () => {
+  const d = 1e-3;
+  for (const [id, slope] of [['RAMP_UP', 1], ['STEEP_RAMP_UP', 2], ['STEEP_RAMP_DN', -2]] as const) {
+    const pieces: PieceId[] = [id, id];
+    const a = resolvePathLocal(pieces, 0); // eases in, no ease out
+    const b = resolvePathLocal(pieces, 1); // no ease in, eases out
+    const exitA = (a(1).lz - a(1 - d).lz) / d;
+    const entryB = (b(d).lz - b(0).lz) / d;
+    assert.ok(Math.abs(exitA - entryB) < 0.05, `${id} joint slope mismatch: ${exitA} vs ${entryB}`);
+    assert.ok(Math.abs(exitA - slope) < 0.05, `${id} joint should be full grade ${slope}, got ${exitA}`);
+  }
 });
 
 // --- Wide turns ---------------------------------------------------------------

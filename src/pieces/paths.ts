@@ -34,26 +34,43 @@ function rampElevation(t: number, easeIn: boolean, easeOut: boolean): number {
   return (-2 * t3 + 3 * t2) + (t3 - 2 * t2 + t) * m0 + (t3 - t2) * m1;
 }
 
-/** Factory for context-aware ramp-up paths. */
-export function makeRampUpPath(easeIn: boolean, easeOut: boolean): PathFn {
-  return (t) => ({ lx: t, ly: 0, lz: rampElevation(t, easeIn, easeOut), banking: 0 });
+/** Factory for context-aware ramp paths of a given height (sign = direction). */
+function makeRampPath(height: number, easeIn: boolean, easeOut: boolean): PathFn {
+  return (t) => ({ lx: t, ly: 0, lz: height * rampElevation(t, easeIn, easeOut), banking: 0 });
 }
 
-/** Factory for context-aware ramp-down paths. */
+/** Factory for context-aware ramp-up paths (1 unit). */
+export function makeRampUpPath(easeIn: boolean, easeOut: boolean): PathFn {
+  return makeRampPath(1, easeIn, easeOut);
+}
+
+/** Factory for context-aware ramp-down paths (1 unit). */
 export function makeRampDownPath(easeIn: boolean, easeOut: boolean): PathFn {
-  return (t) => ({ lx: t, ly: 0, lz: -rampElevation(t, easeIn, easeOut), banking: 0 });
+  return makeRampPath(-1, easeIn, easeOut);
+}
+
+/** Factory for context-aware STEEP ramp-up paths (2 units). */
+export function makeSteepRampUpPath(easeIn: boolean, easeOut: boolean): PathFn {
+  return makeRampPath(2, easeIn, easeOut);
+}
+
+/** Factory for context-aware STEEP ramp-down paths (2 units). */
+export function makeSteepRampDownPath(easeIn: boolean, easeOut: boolean): PathFn {
+  return makeRampPath(-2, easeIn, easeOut);
 }
 
 // Default both-eased variants: zero slope at both ends, so they join flat track
-// (and each other in the legacy sense) with no sharp crease.
+// (and each other in the legacy sense) with no sharp crease. When ramps of the
+// SAME type are chained, resolvePathLocal swaps in the un-eased variants at the
+// shared joints so the chain forms one continuous constant-slope incline (no
+// flat-spot "bump" between consecutive ramps).
 export const pathRampUp: PathFn = makeRampUpPath(true, true);
 export const pathRampDown: PathFn = makeRampDownPath(true, true);
 
 // Steep ramps climb/descend TWO units over a single cell — higher and steeper
-// than the standard one-unit ramps. Same eased Hermite profile, scaled by 2, so
-// they still join flat track smoothly (just at a much steeper grade).
-export const pathSteepRampUp: PathFn = (t) => ({ lx: t, ly: 0, lz: 2 * rampElevation(t, true, true), banking: 0 });
-export const pathSteepRampDown: PathFn = (t) => ({ lx: t, ly: 0, lz: -2 * rampElevation(t, true, true), banking: 0 });
+// than the standard one-unit ramps.
+export const pathSteepRampUp: PathFn = makeSteepRampUpPath(true, true);
+export const pathSteepRampDown: PathFn = makeSteepRampDownPath(true, true);
 
 // --- Wide turns ---------------------------------------------------------------
 // A 90° bend that sweeps WIDE as a true circular quarter-arc of radius
