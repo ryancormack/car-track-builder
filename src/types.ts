@@ -95,6 +95,13 @@ export interface Piece {
   category: PieceCategory;
   /** Cells advanced along the exit direction (almost always 1). */
   forward: number;
+  /**
+   * Cells advanced along the ENTRY direction (before the turn). 0 for every
+   * straight piece and the tight standard curve. Wide turns set this so the
+   * bend can be a true circular quarter-arc that advances diagonally (forward
+   * along both the entry and exit axes) instead of a kinked lateral sweep.
+   */
+  entryAdvance?: number;
   /** Turn applied to the heading: -1 left, 0 straight, +1 right. */
   turn: number;
   /** Elevation change in grid units. */

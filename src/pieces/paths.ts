@@ -56,23 +56,28 @@ export const pathSteepRampUp: PathFn = (t) => ({ lx: t, ly: 0, lz: 2 * rampEleva
 export const pathSteepRampDown: PathFn = (t) => ({ lx: t, ly: 0, lz: -2 * rampElevation(t, true, true), banking: 0 });
 
 // --- Wide turns ---------------------------------------------------------------
-// A 90° bend that sweeps WIDE: it spans `forward` cells laterally instead of the
-// tight single-cell standard curve. The grid pins any turn piece's forward
-// (entry-axis) advance to exactly half a cell, so a wide turn can't be a bigger
-// circular arc — instead it sweeps a larger lateral distance (forward-0.5 cells)
-// over a gentle, rounded curve. The path starts heading +x and ends heading ±y
-// (sign = +1 right, -1 left), landing exactly at local (0.5, ±(forward-0.5)) so
-// it connects cleanly to the next piece. The `(R-0.5)·(2t-t²)` blend pulls the
-// forward extent back to 0.5 while keeping the entry/exit tangents axis-aligned
-// and the whole curve inside the piece's footprint (lx stays in [0, ~0.5]).
+// A 90° bend that sweeps WIDE as a true circular quarter-arc of radius
+// R = forward - 0.5. Unlike the tight standard curve (which pivots in half a
+// cell), a wide turn advances DIAGONALLY: `entryAdvance = forward - 1` cells
+// along the entry axis and `forward` cells along the exit axis (see applyPiece /
+// computeCells). That diagonal advance is exactly what lets the arc be a smooth
+// constant-radius circle instead of a kinked sweep.
+//
+// The arc starts at local (0,0) heading +x (entry direction) and ends at
+// (R, ±R) heading ±y (exit direction; sign = +1 right, -1 left) — its tangents
+// line up with the neighbouring straight track at both seams, so there is no
+// crease. R = forward - 0.5 keeps the exit landing on the grid's half-cell
+// connection point.
 export function makeWideTurnPath(forward: number, sign: number): PathFn {
   const R = forward - 0.5;
   return (t) => {
-    const phi = (Math.PI / 2) * t;
-    const blend = 2 * t - t * t;
-    const lx = R * Math.sin(phi) - (R - 0.5) * blend;
-    const ly = sign * R * (1 - Math.cos(phi));
-    return { lx, ly, lz: 0, banking: 0 };
+    const theta = (Math.PI / 2) * t;
+    return {
+      lx: R * Math.sin(theta),
+      ly: sign * R * (1 - Math.cos(theta)),
+      lz: 0,
+      banking: 0,
+    };
   };
 }
 

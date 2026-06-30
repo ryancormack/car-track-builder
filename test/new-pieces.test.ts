@@ -9,11 +9,12 @@ import {
   pathWideR2, pathWideL2, pathWideR3, pathWideL3,
 } from '../src/pieces/paths.js';
 import { PIECES, canDecorate } from '../src/pieces/definitions.js';
+import { applyPiece, localToWorld } from '../src/pieces/geometry.js';
 import { Track } from '../src/track.js';
 import { Simulator } from '../src/physics.js';
 import { computeScore, designScore } from '../src/scoring.js';
 import { WALL_SMASH_V2, G } from '../src/constants.js';
-import type { PieceId } from '../src/types.js';
+import type { GridState, PieceId } from '../src/types.js';
 
 // --- Steep ramps --------------------------------------------------------------
 
@@ -42,34 +43,60 @@ test('steep ramp up has a higher entry-speed gate than the standard ramp up', ()
 
 // --- Wide turns ---------------------------------------------------------------
 
-// Any turn=±1 piece must end at local (0.5, ±(forward-0.5), 0) heading along the
-// exit axis, so it connects cleanly to the next piece on the grid.
-test('wide turns end at the grid connection point (0.5, ±(forward-0.5))', () => {
+// A wide turn is a true circular quarter-arc of radius R = forward-0.5 that
+// advances DIAGONALLY. Its path ends at local (R, ±R) heading along the exit
+// axis, and applyPiece advances entryAdvance=forward-1 along the entry axis and
+// forward along the exit axis, so the path endpoint lands exactly on the next
+// piece's entry midpoint (no gap, no kink).
+test('wide turns are circular quarter-arcs ending at (R, ±R)', () => {
   const cases: [(t: number) => { lx: number; ly: number; lz: number }, number, number][] = [
     [pathWideR2, 2, 1], [pathWideL2, 2, -1], [pathWideR3, 3, 1], [pathWideL3, 3, -1],
   ];
   for (const [fn, forward, sign] of cases) {
+    const R = forward - 0.5;
     const s = fn(0), e = fn(1);
     assert.ok(Math.abs(s.lx) < 1e-9 && Math.abs(s.ly) < 1e-9, 'starts at origin');
-    assert.ok(Math.abs(e.lx - 0.5) < 1e-6, `ends at lx=0.5, got ${e.lx}`);
-    assert.ok(Math.abs(e.ly - sign * (forward - 0.5)) < 1e-6, `ends at ly=${sign * (forward - 0.5)}, got ${e.ly}`);
-    assert.ok(Math.abs(e.lz) < 1e-9, 'stays flat');
+    assert.ok(Math.abs(e.lx - R) < 1e-6, `ends at lx=R=${R}, got ${e.lx}`);
+    assert.ok(Math.abs(e.ly - sign * R) < 1e-6, `ends at ly=${sign * R}, got ${e.ly}`);
+    // Constant radius: every sample sits on the circle centred at (0, ±R).
+    for (let i = 0; i <= 50; i++) {
+      const p = fn(i / 50);
+      const dist = Math.hypot(p.lx - 0, p.ly - sign * R);
+      assert.ok(Math.abs(dist - R) < 1e-6, `point ${i} off the circle (r=${dist})`);
+    }
   }
 });
 
-test('wide turns sweep wider laterally than the tight standard curve, and stay in footprint', () => {
-  for (const [fn, forward] of [[pathWideR2, 2], [pathWideR3, 3]] as const) {
-    let maxAbsLy = 0, minLx = Infinity, maxLx = -Infinity;
-    for (let i = 0; i <= 1000; i++) {
-      const p = fn(i / 1000);
-      maxAbsLy = Math.max(maxAbsLy, Math.abs(p.ly));
-      minLx = Math.min(minLx, p.lx); maxLx = Math.max(maxLx, p.lx);
-    }
-    // Sweeps the full forward-0.5 lateral reach (much wider than the 0.5 of CURVE_R).
-    assert.ok(Math.abs(maxAbsLy - (forward - 0.5)) < 0.01, `lateral reach ${forward - 0.5}`);
-    // Forward extent stays within the piece (never meaningfully pokes behind entry).
-    assert.ok(minLx > -0.01 && maxLx < 0.75, `lx within [0,~0.5]: [${minLx}, ${maxLx}]`);
+test('wide turns connect with no gap: path end maps onto the next entry midpoint', () => {
+  // STRAIGHT -> WIDE_R_2 -> STRAIGHT. The wide turn's local path end, mapped to
+  // world, must equal the next piece's entry midpoint (its local origin).
+  for (const wide of ['WIDE_R_2', 'WIDE_L_2', 'WIDE_R_3', 'WIDE_L_3'] as PieceId[]) {
+    const track = new Track();
+    ['STRAIGHT', wide, 'STRAIGHT', 'FINISH'].forEach((id) => track.addPiece(id));
+    const entry = track.entryStateAt(1);      // entry state of the wide turn
+    const nextEntry = track.entryStateAt(2);  // entry state of the following straight
+    const end = PIECES[wide].pathLocal(1);
+    const endWorld = localToWorld(entry, end.lx, end.ly, end.lz);
+    const nextMid = localToWorld(nextEntry, 0, 0, 0);
+    assert.ok(Math.abs(endWorld.wx - nextMid.wx) < 1e-6 && Math.abs(endWorld.wy - nextMid.wy) < 1e-6,
+      `${wide} seam gap: end=(${endWorld.wx},${endWorld.wy}) next=(${nextMid.wx},${nextMid.wy})`);
   }
+});
+
+test('wide turns advance diagonally on the grid; the standard curve does not', () => {
+  // Standard curve: forward 0 along entry axis (entryAdvance unset -> 0).
+  assert.ok(!PIECES.CURVE_R.entryAdvance, 'CURVE_R should not advance along the entry axis');
+  assert.equal(PIECES.WIDE_R_2.entryAdvance, 1);
+  assert.equal(PIECES.WIDE_R_3.entryAdvance, 2);
+
+  // From East at origin, WIDE_R_2 should land 1 cell East and 2 cells South.
+  const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 };
+  const exit = applyPiece(start, PIECES.WIDE_R_2);
+  assert.deepEqual(
+    { gx: exit.gx, gy: exit.gy, dir: exit.dir },
+    { gx: 1, gy: 2, dir: 2 },
+    'WIDE_R_2 advances diagonally (1 East, 2 South) and faces South',
+  );
 });
 
 test('wide turns place and chain on the grid (right then left returns to straight)', () => {
