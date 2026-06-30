@@ -26,17 +26,17 @@ test('decodeTrackHash returns null for empty string', () => {
   assert.equal(result, null);
 });
 
-test('encoded string is URL-safe (no characters that break a URI fragment)', () => {
+test('encoded string is URL-safe (base64url charset, no padding)', () => {
   const input: TrackJSON = {
     dropHeight: 5,
     pieces: ['STRAIGHT', 'CURVE_R', 'LOOP', 'JUMP', 'FINISH'],
   };
   const encoded = encodeTrackHash(input);
-  // Base64 uses A-Z, a-z, 0-9, +, /, = which are all valid in a URI fragment.
-  // Verify no whitespace, #, or control characters are present.
-  assert.ok(!/[\s#]/.test(encoded), 'encoded string should not contain whitespace or #');
-  // Verify it only contains valid base64 characters
-  assert.ok(/^[A-Za-z0-9+/=]+$/.test(encoded), 'encoded string should only contain base64 chars');
+  // base64url uses A-Z, a-z, 0-9, -, _ with no padding (=).
+  // Verify no whitespace, #, +, /, or = characters are present.
+  assert.ok(!/[\s#+=\/]/.test(encoded), 'encoded string should not contain whitespace, #, +, /, or =');
+  // Verify it only contains valid base64url characters
+  assert.ok(/^[A-Za-z0-9\-_]+$/.test(encoded), 'encoded string should only contain base64url chars');
 });
 
 test('a known TrackJSON with decorations round-trips correctly', () => {

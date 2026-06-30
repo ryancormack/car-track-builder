@@ -202,11 +202,11 @@ els.btnLoad.addEventListener('click', () => {
   refreshHud();
 });
 
-els.btnShare.addEventListener('click', () => {
+els.btnShare.addEventListener('click', async () => {
   const hash = encodeTrackHash(track.toJSON());
   window.location.hash = hash;
   try {
-    navigator.clipboard.writeText(window.location.href);
+    await navigator.clipboard.writeText(window.location.href);
     hud.flashStatus('Link copied to clipboard!', 'ok');
   } catch {
     hud.flashStatus('Link updated in address bar.', 'ok');
