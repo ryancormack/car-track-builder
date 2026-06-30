@@ -16,7 +16,7 @@
 // buildFrozenOccupiedSet helper (a subsequent task) reuses the same imports.
 
 import type { GridState, Piece, PieceId } from './types.js';
-import { DIRS, applyPiece } from './pieces/geometry.js';
+import { DIRS, applyPiece, localToWorld } from './pieces/geometry.js';
 import { PIECES } from './pieces/definitions.js';
 
 /**
@@ -88,6 +88,17 @@ export function cellKey(gx: number, gy: number, gz: number): CellKey {
  * the exit cell.
  */
 export function computeCells(entry: GridState, piece: Piece): GridCell[] {
+  // Diagonal-advancing pieces (wide turns) don't move along a single grid axis,
+  // so the linear formula below doesn't describe their footprint. Instead we
+  // sample the actual swept path and collect the integer cells it passes
+  // through. This stays consistent with the exit-inclusive model: the first
+  // cell is the entry cell and the last is the exit cell (the next piece's
+  // entry), so the shared connection cell is handled exactly as for other
+  // pieces.
+  if (piece.entryAdvance && piece.entryAdvance > 0) {
+    return computeSweptCells(entry, piece);
+  }
+
   const exitDir = (entry.dir + piece.turn + 4) % 4;
   const { dx, dy } = DIRS[exitDir];
   const cells: GridCell[] = [];
@@ -98,6 +109,42 @@ export function computeCells(entry: GridState, piece: Piece): GridCell[] {
       gz: entry.gz + Math.round((piece.dz * i) / piece.forward),
     });
   }
+  return cells;
+}
+
+/**
+ * Collect the integer grid cells a piece's local path sweeps through, by
+ * densely sampling `piece.pathLocal` and mapping each sample to world coords.
+ * Used for diagonal pieces (wide turns) whose footprint isn't a straight line
+ * of cells.
+ *
+ * The entry and exit cells are anchored EXACTLY (from the entry state and
+ * `applyPiece`) so the connection cells shared with the neighbouring pieces are
+ * always correct — the half-cell-boundary samples in between are then resolved
+ * by rounding, which only affects interior cells (harmless for overlap tests).
+ * Cells are returned in path order, de-duplicated, entry-cell first.
+ */
+function computeSweptCells(entry: GridState, piece: Piece): GridCell[] {
+  const cells: GridCell[] = [];
+  const seen = new Set<CellKey>();
+  const add = (gx: number, gy: number, gz: number): void => {
+    const key = cellKey(gx, gy, gz);
+    if (!seen.has(key)) {
+      seen.add(key);
+      cells.push({ gx, gy, gz });
+    }
+  };
+  // Entry cell, anchored exactly.
+  add(entry.gx, entry.gy, entry.gz);
+  const SAMPLES = 96;
+  for (let i = 1; i < SAMPLES; i++) {
+    const local = piece.pathLocal(i / SAMPLES);
+    const w = localToWorld(entry, local.lx, local.ly, local.lz);
+    add(Math.round(w.wx), Math.round(w.wy), Math.round(w.wz));
+  }
+  // Exit cell, anchored exactly (= the next piece's entry cell).
+  const exit = applyPiece(entry, piece);
+  add(exit.gx, exit.gy, exit.gz);
   return cells;
 }
 

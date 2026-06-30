@@ -35,14 +35,21 @@ export function localToWorld(state: GridState, lx: number, ly: number, lz: numbe
  * Compute the entry state of the next piece, given the current entry state
  * and the piece being placed. Movement is along the EXIT direction (dir + turn),
  * which is what makes curves correctly land in the cell on the side of the turn.
+ *
+ * A piece may ALSO advance `entryAdvance` cells along the ENTRY direction before
+ * turning (0 for everything except wide turns). This lets a wide turn be a true
+ * circular quarter-arc that moves diagonally — forward along both the entry and
+ * exit axes — rather than a tight in-place pivot.
  */
 export function applyPiece(state: GridState, piece: Piece): GridState {
   const newDir = ((state.dir + piece.turn + 4) % 4) as Dir;
-  const f = DIRS[newDir];
+  const entryV = DIRS[state.dir];
+  const exitV = DIRS[newDir];
+  const fe = piece.entryAdvance ?? 0;
   const fwd = piece.forward;
   return {
-    gx: state.gx + f.dx * fwd,
-    gy: state.gy + f.dy * fwd,
+    gx: state.gx + entryV.dx * fe + exitV.dx * fwd,
+    gy: state.gy + entryV.dy * fe + exitV.dy * fwd,
     gz: state.gz + piece.dz,
     dir: newDir,
   };
