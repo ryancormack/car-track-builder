@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { Track } from '../src/track.js';
 import { Simulator, G } from '../src/physics.js';
 import { pathSpiral, pathSteepHill, pathHelixUp, pathHelixDown, pathSpiralTower } from '../src/pieces/paths.js';
-import { PIECES } from '../src/pieces/definitions.js';
+import { PIECES, PALETTE_ORDER } from '../src/pieces/definitions.js';
+import { resolvePathLocal } from '../src/pieces/resolve.js';
 import type { PathFn } from '../src/types.js';
 
 function trackOf(ids: string[], dropHeight = 3): Track {
@@ -67,6 +68,23 @@ function v2AcrossPiece(track: Track, idx: number): { sim: Simulator; entryV2: nu
 }
 
 // --- Path length verification ---
+
+// Generic guard: EVERY piece's declared pathLen must match its real swept arc
+// length within 10%. pathLen drives both the t-advance (how fast the car
+// crosses a piece) and the friction toll, so an overstated length makes the car
+// crawl and over-brake (the bug that made CURVE_L/R drag at ~65% speed). This
+// catches drift for any piece, present or future.
+test('every piece declares a pathLen within 10% of its measured arc length', () => {
+  for (const id of PALETTE_ORDER) {
+    const p = PIECES[id];
+    // Use the default (standalone) resolved path so chained-ramp easing variants
+    // don't skew the measurement.
+    const actual = computeArcLength(resolvePathLocal([id], 0));
+    const ratio = actual / p.pathLen;
+    assert.ok(ratio > 0.9 && ratio < 1.1,
+      `${id}: declared pathLen ${p.pathLen} vs measured ${actual.toFixed(3)} (ratio ${ratio.toFixed(3)})`);
+  }
+});
 
 test('SPIRAL: declared pathLen matches numerical arc length within 10%', () => {
   const actual = computeArcLength(pathSpiral);
