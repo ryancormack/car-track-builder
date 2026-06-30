@@ -6,7 +6,7 @@
 // the frozen entries are cleared and everything recomputes from the actual
 // piece sequence. No shadows, no ghosts, no gap placeholders.
 
-import { PIECES, applyPiece, isPieceId } from './pieces/index.js';
+import { PIECES, applyPiece, isPieceId, canDecorate, isDecorationId } from './pieces/index.js';
 import { MAX_DROP_HEIGHT } from './constants.js';
 import {
   buildOccupiedSet,
@@ -16,13 +16,20 @@ import {
   computeCells,
 } from './collision.js';
 import type { CellKey, CollisionResult, GridCell } from './collision.js';
-import type { GridState, Piece, PieceId, TrackJSON } from './types.js';
+import type { DecorationId, GridState, Piece, PieceId, TrackJSON } from './types.js';
 
 export class Track {
   dropHeight = 3;
   // Start cell, elevation, and direction. Centred on origin so the camera frames it.
   startState: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // facing East
   pieces: PieceId[] = [];
+
+  /**
+   * Per-piece decorations (e.g. a Ring of Fire), aligned with `pieces` by index.
+   * `decorations[i]` is the decoration on `pieces[i]`, or `null` for none. It is
+   * spliced in lockstep with `pieces` by every mutation so the alignment holds.
+   */
+  decorations: (DecorationId | null)[] = [];
 
   // Frozen entries: when the first edit of a session happens, we snapshot the
   // entry states of the pieces *downstream* of the edit. Those frozen positions
@@ -242,6 +249,7 @@ export class Track {
     this.lastCollisionResult = result;
     if (!result.ok) return false;
     this.pieces.push(pieceId);
+    this.decorations.push(null);
     return true;
   }
 
@@ -283,6 +291,7 @@ export class Track {
       this.frozenEntries.splice(index - this._frozenBoundary, 1);
     }
     const removed = this.pieces.splice(index, 1)[0];
+    this.decorations.splice(index, 1);
     this._maybeEndEdit();
     return removed;
   }
@@ -310,6 +319,7 @@ export class Track {
     // First edit: freeze everything from this index onward (it shifts right).
     if (this.frozenEntries === null) this._freezeFrom(index);
     this.pieces.splice(index, 0, pieceId);
+    this.decorations.splice(index, 0, null);
     return true;
   }
 
@@ -335,6 +345,8 @@ export class Track {
     if (!result.ok) return false;
     if (this.frozenEntries === null) this._freezeFrom(index + 1);
     this.pieces[index] = pieceId;
+    // Drop the decoration if the new piece type can't carry it.
+    if (this.decorations[index] && !canDecorate(pieceId)) this.decorations[index] = null;
     return true;
   }
 
@@ -437,12 +449,33 @@ export class Track {
   }
 
   undo(): PieceId | undefined {
+    this.decorations.pop();
     return this.pieces.pop();
   }
 
   clear(): void {
     this.pieces.length = 0;
+    this.decorations.length = 0;
     this.frozenEntries = null;
+  }
+
+  /**
+   * Toggle a decoration on the piece at `index`. Returns the resulting state:
+   * `true` if a decoration is now present, `false` if it was removed or the
+   * placement was rejected (incompatible piece / out of range). Placing a
+   * decoration that is already present with the same id removes it (toggle).
+   */
+  toggleDecoration(index: number, decoId: DecorationId): boolean {
+    if (index < 0 || index >= this.pieces.length) return false;
+    if (!isDecorationId(decoId)) return false;
+    if (!canDecorate(this.pieces[index])) return false;
+    this.decorations[index] = this.decorations[index] === decoId ? null : decoId;
+    return this.decorations[index] !== null;
+  }
+
+  /** The decoration on piece `index`, or null. */
+  decorationAt(index: number): DecorationId | null {
+    return this.decorations[index] ?? null;
   }
 
   hasFinish(): boolean {
@@ -467,6 +500,7 @@ export class Track {
     return {
       dropHeight: this.dropHeight,
       pieces: [...this.pieces],
+      decorations: [...this.decorations],
     };
   }
 
@@ -479,6 +513,14 @@ export class Track {
     this.pieces = Array.isArray(rawPieces)
       ? rawPieces.filter((id): id is PieceId => typeof id === 'string' && isPieceId(id))
       : [];
+    // Decorations: aligned with pieces by index. Coerce to the right length and
+    // validate ids (legacy saves without the field get an all-null array).
+    const rawDecos = Array.isArray(obj.decorations) ? obj.decorations : [];
+    this.decorations = this.pieces.map((pieceId, i) => {
+      const d = rawDecos[i];
+      if (typeof d === 'string' && isDecorationId(d) && canDecorate(pieceId)) return d;
+      return null;
+    });
     // Clear any editing state on load.
     this.frozenEntries = null;
   }

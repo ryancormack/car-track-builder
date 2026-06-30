@@ -49,6 +49,43 @@ export function makeRampDownPath(easeIn: boolean, easeOut: boolean): PathFn {
 export const pathRampUp: PathFn = makeRampUpPath(true, true);
 export const pathRampDown: PathFn = makeRampDownPath(true, true);
 
+// Steep ramps climb/descend TWO units over a single cell — higher and steeper
+// than the standard one-unit ramps. Same eased Hermite profile, scaled by 2, so
+// they still join flat track smoothly (just at a much steeper grade).
+export const pathSteepRampUp: PathFn = (t) => ({ lx: t, ly: 0, lz: 2 * rampElevation(t, true, true), banking: 0 });
+export const pathSteepRampDown: PathFn = (t) => ({ lx: t, ly: 0, lz: -2 * rampElevation(t, true, true), banking: 0 });
+
+// --- Wide turns ---------------------------------------------------------------
+// A 90° bend that sweeps WIDE: it spans `forward` cells laterally instead of the
+// tight single-cell standard curve. The grid pins any turn piece's forward
+// (entry-axis) advance to exactly half a cell, so a wide turn can't be a bigger
+// circular arc — instead it sweeps a larger lateral distance (forward-0.5 cells)
+// over a gentle, rounded curve. The path starts heading +x and ends heading ±y
+// (sign = +1 right, -1 left), landing exactly at local (0.5, ±(forward-0.5)) so
+// it connects cleanly to the next piece. The `(R-0.5)·(2t-t²)` blend pulls the
+// forward extent back to 0.5 while keeping the entry/exit tangents axis-aligned
+// and the whole curve inside the piece's footprint (lx stays in [0, ~0.5]).
+export function makeWideTurnPath(forward: number, sign: number): PathFn {
+  const R = forward - 0.5;
+  return (t) => {
+    const phi = (Math.PI / 2) * t;
+    const blend = 2 * t - t * t;
+    const lx = R * Math.sin(phi) - (R - 0.5) * blend;
+    const ly = sign * R * (1 - Math.cos(phi));
+    return { lx, ly, lz: 0, banking: 0 };
+  };
+}
+
+export const pathWideR2: PathFn = makeWideTurnPath(2, 1);
+export const pathWideL2: PathFn = makeWideTurnPath(2, -1);
+export const pathWideR3: PathFn = makeWideTurnPath(3, 1);
+export const pathWideL3: PathFn = makeWideTurnPath(3, -1);
+
+// The Wall is a flat one-cell straight; its breakable barrier is a renderer
+// overlay (see renderer/meshes.ts) and its smash/explode behaviour lives in the
+// simulator (physics.ts).
+export const pathWall: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
+
 export const pathLoop: PathFn = (t) => {
   // Approach (0..0.1): straight from back edge to loop bottom (lx=0.5, lz=0).
   // Loop (0.1..0.9): full 360° vertical circle in xz-plane, radius R, centre (0.5, 0, R).

@@ -53,6 +53,13 @@ export const SPIRAL_TOWER_RADIUS = 2.0;
 // The giant loop spans 3 forward cells with peak height 2*R = 3.0.
 export const GIANT_LOOP_RADIUS = 1.5;
 
+// Entry-speed gate (v²) for the Wall: the car must be going at least this fast
+// to SMASH through the breakable barrier. Below it, the car crashes into the
+// wall and explodes (game over). Pinned below the standard drop ceiling
+// (2·g·6 = 117.6) so a tall-ish drop or a booster gets you through, but a low
+// drop does not.
+export const WALL_SMASH_V2 = 50;
+
 // Scale factor applied to simulation time in the run loop (main.ts).
 // A value < 1 makes the car traverse the track more slowly, giving a more
 // dramatic and watchable run without altering the underlying physics.
