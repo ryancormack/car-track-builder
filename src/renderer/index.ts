@@ -7,13 +7,15 @@ import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
 import { buildPieceMesh, buildGhostPiece, buildStartTower, buildRingOfFire, buildWaterSplash } from './meshes.js';
 import type { FireRingHandle, WaterSplashHandle } from './meshes.js';
-import { buildCar, placeCar } from './car.js';
+import { buildVehicle, placeCar } from './car.js';
 import { buildLivingRoom, type RoomExtent } from './environment.js';
 import { computeRoomLayout, type RoomLayout } from './roomLayout.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
 import type { PieceId } from '../types.js';
+import type { VehicleId } from '../vehicles.js';
+import { DEFAULT_VEHICLE_ID } from '../vehicles.js';
 import type { TrackFrame } from '../pieces/frames.js';
 import type { FailType } from '../physics.js';
 
@@ -35,6 +37,7 @@ export class Renderer implements CameraControlHost {
   startGroup: THREE.Group;
   decorGroup: THREE.Group;
   car: THREE.Group;
+  private _vehicleId: VehicleId = DEFAULT_VEHICLE_ID;
 
   // Optional living-room backdrop. Hidden by default; toggled via
   // setEnvironmentVisible(). Repositioned to the track centroid on each rebuild.
@@ -134,7 +137,7 @@ export class Renderer implements CameraControlHost {
     this.startGroup = new THREE.Group(); this.scene.add(this.startGroup);
     this.decorGroup = new THREE.Group(); this.scene.add(this.decorGroup);
 
-    this.car = buildCar();
+    this.car = buildVehicle(DEFAULT_VEHICLE_ID);
     this.car.visible = false;
     this.scene.add(this.car);
 
@@ -157,6 +160,22 @@ export class Renderer implements CameraControlHost {
     // shows it whole again.
     if (visible) this.car.scale.setScalar(1);
     if (visible && sample) placeCar(this.car, sample);
+  }
+
+  /**
+   * Swap the active vehicle mesh (garage selection). Disposes the old mesh and
+   * builds the chosen one, preserving the current visibility so the swap is
+   * seamless in either build or play mode. No-op if the id is already active.
+   */
+  setVehicle(id: VehicleId): void {
+    if (id === this._vehicleId) return;
+    this._vehicleId = id;
+    const wasVisible = this.car.visible;
+    this.scene.remove(this.car);
+    this._disposeObject(this.car);
+    this.car = buildVehicle(id);
+    this.car.visible = wasVisible;
+    this.scene.add(this.car);
   }
 
   /**

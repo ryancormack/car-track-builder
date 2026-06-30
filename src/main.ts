@@ -9,7 +9,7 @@ import { computeScore } from './scoring.js';
 import { SPEED_SCALE } from './constants.js';
 import { Hud } from './app/hud.js';
 import { ResultOverlay } from './app/overlay.js';
-import { saveTrackJSON, loadTrackJSON } from './app/storage.js';
+import { saveTrackJSON, loadTrackJSON, saveVehicleId, loadVehicleId } from './app/storage.js';
 import {
   environmentVisible,
   cycleOverride,
@@ -17,6 +17,9 @@ import {
   saveEnvOverride,
   type EnvOverride,
 } from './app/environment.js';
+import {
+  VEHICLES, VEHICLE_ORDER, DEFAULT_VEHICLE_ID, isVehicleId, type VehicleId,
+} from './vehicles.js';
 import type { ScoreResult, UIElements } from './types.js';
 
 type Mode = 'build' | 'play';
@@ -44,6 +47,7 @@ const els: UIElements = {
   drop: el<HTMLInputElement>('drop-height'),
   dropVal: el('drop-height-val'),
   palette: el('palette'),
+  garage: el('garage'),
   status: el('status'),
   btnUndo: el('btn-undo'),
   btnClear: el('btn-clear'),
@@ -131,6 +135,7 @@ function updateInsertModeUI(): void {
 
 let mode: Mode = 'build';
 let envOverride: EnvOverride = loadEnvOverride();
+let selectedVehicleId: VehicleId = DEFAULT_VEHICLE_ID;
 let sim: Simulator | null = null;
 let runResult: RunResult | null = null;
 let wipeoutPlaying = false;
@@ -155,6 +160,7 @@ renderer.rebuildTrack(track);
 editor.refresh();
 refreshHud();
 applyEnvironment();
+buildGarage();
 
 // ---------- Event wiring ----------
 
@@ -278,7 +284,7 @@ function switchMode(next: Mode): void {
     els.modePlay.classList.add('active');
     editor.setEnabled(false);
     els.drop.disabled = true; // drop height is a build-time setting
-    sim = new Simulator(track);
+    sim = new Simulator(track, VEHICLES[selectedVehicleId].physics);
     runResult = null;
     wipeoutPlaying = false;
     splashedPieces = new Set<number>();
@@ -335,6 +341,48 @@ function updateEnvButton(visible: boolean): void {
   };
   els.envToggle.textContent = labels[envOverride];
   els.envToggle.classList.toggle('env-active', visible);
+}
+
+/**
+ * Build the garage (vehicle picker). Restores the saved vehicle, renders one
+ * button per catalogue vehicle, and shows the chosen one in the scene. Clicking
+ * a button selects + persists that vehicle and swaps the live mesh immediately.
+ */
+function buildGarage(): void {
+  const saved = loadVehicleId();
+  if (saved && isVehicleId(saved)) selectedVehicleId = saved;
+
+  els.garage.innerHTML = '';
+  for (const id of VEHICLE_ORDER) {
+    const v = VEHICLES[id];
+    const btn = document.createElement('button');
+    btn.className = 'veh-btn';
+    btn.dataset.vehicleId = id;
+    btn.title = v.blurb;
+    btn.innerHTML = `
+      <span class="icon">${v.icon}</span>
+      <span class="label">${v.name}</span>
+    `;
+    btn.addEventListener('click', () => selectVehicle(id));
+    els.garage.appendChild(btn);
+  }
+  highlightVehicle();
+  renderer.setVehicle(selectedVehicleId);
+}
+
+/** Select a vehicle: persist it, swap the mesh, and update the button state. */
+function selectVehicle(id: VehicleId): void {
+  selectedVehicleId = id;
+  saveVehicleId(id);
+  renderer.setVehicle(id);
+  highlightVehicle();
+}
+
+/** Mark the active vehicle's button as selected. */
+function highlightVehicle(): void {
+  for (const btn of Array.from(els.garage.children) as HTMLElement[]) {
+    btn.classList.toggle('selected', btn.dataset.vehicleId === selectedVehicleId);
+  }
 }
 
 // ---------- Run loop ----------

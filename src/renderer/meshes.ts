@@ -282,6 +282,54 @@ function buildBoosterPiece(path: PathFn, entry: GridState): THREE.Group {
   return group;
 }
 
+// Launchpad: a rocket-themed booster on a climbing ramp — bold launch chevrons
+// plus two thruster nozzles firing flame jets at the base. Distinct from the
+// plain booster so its big upward kick reads at a glance.
+function buildLaunchpad(path: PathFn, entry: GridState): THREE.Group {
+  const group = buildRailedTrack(path, entry, COLORS.booster, {
+    emissive: COLORS.boosterEm,
+    emissiveIntensity: 0.85,
+  });
+  const up = new THREE.Vector3(0, 1, 0);
+
+  // Big, bright forward launch chevrons (bigger and denser than a booster's).
+  const chevMat = new THREE.MeshStandardMaterial({
+    color: COLORS.boosterArrow, emissive: COLORS.boosterArrowEm,
+    emissiveIntensity: 1.0, metalness: 0.2, roughness: 0.35,
+  });
+  for (const t of [0.22, 0.42, 0.62, 0.82]) {
+    const { pos, tang } = frameAt(path, entry, t);
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.44, 4), chevMat);
+    arrow.position.copy(pos).addScaledVector(up, 0.3);
+    arrow.quaternion.setFromUnitVectors(up, tang);
+    arrow.castShadow = true;
+    group.add(arrow);
+  }
+
+  // Twin rocket thrusters at the base: dark nozzles with flame jets pointing
+  // back and down (the "kick").
+  const nozzleMat = new THREE.MeshStandardMaterial({ color: 0x202028, metalness: 0.7, roughness: 0.4 });
+  const flameMat = new THREE.MeshStandardMaterial({
+    color: COLORS.fireFlameHot, emissive: COLORS.fireFlameEm, emissiveIntensity: 1.2,
+    transparent: true, opacity: 0.92, roughness: 0.5,
+  });
+  const f = frameAt(path, entry, 0.06);
+  const back = f.tang.clone().negate();
+  for (const s of [-1, 1]) {
+    const base = f.pos.clone().addScaledVector(f.side, s * 0.17).addScaledVector(up, 0.06);
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.075, 0.13, 10), nozzleMat);
+    nozzle.position.copy(base);
+    nozzle.quaternion.setFromUnitVectors(up, back);
+    nozzle.castShadow = true;
+    group.add(nozzle);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.24, 8), flameMat);
+    flame.position.copy(base).addScaledVector(back, 0.18);
+    flame.quaternion.setFromUnitVectors(up, back);
+    group.add(flame);
+  }
+  return group;
+}
+
 function buildBrakePiece(path: PathFn, entry: GridState): THREE.Group {
   const group = buildRailedTrack(path, entry, COLORS.brake, {
     emissive: COLORS.brakeEm,
@@ -646,7 +694,7 @@ function buildCrumbleBridge(path: PathFn, entry: GridState): THREE.Group {
 // ---------- Public dispatcher ----------
 export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): THREE.Group {
   if (piece.id === 'BOOSTER') return buildBoosterPiece(path, entry);
-  if (piece.id === 'LAUNCHPAD') return buildBoosterPiece(path, entry);
+  if (piece.id === 'LAUNCHPAD') return buildLaunchpad(path, entry);
   if (piece.id === 'BRAKE') return buildBrakePiece(path, entry);
   if (piece.id === 'FINISH') return buildFinishPiece(path, entry);
   if (piece.id === 'JUMP') return buildJumpPiece(path, entry);

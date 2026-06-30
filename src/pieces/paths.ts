@@ -156,9 +156,18 @@ export const pathCrumbleBridge: PathFn = (t) => ({ lx: 2 * t, ly: 0, lz: 0, bank
 // turn=2, sideAdvance=±2, dz=2.
 export function makeSwitchbackPath(sign: number): PathFn {
   const R = 1, dz = 2;
+  const SB_BANK = 0.4; // lean into the U-turn (eased to level at the seams)
   return (t) => {
     const phi = Math.PI * t;
-    return { lx: R * Math.sin(phi), ly: sign * R * (1 - Math.cos(phi)), lz: dz * t, banking: 0 };
+    return {
+      lx: R * Math.sin(phi),
+      ly: sign * R * (1 - Math.cos(phi)),
+      lz: dz * t,
+      // Lean into the U-turn (same convention as the banked turns: a right/+y
+      // turn rolls toward +y via a negative angle). 0 at both seams. Verified to
+      // tilt toward the turn centre.
+      banking: -sign * SB_BANK * Math.sin(Math.PI * t),
+    };
   };
 }
 export const pathSwitchbackR: PathFn = makeSwitchbackPath(1);
