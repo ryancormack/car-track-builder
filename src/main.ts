@@ -10,6 +10,7 @@ import { SPEED_SCALE } from './constants.js';
 import { Hud } from './app/hud.js';
 import { ResultOverlay } from './app/overlay.js';
 import { saveTrackJSON, loadTrackJSON, saveVehicleId, loadVehicleId } from './app/storage.js';
+import { encodeTrackHash, decodeTrackHash } from './app/hash.js';
 import {
   environmentVisible,
   cycleOverride,
@@ -53,6 +54,7 @@ const els: UIElements = {
   btnClear: el('btn-clear'),
   btnSave: el('btn-save'),
   btnLoad: el('btn-load'),
+  btnShare: el('btn-share'),
   overlay: el('overlay'),
   overlayTitle: el('overlay-title'),
   overlayBody: el('overlay-body'),
@@ -147,13 +149,24 @@ let mouseDownPos: { x: number; y: number } | null = null;
 
 // ---------- Boot ----------
 
-const saved = loadTrackJSON();
-if (saved) {
-  track.fromJSON(saved);
-} else {
-  // Demo seed so the canvas isn't empty on first load -- showcases the stunts.
-  ['STRAIGHT', 'CORKSCREW', 'STRAIGHT', 'JUMP', 'STRAIGHT', 'BOOSTER',
-    'STRAIGHT', 'LOOP', 'STRAIGHT', 'FINISH'].forEach((id) => track.addPiece(id));
+let booted = false;
+const rawHash = window.location.hash.slice(1);
+if (rawHash.length > 0) {
+  const decoded = decodeTrackHash(rawHash);
+  if (decoded) {
+    track.fromJSON(decoded);
+    booted = true;
+  }
+}
+if (!booted) {
+  const saved = loadTrackJSON();
+  if (saved) {
+    track.fromJSON(saved);
+  } else {
+    // Demo seed so the canvas isn't empty on first load -- showcases the stunts.
+    ['STRAIGHT', 'CORKSCREW', 'STRAIGHT', 'JUMP', 'STRAIGHT', 'BOOSTER',
+      'STRAIGHT', 'LOOP', 'STRAIGHT', 'FINISH'].forEach((id) => track.addPiece(id));
+  }
 }
 syncDropUi();
 renderer.rebuildTrack(track);
@@ -176,6 +189,7 @@ els.btnClear.addEventListener('click', () => {
 });
 els.btnSave.addEventListener('click', () => {
   saveTrackJSON(track.toJSON());
+  window.location.hash = encodeTrackHash(track.toJSON());
   hud.flashStatus('Track saved.', 'ok');
 });
 els.btnLoad.addEventListener('click', () => {
@@ -186,6 +200,17 @@ els.btnLoad.addEventListener('click', () => {
   editor.refresh();
   hud.flashStatus('Track loaded.', 'ok');
   refreshHud();
+});
+
+els.btnShare.addEventListener('click', () => {
+  const hash = encodeTrackHash(track.toJSON());
+  window.location.hash = hash;
+  try {
+    navigator.clipboard.writeText(window.location.href);
+    hud.flashStatus('Link copied to clipboard!', 'ok');
+  } catch {
+    hud.flashStatus('Link updated in address bar.', 'ok');
+  }
 });
 
 els.modeBuild.addEventListener('click', () => switchMode('build'));

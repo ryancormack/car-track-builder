@@ -192,6 +192,7 @@ export interface UIElements {
   btnClear: HTMLElement;
   btnSave: HTMLElement;
   btnLoad: HTMLElement;
+  btnShare: HTMLElement;
   overlay: HTMLElement;
   overlayTitle: HTMLElement;
   overlayBody: HTMLElement;
