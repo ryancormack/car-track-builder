@@ -60,6 +60,11 @@ export const GIANT_LOOP_RADIUS = 1.5;
 // drop does not.
 export const WALL_SMASH_V2 = 50;
 
+// Entry-speed gate (v²) for the Crumbling Bridge: cross at least this fast or it
+// gives way and the car falls (game over). A touch lower than the wall — it's
+// about carrying momentum across, not smashing.
+export const CRUMBLE_BRIDGE_V2 = 40;
+
 // Scale factor applied to simulation time in the run loop (main.ts).
 // A value < 1 makes the car traverse the track more slowly, giving a more
 // dramatic and watchable run without altering the underlying physics.

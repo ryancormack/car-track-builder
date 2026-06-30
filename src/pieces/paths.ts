@@ -103,6 +103,67 @@ export const pathWideL2: PathFn = makeWideTurnPath(2, -1);
 export const pathWideR3: PathFn = makeWideTurnPath(3, 1);
 export const pathWideL3: PathFn = makeWideTurnPath(3, -1);
 
+// --- Banked turns -------------------------------------------------------------
+// A tight 90° corner (same footprint as the standard curve) that LEANS into the
+// turn, so the car can take it at speed without flying off (these are not
+// overspeed-gated). banking rolls about the tangent now, so the lean follows the
+// heading correctly. The lean eases 0 → max → 0 (sin profile) so it joins flat
+// track level at both ends. Sign of `banking` is chosen so the road tilts toward
+// the inside of the turn (verified in tests).
+const BANK_MAX = 0.5; // ~29° of lean at the apex
+export const pathBankR: PathFn = (t) => {
+  const R = CURVE_RADIUS;
+  const a = -Math.PI / 2 + (Math.PI / 2) * t;
+  return { lx: R * Math.cos(a), ly: R + R * Math.sin(a), lz: 0, banking: -BANK_MAX * Math.sin(Math.PI * t) };
+};
+export const pathBankL: PathFn = (t) => {
+  const R = CURVE_RADIUS;
+  const a = Math.PI / 2 - (Math.PI / 2) * t;
+  return { lx: R * Math.cos(a), ly: -R + R * Math.sin(a), lz: 0, banking: BANK_MAX * Math.sin(Math.PI * t) };
+};
+
+// --- Chicane / S-bend ---------------------------------------------------------
+// A single piece that weaves to change lane while keeping the same heading: it
+// curves one way then the other (an S), shifting ONE cell sideways over a
+// 2-cell span. Heading is +x at both ends (smoothstep lateral profile → zero
+// lateral slope at the seams), so it joins straight track cleanly. sign = +1
+// shifts right (+y), -1 shifts left. Pairs with turn=0, sideAdvance=±1.
+function smoothstep01(t: number): number { return t * t * (3 - 2 * t); }
+export function makeChicanePath(sign: number): PathFn {
+  return (t) => ({ lx: 2 * t, ly: sign * smoothstep01(t), lz: 0, banking: 0 });
+}
+export const pathChicaneR: PathFn = makeChicanePath(1);
+export const pathChicaneL: PathFn = makeChicanePath(-1);
+
+// --- Launchpad ----------------------------------------------------------------
+// A booster on a climbing ramp: it rockets the car up and onto a higher section.
+// Climbs 2 units over 2 cells (eased to level at both ends so it joins flat
+// track), and the catalogue gives it a big boostEnergy so even a slow car gets
+// flung up. dz = 2.
+export const pathLaunchpad: PathFn = (t) => ({ lx: 2 * t, ly: 0, lz: 2 * smoothstep01(t), banking: 0 });
+
+// --- Crumbling bridge ---------------------------------------------------------
+// A flat 2-cell span. Cross it fast enough and it crumbles behind you; too slow
+// and it gives way and you fall (handled in physics.ts / renderer).
+export const pathCrumbleBridge: PathFn = (t) => ({ lx: 2 * t, ly: 0, lz: 0, banking: 0 });
+
+// --- Zig-zag switchback ramp --------------------------------------------------
+// Climbs while doing a flat 180° U-turn: the car winds up and reverses, exiting
+// two lanes over and 2 units higher. Stacking alternating left/right switchbacks
+// makes a compact zig-zag climb. Like a half-turn of an ascending helix that
+// also reverses direction. sign = +1 turns/​offsets right (+y), -1 left.
+// Endpoints: t=0 → (0,0,0) heading +x; t=1 → (0, ±2, 2) heading -x. Pairs with
+// turn=2, sideAdvance=±2, dz=2.
+export function makeSwitchbackPath(sign: number): PathFn {
+  const R = 1, dz = 2;
+  return (t) => {
+    const phi = Math.PI * t;
+    return { lx: R * Math.sin(phi), ly: sign * R * (1 - Math.cos(phi)), lz: dz * t, banking: 0 };
+  };
+}
+export const pathSwitchbackR: PathFn = makeSwitchbackPath(1);
+export const pathSwitchbackL: PathFn = makeSwitchbackPath(-1);
+
 // The Wall is a flat one-cell straight; its breakable barrier is a renderer
 // overlay (see renderer/meshes.ts) and its smash/explode behaviour lives in the
 // simulator (physics.ts).

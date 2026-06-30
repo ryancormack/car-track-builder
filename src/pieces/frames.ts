@@ -53,10 +53,12 @@ function buildFrame(path: PathFn, entry: GridState, t: number, prevSide: Vec3 | 
   const pos: Vec3 = { x: h.wx, y: h.wy, z: h.wz };
   const tangent = tangentAt(path, entry, t);
 
-  // Surface normal rolled by the banking angle about the forward axis: banking 0
-  // -> straight up; a corkscrew's banking sweeps it a full turn. side = tangent x
-  // normal is the lateral (rail) axis, always perpendicular to the tangent.
-  const normal: Vec3 = { x: 0, y: -Math.sin(h.banking), z: Math.cos(h.banking) };
+  // Surface normal = world-up rolled by the banking angle about the TANGENT
+  // (forward) axis. Rolling about the tangent (not a fixed world axis) is what
+  // lets a horizontal turn bank correctly — the lean follows the rotating
+  // heading. For a piece travelling straight along +x this reduces exactly to
+  // the old {0, -sin b, cos b}, so corkscrews are unchanged.
+  const normal = rollAboutTangent(tangent, h.banking);
   let side = cross(tangent, normal);
   if (lenSq(side) < 1e-8) side = prevSide ? { ...prevSide } : { x: 0, y: 1, z: 0 };
   side = normalize(side);
@@ -66,6 +68,28 @@ function buildFrame(path: PathFn, entry: GridState, t: number, prevSide: Vec3 | 
 
   const up = normalize(cross(side, tangent));
   return { pos, tangent, up, side, banking: h.banking };
+}
+
+/**
+ * World-up ({0,0,1}) rotated by `banking` radians about the (unit) tangent axis,
+ * via Rodrigues' rotation. This is the surface-normal direction before
+ * re-orthogonalisation. banking 0 → world-up; for a tangent along +x it equals
+ * {0, -sin b, cos b} (the legacy fixed-axis formula), so existing banked pieces
+ * (the corkscrew) render identically while horizontal turns now bank properly.
+ */
+function rollAboutTangent(tangent: Vec3, banking: number): Vec3 {
+  const U: Vec3 = { x: 0, y: 0, z: 1 };
+  if (Math.abs(banking) < 1e-12) return U;
+  const c = Math.cos(banking);
+  const s = Math.sin(banking);
+  const txu = cross(tangent, U);
+  const tdu = dot(tangent, U);
+  const k = tdu * (1 - c);
+  return {
+    x: U.x * c + txu.x * s + tangent.x * k,
+    y: U.y * c + txu.y * s + tangent.y * k,
+    z: U.z * c + txu.z * s + tangent.z * k,
+  };
 }
 
 /**

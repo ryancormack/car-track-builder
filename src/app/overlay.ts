@@ -36,6 +36,10 @@ export class ResultOverlay {
           title = '\u{1F4A5} SMASHED!';
           body = sim.failReason || 'Not enough speed — the car exploded against the wall!';
           break;
+        case 'collapse':
+          title = '\u{1F573}\u{FE0F} COLLAPSED!';
+          body = sim.failReason || 'Too slow — the bridge gave way and the car fell!';
+          break;
         case 'stall':
           title = '\u{1F40C} Out of Steam!';
           body = sim.failReason || 'The car ground to a halt.';

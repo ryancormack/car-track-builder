@@ -7,7 +7,9 @@
 import {
   pathStraight, pathCurveR, pathCurveL,
   pathWideR2, pathWideL2, pathWideR3, pathWideL3,
+  pathBankR, pathBankL, pathChicaneR, pathChicaneL,
   pathRampUp, pathRampDown, pathSteepRampUp, pathSteepRampDown,
+  pathSwitchbackR, pathSwitchbackL, pathLaunchpad, pathCrumbleBridge,
   pathLoop, pathCorkscrew, pathJump, pathWall, pathTopHat,
   pathSpiral, pathSteepHill,
   pathHelixUp, pathHelixDown, pathSpiralTower,
@@ -109,6 +111,16 @@ const TOP_HAT_MIN_V2 =
   2 * FRICTION * RAMP_FRICTION_MULT * TOP_HAT_CLIMB_LEN +
   8;
 
+// Entry-speed gate for the Switchback ramp: it climbs 2 units while doing a flat
+// 180° U-turn (arc ~3.72). Derived like the other climbs — gravity to the top
+// plus friction along the way, with a margin.
+const SWITCHBACK_RISE = 2;
+const SWITCHBACK_LEN = 3.72;
+const SWITCHBACK_MIN_V2 =
+  2 * G * SWITCHBACK_RISE +
+  2 * FRICTION * RAMP_FRICTION_MULT * SWITCHBACK_LEN +
+  6;
+
 export const PIECES: Record<PieceId, Piece> = {
   START: {
     id: 'START', name: 'Start', icon: '🚦', category: 'meta',
@@ -138,6 +150,22 @@ export const PIECES: Record<PieceId, Piece> = {
     color: '#ff7a1a',
     pathLocal: pathCurveR,
   },
+  BANK_L: {
+    id: 'BANK_L', name: 'Banked Left', icon: '↩', category: 'turn', featured: true,
+    // Same tight footprint as the standard curve, but the road leans into the
+    // turn — so it is NOT overspeed-gated (you can take it flat out).
+    forward: 1, turn: -1, dz: 0,
+    pathLen: 0.79, excitement: 6, minV2: 0, boostEnergy: 0,
+    color: '#ffb000',
+    pathLocal: pathBankL,
+  },
+  BANK_R: {
+    id: 'BANK_R', name: 'Banked Right', icon: '↪', category: 'turn', featured: true,
+    forward: 1, turn: 1, dz: 0,
+    pathLen: 0.79, excitement: 6, minV2: 0, boostEnergy: 0,
+    color: '#ffb000',
+    pathLocal: pathBankR,
+  },
   WIDE_L_2: {
     id: 'WIDE_L_2', name: 'Wide Left', icon: '⤴', category: 'turn',
     forward: 2, entryAdvance: 1, turn: -1, dz: 0,
@@ -166,6 +194,21 @@ export const PIECES: Record<PieceId, Piece> = {
     color: '#ff7a1a',
     pathLocal: pathWideR3,
   },
+  CHICANE_L: {
+    id: 'CHICANE_L', name: 'Chicane Left', icon: '⥮', category: 'turn', featured: true,
+    // Weaves to shift one lane LEFT over 2 cells, keeping the same heading.
+    forward: 2, turn: 0, sideAdvance: -1, dz: 0,
+    pathLen: 2.27, excitement: 8, minV2: 0, boostEnergy: 0,
+    color: '#ff7a1a',
+    pathLocal: pathChicaneL,
+  },
+  CHICANE_R: {
+    id: 'CHICANE_R', name: 'Chicane Right', icon: '⥯', category: 'turn', featured: true,
+    forward: 2, turn: 0, sideAdvance: 1, dz: 0,
+    pathLen: 2.27, excitement: 8, minV2: 0, boostEnergy: 0,
+    color: '#ff7a1a',
+    pathLocal: pathChicaneR,
+  },
   RAMP_UP: {
     id: 'RAMP_UP', name: 'Ramp Up', icon: '⬈', category: 'elev',
     forward: 1, turn: 0, dz: 1,
@@ -193,6 +236,31 @@ export const PIECES: Record<PieceId, Piece> = {
     pathLen: 2.30, excitement: 6, minV2: 0, boostEnergy: 0,
     color: '#ff8c1a',
     pathLocal: pathSteepRampDown,
+  },
+  SWITCHBACK_L: {
+    id: 'SWITCHBACK_L', name: 'Switchback Left', icon: '⮌', category: 'elev', featured: true,
+    // Climbs 2 while doing a flat 180° U-turn to the left, exiting two lanes
+    // over and reversed. Stack alternating L/R for a zig-zag climb.
+    forward: 1, turn: 2, sideAdvance: -2, dz: 2,
+    pathLen: 3.72, excitement: 18, minV2: SWITCHBACK_MIN_V2, boostEnergy: 0,
+    color: '#ff8c1a',
+    pathLocal: pathSwitchbackL,
+  },
+  SWITCHBACK_R: {
+    id: 'SWITCHBACK_R', name: 'Switchback Right', icon: '⮎', category: 'elev', featured: true,
+    forward: 1, turn: 2, sideAdvance: 2, dz: 2,
+    pathLen: 3.72, excitement: 18, minV2: SWITCHBACK_MIN_V2, boostEnergy: 0,
+    color: '#ff8c1a',
+    pathLocal: pathSwitchbackR,
+  },
+  LAUNCHPAD: {
+    id: 'LAUNCHPAD', name: 'Launchpad', icon: '🚀', category: 'special', boost: true, featured: true,
+    // A booster on a 2-unit climbing ramp: rockets the car up and onto a higher
+    // section. Stronger boost than the standard booster.
+    forward: 2, turn: 0, dz: 2,
+    pathLen: 2.91, excitement: 12, minV2: 0, boostEnergy: 150,
+    color: '#ff4500',
+    pathLocal: pathLaunchpad,
   },
   LOOP: {
     id: 'LOOP', name: 'Loop', icon: '⭕', category: 'stunt', featured: true,
@@ -238,6 +306,16 @@ export const PIECES: Record<PieceId, Piece> = {
     pathLen: 1, excitement: 14, minV2: 0, boostEnergy: 0,
     color: '#b5483a',
     pathLocal: pathWall,
+  },
+  CRUMBLE_BRIDGE: {
+    id: 'CRUMBLE_BRIDGE', name: 'Crumbling Bridge', icon: '🌉', category: 'special', featured: true,
+    // A 2-cell span. minV2 stays 0: the cross-or-collapse gate
+    // (CRUMBLE_BRIDGE_V2) is handled specially in physics.ts so failing it makes
+    // the bridge give way and the car FALL ('collapse'), not the generic gate.
+    forward: 2, turn: 0, dz: 0,
+    pathLen: 2.0, excitement: 16, minV2: 0, boostEnergy: 0,
+    color: '#9c7a4a',
+    pathLocal: pathCrumbleBridge,
   },
   TOP_HAT: {
     id: 'TOP_HAT', name: 'Top Hat', icon: '🎩', category: 'stunt', featured: true,
@@ -306,14 +384,37 @@ export const PIECES: Record<PieceId, Piece> = {
   },
 };
 
-export const PALETTE_ORDER: PieceId[] = [
-  'STRAIGHT', 'CURVE_L', 'CURVE_R',
-  'WIDE_L_2', 'WIDE_R_2', 'WIDE_L_3', 'WIDE_R_3',
-  'RAMP_UP', 'RAMP_DN', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN',
-  'LOOP', 'GIANT_LOOP', 'CORKSCREW', 'JUMP', 'GIANT_JUMP', 'WALL', 'TOP_HAT',
-  'SPIRAL', 'SPIRAL_TOWER', 'HELIX_UP', 'HELIX_DN', 'STEEP_HILL',
-  'BOOSTER', 'BRAKE', 'FINISH',
+/** A labelled section of the build palette. */
+export interface PaletteGroup {
+  label: string;
+  ids: PieceId[];
+}
+
+/**
+ * The build palette, organised into labelled sections so the (now large)
+ * catalogue is easy to scan. Order within a group goes simple → dramatic.
+ */
+export const PALETTE_GROUPS: PaletteGroup[] = [
+  { label: 'Basics', ids: ['STRAIGHT'] },
+  {
+    label: 'Turns',
+    ids: ['CURVE_L', 'CURVE_R', 'BANK_L', 'BANK_R', 'WIDE_L_2', 'WIDE_R_2', 'WIDE_L_3', 'WIDE_R_3', 'CHICANE_L', 'CHICANE_R'],
+  },
+  {
+    label: 'Elevation',
+    ids: ['RAMP_UP', 'RAMP_DN', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN', 'STEEP_HILL', 'SWITCHBACK_L', 'SWITCHBACK_R'],
+  },
+  {
+    label: 'Stunts',
+    ids: ['LOOP', 'GIANT_LOOP', 'CORKSCREW', 'JUMP', 'GIANT_JUMP', 'TOP_HAT', 'SPIRAL', 'SPIRAL_TOWER', 'HELIX_UP', 'HELIX_DN'],
+  },
+  { label: 'Hazards', ids: ['WALL', 'CRUMBLE_BRIDGE'] },
+  { label: 'Boost', ids: ['BOOSTER', 'BRAKE', 'LAUNCHPAD'] },
+  { label: 'Finish', ids: ['FINISH'] },
 ];
+
+/** Flat palette order, derived from the grouped layout (kept for compatibility). */
+export const PALETTE_ORDER: PieceId[] = PALETTE_GROUPS.flatMap((g) => g.ids);
 
 /** Narrows an arbitrary string to a known PieceId (used at the JSON boundary). */
 export function isPieceId(id: string): id is PieceId {

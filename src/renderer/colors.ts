@@ -46,6 +46,14 @@ export const COLORS = {
   waterPoolEm: 0x0a2a4a,
   waterDroplet: 0x8fd0ff,   // flung droplets / spray
   waterRipple: 0xbfe6ff,    // expanding ripple rings
+  // ---- Banked turn ----
+  bank: 0xffb000,           // warm amber banked road
+  bankEm: 0x6a4500,
+  // ---- Crumbling bridge ----
+  bridgePlank: 0x9c7a4a,    // weathered timber
+  bridgePlankEm: 0x3a2a14,
+  bridgeBeam: 0x6e5230,     // darker support beams
+  bridgeDebris: 0x8a6a3e,   // falling plank chunks
   car: 0x00ffd5,
   carEm: 0x004455,
   carAccent: 0xff3c00,

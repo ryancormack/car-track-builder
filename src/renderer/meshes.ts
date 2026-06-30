@@ -512,7 +512,6 @@ export function buildRingOfFire(path: PathFn, entry: GridState): FireRingHandle 
 }
 
 // ---------- Water Splash (decoration) ----------
-
 /** Animatable handles for a water-splash decoration, consumed by the renderer. */
 export interface WaterSplashHandle {
   group: THREE.Group;
@@ -586,14 +585,87 @@ export function buildWaterSplash(path: PathFn, entry: GridState): WaterSplashHan
   return { group, center, up: upN, ripples, droplets, poolMat };
 }
 
+// ---------- Crumbling bridge ----------
+
+/**
+ * A rickety timber bridge spanning a 2-cell gap: the road plus a deck of plank
+ * cross-bars and side beams. The deck is a sub-group named 'bridge' (so the
+ * renderer can collapse it); its world centre is cached on
+ * `userData.bridgeCenter` for spawning falling debris. Cross it fast enough and
+ * the planks tumble behind you; too slow and it gives way (see physics.ts).
+ */
+function buildCrumbleBridge(path: PathFn, entry: GridState): THREE.Group {
+  const group = buildRailedTrack(path, entry, COLORS.bridgePlank, {
+    emissive: COLORS.bridgePlankEm, emissiveIntensity: 0.1,
+  });
+
+  const deck = new THREE.Group();
+  deck.name = 'bridge';
+  const plankMat = new THREE.MeshStandardMaterial({
+    color: COLORS.bridgePlank, metalness: 0.02, roughness: 0.95,
+    emissive: COLORS.bridgePlankEm, emissiveIntensity: 0.08,
+  });
+  const beamMat = new THREE.MeshStandardMaterial({
+    color: COLORS.bridgeBeam, metalness: 0.02, roughness: 0.95,
+  });
+
+  // Plank cross-bars laid across the road at intervals along the span.
+  const N = 9;
+  const sum = new THREE.Vector3();
+  for (let i = 0; i < N; i++) {
+    const t = (i + 0.5) / N;
+    const { pos, tang, up, side } = frameAt(path, entry, t);
+    const basis = new THREE.Matrix4().makeBasis(tang, up, side);
+    const quat = new THREE.Quaternion().setFromRotationMatrix(basis);
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.6), plankMat);
+    plank.quaternion.copy(quat);
+    plank.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), (Math.random() - 0.5) * 0.16));
+    plank.position.copy(pos).addScaledVector(up, 0.02);
+    plank.castShadow = true;
+    deck.add(plank);
+    sum.add(pos);
+  }
+  // Side rails (two thin beams running the length of the span).
+  for (const s of [-1, 1]) {
+    const a = frameAt(path, entry, 0.05);
+    const b = frameAt(path, entry, 0.95);
+    const mid = a.pos.clone().add(b.pos).multiplyScalar(0.5).addScaledVector(a.up, 0.12).addScaledVector(a.side, s * 0.28);
+    const len = a.pos.distanceTo(b.pos);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(len, 0.05, 0.05), beamMat);
+    beam.position.copy(mid);
+    const dir = b.pos.clone().sub(a.pos).normalize();
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
+    deck.add(beam);
+  }
+
+  deck.userData.bridgeCenter = sum.multiplyScalar(1 / N);
+  group.add(deck);
+  return group;
+}
+
 // ---------- Public dispatcher ----------
 export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): THREE.Group {
   if (piece.id === 'BOOSTER') return buildBoosterPiece(path, entry);
+  if (piece.id === 'LAUNCHPAD') return buildBoosterPiece(path, entry);
   if (piece.id === 'BRAKE') return buildBrakePiece(path, entry);
   if (piece.id === 'FINISH') return buildFinishPiece(path, entry);
   if (piece.id === 'JUMP') return buildJumpPiece(path, entry);
   if (piece.id === 'GIANT_JUMP') return buildGiantJumpPiece(path, entry);
   if (piece.id === 'WALL') return buildWallPiece(path, entry);
+  if (piece.id === 'CRUMBLE_BRIDGE') return buildCrumbleBridge(path, entry);
+  if (piece.id === 'BANK_L' || piece.id === 'BANK_R') {
+    return buildRailedTrack(path, entry, COLORS.bank, {
+      emissive: COLORS.bankEm, emissiveIntensity: 0.25, segments: 48,
+    });
+  }
+  if (piece.id === 'CHICANE_L' || piece.id === 'CHICANE_R') {
+    return buildRailedTrack(path, entry, COLORS.trackOrange, { segments: 56 });
+  }
+  if (piece.id === 'SWITCHBACK_L' || piece.id === 'SWITCHBACK_R') {
+    return buildRailedTrack(path, entry, COLORS.trackOrangeBright, {
+      emissive: COLORS.trackOrangeBright, emissiveIntensity: 0.12, segments: 160,
+    });
+  }
   if (piece.id === 'TOP_HAT') {
     return buildRailedTrack(path, entry, COLORS.trackOrange, {
       emissive: COLORS.trackOrange, emissiveIntensity: 0.1, segments: 200,
