@@ -134,6 +134,9 @@ let envOverride: EnvOverride = loadEnvOverride();
 let sim: Simulator | null = null;
 let runResult: RunResult | null = null;
 let wipeoutPlaying = false;
+// Water-splash decorations already triggered this run (so each splashes once
+// as the car drives through it).
+let splashedPieces = new Set<number>();
 let lastFrameTime = performance.now();
 let mouseDownPos: { x: number; y: number } | null = null;
 
@@ -278,6 +281,7 @@ function switchMode(next: Mode): void {
     sim = new Simulator(track);
     runResult = null;
     wipeoutPlaying = false;
+    splashedPieces = new Set<number>();
     renderer.setCar(true, sim.carSample());
     renderer.animateLauncher();
   } else {
@@ -349,6 +353,11 @@ function frame(now: number): void {
       const subSteps = 4;
       const sdt = (dt * SPEED_SCALE) / subSteps;
       for (let i = 0; i < subSteps && sim.isRunning(); i++) sim.step(sdt);
+      // Splash through any water decoration on the piece the car is crossing.
+      if (track.decorationAt(sim.pieceIndex) === 'WATER_SPLASH' && !splashedPieces.has(sim.pieceIndex)) {
+        splashedPieces.add(sim.pieceIndex);
+        renderer.splashThrough(sim.pieceIndex);
+      }
       const sample = sim.carSample();
       if (sample) {
         renderer.setCar(true, sample);

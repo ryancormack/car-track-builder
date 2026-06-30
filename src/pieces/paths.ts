@@ -108,6 +108,42 @@ export const pathWideL3: PathFn = makeWideTurnPath(3, -1);
 // simulator (physics.ts).
 export const pathWall: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 
+// --- Top Hat tower ------------------------------------------------------------
+// A tall element that DOUBLES BACK on itself (Top Thrill Dragster style): the
+// car climbs a steep, near-vertical leg, makes a flat 180° U-turn high in the
+// air, then descends a parallel leg, exiting in the OPPOSITE direction one lane
+// over (so the return track runs beside the approach instead of on top of it).
+//
+// Built planar-ish in three phases, all with banking 0 so the car stays upright
+// (the reversal is a horizontal U-turn at the top, not a vertical loop):
+//   • up-ramp   : (0,0,0) climbs to (D, 0, H), easing to horizontal at the top;
+//   • U-turn    : a flat semicircle (radius R) at height H, from (D,0,H) heading
+//                 +x round to (D, 2R, H) heading -x;
+//   • down-ramp : descends from (D, 2R, H) back to (0, 2R, 0) heading -x.
+// Endpoints: t=0 → (0,0,0) heading +x; t=1 → (0, 2R, 0) heading -x. Paired with
+// turn=2 (180°) and sideAdvance=2R in the catalogue so the exit connects.
+const TOP_HAT_HEIGHT = 4;     // apex height (grid units) — a tall tower
+const TOP_HAT_RUN = 1.2;      // horizontal run of each steep leg
+const TOP_HAT_RADIUS = 1;     // U-turn radius (lateral offset = 2R = 2 cells)
+export const pathTopHat: PathFn = (t) => {
+  const H = TOP_HAT_HEIGHT, D = TOP_HAT_RUN, R = TOP_HAT_RADIUS;
+  const upEnd = 0.32, dnStart = 0.68;
+  if (t < upEnd) {
+    // Up-ramp: steep climb, eased to level at the top so it meets the U-turn.
+    const u = t / upEnd;
+    return { lx: D * u, ly: 0, lz: H * easedProgress(u), banking: 0 };
+  }
+  if (t > dnStart) {
+    // Down-ramp: mirror of the up-ramp in the parallel (ly = 2R) lane.
+    const u = (t - dnStart) / (1 - dnStart);
+    return { lx: D * (1 - u), ly: 2 * R, lz: H * (1 - easedProgress(u)), banking: 0 };
+  }
+  // Flat 180° U-turn at the apex.
+  const u = (t - upEnd) / (dnStart - upEnd);
+  const phi = Math.PI * u;
+  return { lx: D + R * Math.sin(phi), ly: R * (1 - Math.cos(phi)), lz: H, banking: 0 };
+};
+
 export const pathLoop: PathFn = (t) => {
   // Approach (0..0.1): straight from back edge to loop bottom (lx=0.5, lz=0).
   // Loop (0.1..0.9): full 360° vertical circle in xz-plane, radius R, centre (0.5, 0, R).

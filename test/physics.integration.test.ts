@@ -39,6 +39,33 @@ function computeArcLength(pathFn: PathFn, steps = 10000): number {
   return length;
 }
 
+// Build a track and assert every piece actually placed. addPiece silently
+// rejects floor/overlap violations, so this guards against a descending piece
+// being dropped (the ground is gz = 0: descents must follow a climb).
+function builtTrack(ids: string[], dropHeight: number): Track {
+  const t = trackOf(ids, dropHeight);
+  assert.equal(t.pieces.length, ids.length, `all pieces should place; got [${t.pieces.join(', ')}]`);
+  return t;
+}
+
+// Run a sim, capturing v² at the entry and exit of a specific piece index. Lets
+// us verify a descent piece converts height to speed even though the track now
+// stays at or above the ground (so it descends at altitude, not below gz = 0).
+function v2AcrossPiece(track: Track, idx: number): { sim: Simulator; entryV2: number; exitV2: number } {
+  const sim = new Simulator(track);
+  let entryV2 = NaN;
+  let exitV2 = NaN;
+  let steps = 0;
+  while (sim.isRunning() && steps++ < 80000) {
+    sim.step(1 / 240);
+    if (sim.pieceIndex === idx) {
+      if (Number.isNaN(entryV2)) entryV2 = sim.v2;
+      exitV2 = sim.v2;
+    }
+  }
+  return { sim, entryV2, exitV2 };
+}
+
 // --- Path length verification ---
 
 test('SPIRAL: declared pathLen matches numerical arc length within 10%', () => {
@@ -83,28 +110,20 @@ test('SPIRAL_TOWER: declared pathLen matches numerical arc length within 10%', (
 
 // --- minV2 gate verification ---
 
-test('SPIRAL: car gains net energy from gravity descent (exits faster than entry)', () => {
-  // Start with known v2 from drop=3 -> v2=58.8
-  const sim = new Simulator(trackOf(['SPIRAL', 'FINISH'], 3));
-  const entryV2 = sim.v2;
-  runToCompletion(sim);
+test('SPIRAL: descending the coil at altitude accelerates the car (gravity > friction)', () => {
+  // Ground is gz = 0, so climb to gz 2 first, then the spiral drops back down.
+  const track = builtTrack(['RAMP_UP', 'RAMP_UP', 'SPIRAL', 'FINISH'], 6);
+  const { sim, entryV2, exitV2 } = v2AcrossPiece(track, 2); // SPIRAL is index 2
   assert.ok(!sim.failed, `should not fail: ${sim.failReason}`);
-  // dz=-2 gives gravity gain of 2*G*2 = 39.2
-  // Friction cost: 2*FRICTION*RAMP_FRICTION_MULT*pathLen ~ 2*0.55*1.1*4.72 = 5.71
-  // (coils pay the graded-surface surcharge, same as ramps/helixes)
-  // Net gain should be positive => exit v2 > entry v2
-  assert.ok(sim.v2 > entryV2,
-    `spiral should gain speed from descent: entry=${entryV2.toFixed(1)}, exit=${sim.v2.toFixed(1)}`);
+  assert.ok(exitV2 > entryV2,
+    `spiral should gain speed over its descent: entry=${entryV2.toFixed(1)}, exit=${exitV2.toFixed(1)}`);
 });
 
-test('SPIRAL: car with v2 just above minV2 gate completes successfully', () => {
-  const minV2 = PIECES.SPIRAL.minV2;
-  // Give enough drop to pass the gate with a small buffer
-  const dropHeight = (minV2 + 2) / (2 * G);
-  const sim = new Simulator(trackOf(['SPIRAL', 'FINISH'], dropHeight));
+test('SPIRAL: completes when descending from a climb', () => {
+  const track = builtTrack(['RAMP_UP', 'RAMP_UP', 'SPIRAL', 'FINISH'], 6);
+  const sim = new Simulator(track);
   runToCompletion(sim);
-  assert.ok(!sim.failed,
-    `SPIRAL should succeed with v2=${(2 * G * dropHeight).toFixed(1)} > minV2=${minV2}: ${sim.failReason}`);
+  assert.ok(!sim.failed, `SPIRAL should complete: ${sim.failReason}`);
   assert.ok(sim.finished);
 });
 
@@ -131,13 +150,13 @@ test('STEEP_HILL: car with v2 below minV2 fails at gate', () => {
 
 // --- Helix minV2 gate and energy tests ---
 
-test('HELIX_DN: car gains net energy from gravity descent (exits faster)', () => {
-  const sim = new Simulator(trackOf(['HELIX_DN', 'FINISH'], 3));
-  const entryV2 = sim.v2;
-  runToCompletion(sim);
+test('HELIX_DN: descending the helix at altitude accelerates the car', () => {
+  // Climb to gz 3, then the helix drops back to the ground.
+  const track = builtTrack(['RAMP_UP', 'RAMP_UP', 'RAMP_UP', 'HELIX_DN', 'FINISH'], 6);
+  const { sim, entryV2, exitV2 } = v2AcrossPiece(track, 3); // HELIX_DN is index 3
   assert.ok(!sim.failed, `should not fail: ${sim.failReason}`);
-  assert.ok(sim.v2 > entryV2,
-    `helix down should gain speed from descent: entry=${entryV2.toFixed(1)}, exit=${sim.v2.toFixed(1)}`);
+  assert.ok(exitV2 > entryV2,
+    `helix down should gain speed over its descent: entry=${entryV2.toFixed(1)}, exit=${exitV2.toFixed(1)}`);
 });
 
 test('HELIX_UP: car with v2 above minV2 gate completes successfully', () => {
@@ -151,25 +170,21 @@ test('HELIX_UP: car with v2 above minV2 gate completes successfully', () => {
   assert.ok(sim.finished);
 });
 
-test('SPIRAL_TOWER: car gains net energy from the long descent (exits faster)', () => {
-  // dropHeight must be >= 4 so the -4 descent stays at/above the floor; at
-  // lower drops the exit (gz = drop - 4) falls below floor and collision
-  // detection correctly rejects the placement (Req 1.1, 6.1).
-  const sim = new Simulator(trackOf(['SPIRAL_TOWER', 'FINISH'], 4));
-  const entryV2 = sim.v2;
-  runToCompletion(sim);
+test('SPIRAL_TOWER: descending the tower at altitude accelerates the car', () => {
+  // Climb to gz 4, then the tower winds back down to the ground.
+  const track = builtTrack(['RAMP_UP', 'RAMP_UP', 'RAMP_UP', 'RAMP_UP', 'SPIRAL_TOWER', 'FINISH'], 6);
+  const { sim, entryV2, exitV2 } = v2AcrossPiece(track, 4); // SPIRAL_TOWER is index 4
   assert.ok(!sim.failed, `should not fail: ${sim.failReason}`);
-  // dz=-4 gives a large gravity gain (2*G*4 = 78.4), well above the friction toll.
-  assert.ok(sim.v2 > entryV2,
-    `spiral tower should gain speed from descent: entry=${entryV2.toFixed(1)}, exit=${sim.v2.toFixed(1)}`);
+  assert.ok(exitV2 > entryV2,
+    `spiral tower should gain speed over its descent: entry=${entryV2.toFixed(1)}, exit=${exitV2.toFixed(1)}`);
   assert.ok(sim.finished);
 });
 
-test('SPIRAL_TOWER: completes from a modest drop (gravity-assisted descent)', () => {
-  // dropHeight 4 is the minimum that keeps the -4 descent at/above the floor.
-  const sim = new Simulator(trackOf(['STRAIGHT', 'SPIRAL_TOWER', 'FINISH'], 4));
+test('SPIRAL_TOWER: completes after climbing to its height', () => {
+  const track = builtTrack(['RAMP_UP', 'RAMP_UP', 'RAMP_UP', 'RAMP_UP', 'SPIRAL_TOWER', 'FINISH'], 6);
+  const sim = new Simulator(track);
   runToCompletion(sim);
-  assert.ok(!sim.failed, `SPIRAL_TOWER should complete from drop=4: ${sim.failReason}`);
+  assert.ok(!sim.failed, `SPIRAL_TOWER should complete: ${sim.failReason}`);
   assert.ok(sim.finished);
 });
 
@@ -186,18 +201,15 @@ test('RAMP_UP + RAMP_DN (net dz=0): exit v2 < entry v2 by approx friction toll',
     `friction loss should be reasonable: ${loss.toFixed(2)}`);
 });
 
-test('SPIRAL (dz=-2): car exits with more v2 than it entered (gravity > friction)', () => {
-  // Use drop=2 for a moderate entry speed
-  const sim = new Simulator(trackOf(['SPIRAL', 'FINISH'], 2));
-  const entryV2 = sim.v2; // 2*G*2 = 39.2
-  runToCompletion(sim);
+test('SPIRAL (dz=-2): the coil descent converts height to speed', () => {
+  // Climb to gz 2, then the spiral drops back to the ground, converting that
+  // height into speed (gravity gain well above the friction toll).
+  const track = builtTrack(['RAMP_UP', 'RAMP_UP', 'SPIRAL', 'FINISH'], 6);
+  const { sim, entryV2, exitV2 } = v2AcrossPiece(track, 2);
   assert.ok(!sim.failed, `should complete: ${sim.failReason}`);
-  // Gravity gain: 2*G*2 = 39.2
-  // Friction cost: 2*FRICTION*RAMP_FRICTION_MULT*4.72 ~ 5.71 (graded-surface surcharge)
-  // Net gain: ~33 (plus small drag loss)
-  const gain = sim.v2 - entryV2;
+  const gain = exitV2 - entryV2;
   assert.ok(gain > 20,
-    `spiral should gain significant energy from descent: gain=${gain.toFixed(2)}`);
+    `spiral should gain significant energy over its descent: gain=${gain.toFixed(2)}`);
 });
 
 // --- Overspeed corner verification ---

@@ -6,10 +6,11 @@ import assert from 'node:assert/strict';
 
 import {
   pathSteepRampUp, pathSteepRampDown, pathRampUp,
-  pathWideR2, pathWideL2, pathWideR3, pathWideL3,
+  pathWideR2, pathWideL2, pathWideR3, pathWideL3, pathTopHat,
 } from '../src/pieces/paths.js';
 import { PIECES, canDecorate } from '../src/pieces/definitions.js';
 import { applyPiece, localToWorld } from '../src/pieces/geometry.js';
+import { trackFrames } from '../src/pieces/frames.js';
 import { resolvePathLocal } from '../src/pieces/resolve.js';
 import { Track } from '../src/track.js';
 import { Simulator } from '../src/physics.js';
@@ -252,4 +253,93 @@ test('ring of fire adds excitement to the score', () => {
   while (sim.isRunning() && steps++ < 20000) sim.step(1 / 240);
   const scored = computeScore(track, sim);
   assert.ok(scored.breakdown.excitement >= 12, 'ring excitement counted in the run score');
+});
+
+
+// --- Grounding limit (floor at the build plane, gz = 0) ----------------------
+
+test('grounding: nothing can be built below the ground (gz=0), regardless of drop height', () => {
+  for (const drop of [0, 3, 6]) {
+    const t = new Track();
+    t.dropHeight = drop;
+    // A descent straight from the start would sink below gz 0 -> always rejected,
+    // consistently at every drop height (drop height no longer moves the floor).
+    assert.equal(t.addPiece('RAMP_DN'), false, `RAMP_DN from ground rejected at drop ${drop}`);
+    assert.equal(t.addPiece('SPIRAL'), false, `SPIRAL from ground rejected at drop ${drop}`);
+    assert.equal(t.addPiece('STEEP_RAMP_DN'), false, `STEEP_RAMP_DN from ground rejected at drop ${drop}`);
+  }
+});
+
+test('grounding: descents are allowed once the track is above the ground', () => {
+  const t = new Track();
+  t.dropHeight = 3;
+  assert.ok(t.addPiece('RAMP_UP'), 'climb to gz 1');
+  assert.ok(t.addPiece('RAMP_DN'), 'descend back to gz 0 (at/above ground)');
+  assert.equal(t.pieces.length, 2);
+  // But descending past the ground is still rejected.
+  const t2 = new Track();
+  t2.dropHeight = 6;
+  assert.ok(t2.addPiece('RAMP_UP')); // gz 1
+  assert.equal(t2.addPiece('SPIRAL'), false, 'SPIRAL (-2) from gz 1 would hit gz -1');
+});
+
+// --- Water Splash decoration --------------------------------------------------
+
+test('water splash is a valid decoration: toggles, scores, and round-trips', () => {
+  const t = new Track();
+  ['STRAIGHT', 'FINISH'].forEach((id) => t.addPiece(id));
+  const before = designScore(t);
+  assert.equal(t.toggleDecoration(0, 'WATER_SPLASH'), true);
+  assert.equal(t.decorationAt(0), 'WATER_SPLASH');
+  assert.ok(designScore(t) > before, 'water splash adds excitement');
+  const reloaded = new Track();
+  reloaded.fromJSON(t.toJSON());
+  assert.equal(reloaded.decorationAt(0), 'WATER_SPLASH');
+});
+
+test('water splash only attaches to flat pieces (same rule as ring of fire)', () => {
+  const t = new Track();
+  ['STRAIGHT', 'LOOP', 'FINISH'].forEach((id) => t.addPiece(id));
+  assert.equal(t.toggleDecoration(0, 'WATER_SPLASH'), true);  // straight OK
+  assert.equal(t.toggleDecoration(1, 'WATER_SPLASH'), false); // loop rejected
+});
+
+// --- Top Hat tower (doubles back) --------------------------------------------
+
+test('Top Hat doubles back: starts heading +x, exits reversed (-x) one lane over, and is tall', () => {
+  const start = pathTopHat(0);
+  const end = pathTopHat(1);
+  assert.ok(Math.abs(start.lx) < 1e-9 && Math.abs(start.ly) < 1e-9 && Math.abs(start.lz) < 1e-9, 'starts at origin');
+  assert.ok(Math.abs(end.lx) < 1e-6 && Math.abs(end.ly - 2) < 1e-6 && Math.abs(end.lz) < 1e-6,
+    `ends at (0,2,0) (reversed, one lane over, back at ground), got (${end.lx},${end.ly},${end.lz})`);
+  // The exit heads back the way it came (lx decreasing at the end).
+  assert.ok(pathTopHat(1).lx - pathTopHat(1 - 1e-3).lx < 0, 'exit heads -x (doubled back)');
+  // It climbs tall.
+  let apex = 0;
+  for (let i = 0; i <= 500; i++) apex = Math.max(apex, pathTopHat(i / 500).lz);
+  assert.ok(apex >= 3.5, `tower should be tall, apex=${apex}`);
+});
+
+test('Top Hat exits reversed + laterally offset on the grid, and places after an approach', () => {
+  // From East at the origin: exits West (dir 3), 1 cell back and 2 lanes over.
+  const exit = applyPiece({ gx: 0, gy: 0, gz: 0, dir: 1 }, PIECES.TOP_HAT);
+  assert.deepEqual({ gx: exit.gx, gy: exit.gy, dir: exit.dir }, { gx: -1, gy: 2, dir: 3 });
+  // Placeable after a straight approach — the offset return lane avoids folding
+  // back on top of the approach track (no self-overlap).
+  const t = new Track();
+  ['STRAIGHT', 'STRAIGHT', 'TOP_HAT', 'STRAIGHT', 'FINISH'].forEach(
+    (id) => assert.ok(t.addPiece(id), `should place ${id}`),
+  );
+});
+
+test('Top Hat keeps the car upright (never inverts) and demands real entry speed', () => {
+  let minUpZ = 1;
+  const frames = trackFrames(PIECES.TOP_HAT.pathLocal, { gx: 0, gy: 0, gz: 0, dir: 1 }, 240);
+  for (const f of frames) {
+    assert.ok(Number.isFinite(f.up.x + f.up.y + f.up.z), 'frame finite');
+    minUpZ = Math.min(minUpZ, f.up.z);
+  }
+  assert.ok(minUpZ > 0, `car should never invert (up.z stays > 0); got ${minUpZ.toFixed(3)}`);
+  // Tall climb -> a much higher gate than a single ramp.
+  assert.ok(PIECES.TOP_HAT.minV2 > 2 * PIECES.RAMP_UP.minV2, 'top hat needs a tall drop or a booster');
 });

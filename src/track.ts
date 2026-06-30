@@ -202,10 +202,13 @@ export class Track {
     const cells = computeCells(entry, piece);
     const exit = applyPiece(entry, piece);
 
-    // Floor: owned cells + the exit cell, offset by dropHeight.
+    // Floor: owned cells + the exit cell. The ground is the build plane (gz = 0,
+    // where the room floor is drawn), so NO piece may descend below it,
+    // regardless of drop height. (Drop height only controls the start tower's
+    // height / launch energy — it must never change how deep you can build.)
     const floorPts: GridCell[] = [...cells, { gx: exit.gx, gy: exit.gy, gz: exit.gz }];
     for (const c of floorPts) {
-      if (c.gz + this.dropHeight < 0) {
+      if (c.gz < 0) {
         return { ok: false, reason: 'floor', cell: c };
       }
     }
@@ -368,9 +371,9 @@ export class Track {
       const piece = PIECES[this.pieces[i]];
       const cells = computeCells(cursor, piece);
 
-      // (a) Floor: offset by dropHeight (the build plane sits dropHeight up).
+      // (a) Floor: the ground is the build plane (gz = 0); nothing may go below.
       for (const c of cells) {
-        if (c.gz + this.dropHeight < 0) return false;
+        if (c.gz < 0) return false;
       }
 
       // (b) Overlap: exclude the piece's own entry cell (the predecessor seam).

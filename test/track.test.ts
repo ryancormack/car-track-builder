@@ -274,14 +274,13 @@ test('rejoin re-anchors a moved downstream after rebuilding a section of differe
 
 test('rejoin returns false and stays editing when the recomputed downstream is invalid', () => {
   // A genuine non-connect: after re-anchoring, the recomputed chain drives a
-  // piece below the floor. Build [S, RAMP_DN, S] (valid at dropHeight 3), delete
-  // the leading STRAIGHT, then drop the cushion so the re-chained RAMP_DN sinks
-  // below the floor. Rejoin must refuse and stay in editing mode.
+  // piece below the floor (gz = 0). Build [RAMP_UP, RAMP_DN, S] (valid: gz
+  // 0->1->0->0), then delete the leading RAMP_UP. Re-chained from the ground the
+  // RAMP_DN now sinks to gz -1, so rejoin must refuse and stay editing.
   const t = new Track();
-  t.addPiece('STRAIGHT'); t.addPiece('RAMP_DN'); t.addPiece('STRAIGHT');
+  t.addPiece('RAMP_UP'); t.addPiece('RAMP_DN'); t.addPiece('STRAIGHT');
   t.deleteAt(0); // pieces [RAMP_DN, S]; downstream frozen
   assert.equal(t.isEditing(), true);
-  t.dropHeight = 0; // remove the cushion: RAMP_DN's exit cell now sits below 0
   assert.equal(t.rejoin(), false);
   assert.equal(t.isEditing(), true); // editing mode preserved
 });

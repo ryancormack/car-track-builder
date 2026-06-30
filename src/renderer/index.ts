@@ -5,8 +5,8 @@
 import * as THREE from 'three';
 import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
-import { buildPieceMesh, buildGhostPiece, buildStartTower, buildRingOfFire } from './meshes.js';
-import type { FireRingHandle } from './meshes.js';
+import { buildPieceMesh, buildGhostPiece, buildStartTower, buildRingOfFire, buildWaterSplash } from './meshes.js';
+import type { FireRingHandle, WaterSplashHandle } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
 import { buildLivingRoom, type RoomExtent } from './environment.js';
 import { computeRoomLayout, type RoomLayout } from './roomLayout.js';
@@ -71,6 +71,10 @@ export class Renderer implements CameraControlHost {
   // Animatable ring-of-fire decorations, rebuilt with the track.
   private _fireRings: FireRingHandle[] = [];
   private _fireClock = 0;
+
+  // Animatable water-splash decorations, keyed by piece index so the car can
+  // trigger a splash burst as it drives through.
+  private _waterSplashes = new Map<number, WaterSplashHandle>();
 
   // Transient particle effects (smash debris, explosion bursts) animated by
   // updateAnimations. Each entry owns its meshes and disposes them on expiry.
@@ -187,6 +191,7 @@ export class Renderer implements CameraControlHost {
     this._clearGroup(this.startGroup);
     this._clearGroup(this.decorGroup);
     this._fireRings = [];
+    this._waterSplashes.clear();
     this.startGroup.add(buildStartTower(track.startState, track.dropHeight));
     for (let i = 0; i < track.pieces.length; i++) {
       const id = track.pieces[i];
@@ -196,12 +201,17 @@ export class Renderer implements CameraControlHost {
       const mesh = buildPieceMesh(p, entry, resolvedPath);
       this.trackGroup.add(mesh);
 
-      // Decorations (ring of fire) overlay their piece. Kept in a separate group
-      // so they don't interfere with track piece picking.
-      if (track.decorationAt(i) === 'RING_OF_FIRE') {
+      // Decorations overlay their piece. Kept in a separate group so they don't
+      // interfere with track piece picking.
+      const deco = track.decorationAt(i);
+      if (deco === 'RING_OF_FIRE') {
         const ring = buildRingOfFire(resolvedPath, entry);
         this.decorGroup.add(ring.group);
         this._fireRings.push(ring);
+      } else if (deco === 'WATER_SPLASH') {
+        const splash = buildWaterSplash(resolvedPath, entry);
+        this.decorGroup.add(splash.group);
+        this._waterSplashes.set(i, splash);
       }
     }
     this._recenterCamera(track);
@@ -555,6 +565,49 @@ export class Renderer implements CameraControlHost {
     }
   }
 
+  /**
+   * Animate water-splash decorations: expand+fade the ripple rings and bob the
+   * spray droplets, so the puddle reads as living water.
+   */
+  private _animateWaterSplashes(): void {
+    if (this._waterSplashes.size === 0) return;
+    const t = this._fireClock;
+    for (const splash of this._waterSplashes.values()) {
+      for (const r of splash.ripples) {
+        // Phase cycles 0..1; ring grows and fades as it expands outward.
+        const cycle = (t * 0.6 + r.phase) % 1;
+        const scale = 0.4 + cycle * 2.6;
+        r.mesh.scale.set(scale, scale, 1);
+        (r.mesh.material as THREE.MeshStandardMaterial).opacity = 0.55 * (1 - cycle);
+      }
+      for (const d of splash.droplets) {
+        const bob = 0.5 + 0.5 * Math.sin(t * 5 + d.phase);
+        d.mesh.scale.setScalar(d.baseScale * (0.6 + 0.6 * bob));
+      }
+      splash.poolMat.emissiveIntensity = 0.25 + 0.12 * (0.5 + 0.5 * Math.sin(t * 3));
+    }
+  }
+
+  /**
+   * Fire a splash burst at the water decoration on piece `index` (called as the
+   * car drives through it). No-op if that piece has no water decoration.
+   */
+  splashThrough(index: number): void {
+    const splash = this._waterSplashes.get(index);
+    if (!splash) return;
+    this._spawnBurst(splash.center.clone(), {
+      count: 16,
+      color: COLORS.waterDroplet,
+      emissive: COLORS.waterRipple,
+      size: 0.07,
+      speed: 2.6,
+      upBias: 1.8,
+      duration: 0.9,
+      gravity: 9.8,
+      fade: true,
+    });
+  }
+
   private _updateEffects(dt: number): void {
     if (this._effects.length === 0) return;
     for (let e = this._effects.length - 1; e >= 0; e--) {
@@ -588,6 +641,7 @@ export class Renderer implements CameraControlHost {
   updateAnimations(_dt: number): void {
     this._fireClock += _dt;
     this._animateFireRings();
+    this._animateWaterSplashes();
     this._updateEffects(_dt);
     if (!this._launchAnim) return;
     const plunger = this.startGroup.getObjectByName('plunger');

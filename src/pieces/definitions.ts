@@ -8,7 +8,7 @@ import {
   pathStraight, pathCurveR, pathCurveL,
   pathWideR2, pathWideL2, pathWideR3, pathWideL3,
   pathRampUp, pathRampDown, pathSteepRampUp, pathSteepRampDown,
-  pathLoop, pathCorkscrew, pathJump, pathWall,
+  pathLoop, pathCorkscrew, pathJump, pathWall, pathTopHat,
   pathSpiral, pathSteepHill,
   pathHelixUp, pathHelixDown, pathSpiralTower,
   pathGiantLoop, pathGiantJump,
@@ -97,6 +97,17 @@ const GIANT_JUMP_MIN_V2 = 30;
 // square), measured numerically. It descends, so no climb gate is needed
 // (gravity assists).
 const SPIRAL_TOWER_LEN = 29.45;
+
+// Entry-speed gate for the Top Hat tower: the car must climb to the apex
+// (height 4) up the steep leg before the flat U-turn, so it needs a lot of
+// speed — a tall drop or a booster. Derived like the other climbs: gravity to
+// the apex plus friction along the climbing leg (~4.2), with a safety margin.
+const TOP_HAT_RISE = 4;
+const TOP_HAT_CLIMB_LEN = 4.2;
+const TOP_HAT_MIN_V2 =
+  2 * G * TOP_HAT_RISE +
+  2 * FRICTION * RAMP_FRICTION_MULT * TOP_HAT_CLIMB_LEN +
+  8;
 
 export const PIECES: Record<PieceId, Piece> = {
   START: {
@@ -228,6 +239,15 @@ export const PIECES: Record<PieceId, Piece> = {
     color: '#b5483a',
     pathLocal: pathWall,
   },
+  TOP_HAT: {
+    id: 'TOP_HAT', name: 'Top Hat', icon: '🎩', category: 'stunt', featured: true,
+    // Doubles back: 180° U-turn high in the air, exiting one lane over (turn=2 +
+    // sideAdvance=2). A tall climb, so it needs real entry speed.
+    forward: 1, entryAdvance: 0, sideAdvance: 2, turn: 2, dz: 0,
+    pathLen: 11.74, excitement: 34, minV2: TOP_HAT_MIN_V2, boostEnergy: 0,
+    color: '#ff7a1a',
+    pathLocal: pathTopHat,
+  },
   GIANT_LOOP: {
     id: 'GIANT_LOOP', name: 'Giant Loop', icon: '⭕', category: 'stunt', featured: true,
     forward: 3, turn: 0, dz: 0,
@@ -290,7 +310,7 @@ export const PALETTE_ORDER: PieceId[] = [
   'STRAIGHT', 'CURVE_L', 'CURVE_R',
   'WIDE_L_2', 'WIDE_R_2', 'WIDE_L_3', 'WIDE_R_3',
   'RAMP_UP', 'RAMP_DN', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN',
-  'LOOP', 'GIANT_LOOP', 'CORKSCREW', 'JUMP', 'GIANT_JUMP', 'WALL',
+  'LOOP', 'GIANT_LOOP', 'CORKSCREW', 'JUMP', 'GIANT_JUMP', 'WALL', 'TOP_HAT',
   'SPIRAL', 'SPIRAL_TOWER', 'HELIX_UP', 'HELIX_DN', 'STEEP_HILL',
   'BOOSTER', 'BRAKE', 'FINISH',
 ];
@@ -313,10 +333,13 @@ export const DECORATIONS: Record<DecorationId, Decoration> = {
   RING_OF_FIRE: {
     id: 'RING_OF_FIRE', name: 'Ring of Fire', icon: '🔥', excitement: 12,
   },
+  WATER_SPLASH: {
+    id: 'WATER_SPLASH', name: 'Water Splash', icon: '💦', excitement: 8,
+  },
 };
 
 /** Decoration ordering for the palette. */
-export const DECORATION_ORDER: DecorationId[] = ['RING_OF_FIRE'];
+export const DECORATION_ORDER: DecorationId[] = ['RING_OF_FIRE', 'WATER_SPLASH'];
 
 /** Narrows an arbitrary string to a known DecorationId. */
 export function isDecorationId(id: string): id is DecorationId {

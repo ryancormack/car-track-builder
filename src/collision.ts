@@ -88,14 +88,13 @@ export function cellKey(gx: number, gy: number, gz: number): CellKey {
  * the exit cell.
  */
 export function computeCells(entry: GridState, piece: Piece): GridCell[] {
-  // Diagonal-advancing pieces (wide turns) don't move along a single grid axis,
-  // so the linear formula below doesn't describe their footprint. Instead we
-  // sample the actual swept path and collect the integer cells it passes
-  // through. This stays consistent with the exit-inclusive model: the first
-  // cell is the entry cell and the last is the exit cell (the next piece's
-  // entry), so the shared connection cell is handled exactly as for other
-  // pieces.
-  if (piece.entryAdvance && piece.entryAdvance > 0) {
+  // Diagonal / multi-axis pieces (wide turns, the Top Hat tower) don't move
+  // along a single grid axis, so the linear formula below doesn't describe their
+  // footprint. Sample the actual swept path instead and collect the integer
+  // cells it passes through. This stays consistent with the exit-inclusive
+  // model: the first cell is the entry cell and the last is the exit cell (the
+  // next piece's entry), so the shared connection cell is handled as usual.
+  if ((piece.entryAdvance ?? 0) !== 0 || (piece.sideAdvance ?? 0) !== 0 || Math.abs(piece.turn) > 1) {
     return computeSweptCells(entry, piece);
   }
 
