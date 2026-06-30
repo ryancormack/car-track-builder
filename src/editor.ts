@@ -1,9 +1,9 @@
 // editor.ts -- Build-mode UI: palette buttons, hover ghost preview, undo/clear.
 
-import { PIECES, PALETTE_ORDER } from './pieces/index.js';
+import { PIECES, PALETTE_ORDER, DECORATIONS, DECORATION_ORDER, canDecorate } from './pieces/index.js';
 import type { Track } from './track.js';
 import type { Renderer } from './renderer/index.js';
-import type { PieceId } from './types.js';
+import type { DecorationId, PieceId } from './types.js';
 import type { StatusKind } from './app/hud.js';
 
 export interface EditorOptions {
@@ -25,6 +25,7 @@ export class Editor {
   onSelectionChange: (sel: { index: number; name: string } | null) => void;
   enabled = true;
   buttons: HTMLButtonElement[] = [];
+  decoButtons: HTMLButtonElement[] = [];
   selectedIndex: number | null = null;
   /**
    * When building out a new section in the middle of the track, this tracks
@@ -73,6 +74,30 @@ export class Editor {
       this.paletteEl.appendChild(btn);
       this.buttons.push(btn);
     }
+
+    // Decoration buttons (e.g. Ring of Fire). These attach to the SELECTED piece
+    // rather than appending a new piece, so they live in their own labelled row.
+    this.decoButtons = [];
+    if (DECORATION_ORDER.length > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'palette-sep';
+      sep.textContent = 'Decorations';
+      this.paletteEl.appendChild(sep);
+      for (const decoId of DECORATION_ORDER) {
+        const deco = DECORATIONS[decoId];
+        const btn = document.createElement('button');
+        btn.className = 'piece-btn deco';
+        btn.dataset.decoId = decoId;
+        btn.title = 'Select a flat piece (straight, ramp, jump, booster…), then click to add/remove';
+        btn.innerHTML = `
+          <span class="icon">${deco.icon}</span>
+          <span class="label">${deco.name}</span>
+        `;
+        btn.addEventListener('click', () => this._toggleDeco(decoId));
+        this.paletteEl.appendChild(btn);
+        this.decoButtons.push(btn);
+      }
+    }
     this._refreshButtons();
   }
 
@@ -99,6 +124,30 @@ export class Editor {
 
   private _unhover(): void {
     this.renderer.clearGhost();
+  }
+
+  /**
+   * Attach/remove a decoration (Ring of Fire) on the currently selected piece.
+   * Requires a selected, decoration-compatible piece; otherwise shows a hint.
+   */
+  private _toggleDeco(decoId: DecorationId): void {
+    if (!this.enabled) return;
+    if (this.selectedIndex === null) {
+      this._setStatus(`Select a flat piece first, then add the ${DECORATIONS[decoId].name}.`, 'err');
+      return;
+    }
+    const pieceId = this.track.pieces[this.selectedIndex];
+    if (!canDecorate(pieceId)) {
+      this._setStatus(`${DECORATIONS[decoId].name} can't go on a ${PIECES[pieceId].name}.`, 'err');
+      return;
+    }
+    const nowOn = this.track.toggleDecoration(this.selectedIndex, decoId);
+    this.renderer.rebuildTrack(this.track);
+    // Re-apply the selection highlight (rebuild recreated the meshes).
+    this.renderer.highlightPiece(this.selectedIndex);
+    this._setStatus(`${nowOn ? 'Added' : 'Removed'} ${DECORATIONS[decoId].name}.`, 'ok');
+    this._refreshButtons();
+    this.onChange();
   }
 
   private _add(id: PieceId): void {
@@ -266,6 +315,16 @@ export class Editor {
     const editing = this.selectedIndex !== null || this.insertCursor !== null;
     for (const b of this.buttons) {
       b.disabled = !this.enabled || (lockAppend && !editing);
+    }
+    // Decoration buttons are only usable when a compatible piece is selected.
+    const canDeco = this.selectedIndex !== null && canDecorate(this.track.pieces[this.selectedIndex]);
+    for (const b of this.decoButtons) {
+      b.disabled = !this.enabled || !canDeco;
+      const decoId = b.dataset.decoId as DecorationId | undefined;
+      const active = decoId != null && this.selectedIndex !== null
+        && this.track.decorationAt(this.selectedIndex) === decoId;
+      if (active) b.classList.add('deco-active');
+      else b.classList.remove('deco-active');
     }
   }
 

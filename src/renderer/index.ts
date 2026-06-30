@@ -5,7 +5,8 @@
 import * as THREE from 'three';
 import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
-import { buildPieceMesh, buildGhostPiece, buildStartTower } from './meshes.js';
+import { buildPieceMesh, buildGhostPiece, buildStartTower, buildRingOfFire } from './meshes.js';
+import type { FireRingHandle } from './meshes.js';
 import { buildCar, placeCar } from './car.js';
 import { buildLivingRoom, type RoomExtent } from './environment.js';
 import { computeRoomLayout, type RoomLayout } from './roomLayout.js';
@@ -32,6 +33,7 @@ export class Renderer implements CameraControlHost {
   trackGroup: THREE.Group;
   ghostGroup: THREE.Group;
   startGroup: THREE.Group;
+  decorGroup: THREE.Group;
   car: THREE.Group;
 
   // Optional living-room backdrop. Hidden by default; toggled via
@@ -65,6 +67,21 @@ export class Renderer implements CameraControlHost {
 
   private _particleGeom: THREE.SphereGeometry;
   private _particleMat: THREE.MeshStandardMaterial;
+
+  // Animatable ring-of-fire decorations, rebuilt with the track.
+  private _fireRings: FireRingHandle[] = [];
+  private _fireClock = 0;
+
+  // Transient particle effects (smash debris, explosion bursts) animated by
+  // updateAnimations. Each entry owns its meshes and disposes them on expiry.
+  private _effects: {
+    meshes: THREE.Mesh[];
+    vels: THREE.Vector3[];
+    elapsed: number;
+    duration: number;
+    gravity: number;
+    fade: boolean;
+  }[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -111,6 +128,7 @@ export class Renderer implements CameraControlHost {
     this.trackGroup = new THREE.Group(); this.scene.add(this.trackGroup);
     this.ghostGroup = new THREE.Group(); this.scene.add(this.ghostGroup);
     this.startGroup = new THREE.Group(); this.scene.add(this.startGroup);
+    this.decorGroup = new THREE.Group(); this.scene.add(this.decorGroup);
 
     this.car = buildCar();
     this.car.visible = false;
@@ -131,6 +149,9 @@ export class Renderer implements CameraControlHost {
 
   setCar(visible: boolean, sample: TrackFrame | null = null): void {
     this.car.visible = !!visible;
+    // Reset any wipeout transform (a crash shrinks/hides the car) so a fresh run
+    // shows it whole again.
+    if (visible) this.car.scale.setScalar(1);
     if (visible && sample) placeCar(this.car, sample);
   }
 
@@ -164,6 +185,8 @@ export class Renderer implements CameraControlHost {
   rebuildTrack(track: Track): void {
     this._clearGroup(this.trackGroup);
     this._clearGroup(this.startGroup);
+    this._clearGroup(this.decorGroup);
+    this._fireRings = [];
     this.startGroup.add(buildStartTower(track.startState, track.dropHeight));
     for (let i = 0; i < track.pieces.length; i++) {
       const id = track.pieces[i];
@@ -172,6 +195,14 @@ export class Renderer implements CameraControlHost {
       const resolvedPath = resolvePathLocal(track.pieces, i);
       const mesh = buildPieceMesh(p, entry, resolvedPath);
       this.trackGroup.add(mesh);
+
+      // Decorations (ring of fire) overlay their piece. Kept in a separate group
+      // so they don't interfere with track piece picking.
+      if (track.decorationAt(i) === 'RING_OF_FIRE') {
+        const ring = buildRingOfFire(resolvedPath, entry);
+        this.decorGroup.add(ring.group);
+        this._fireRings.push(ring);
+      }
     }
     this._recenterCamera(track);
   }
@@ -308,6 +339,11 @@ export class Renderer implements CameraControlHost {
           velocity = new THREE.Vector3(0, 4, 2);
         }
         break;
+      case 'crash':
+        // Smashed into the wall: the car stops dead and explodes in place.
+        duration = 1.4;
+        velocity = new THREE.Vector3(0, 0, 0);
+        break;
       default: // stall, speed_gate
         duration = 1.0;
         velocity = new THREE.Vector3(0, 0.5, 0);
@@ -322,6 +358,17 @@ export class Renderer implements CameraControlHost {
         this.scene.add(p);
         particles.push(p);
       }
+    }
+    if (failType === 'crash') {
+      // A fiery explosion burst at the car's position.
+      this._spawnBurst(startPos.clone(), {
+        count: 26, color: COLORS.explosionFire, emissive: COLORS.explosionCore,
+        size: 0.12, speed: 4.0, upBias: 0.8, duration: 1.3, gravity: 7.0, fade: true,
+      });
+      this._spawnBurst(startPos.clone(), {
+        count: 10, color: COLORS.explosionSmoke, emissive: 0x000000,
+        size: 0.18, speed: 1.6, upBias: 1.4, duration: 1.4, gravity: -1.2, fade: true,
+      });
     }
 
     this._wipeout = {
@@ -384,6 +431,13 @@ export class Renderer implements CameraControlHost {
         this.car.rotateZ(dt * 2);
         break;
       }
+      case 'crash': {
+        // Car is destroyed: shrink it away as the explosion takes over.
+        const scale = Math.max(0.01, 1 - progress * 2);
+        this.car.scale.setScalar(scale);
+        if (progress >= 0.5) this.car.visible = false;
+        break;
+      }
       default: {
         // stall / speed_gate: small bounce up then settle
         const bounceHeight = Math.sin(progress * Math.PI) * 0.3;
@@ -401,6 +455,16 @@ export class Renderer implements CameraControlHost {
       this._removeParticles(this._wipeout.particles);
       this._wipeout = null;
     }
+    // Dispose any in-flight debris/explosion bursts and restore the car transform.
+    for (const fx of this._effects) {
+      for (const m of fx.meshes) {
+        this.scene.remove(m);
+        m.geometry.dispose();
+        (m.material as THREE.Material).dispose();
+      }
+    }
+    this._effects.length = 0;
+    this.car.scale.setScalar(1);
   }
 
   private _removeParticles(particles: THREE.Mesh[]): void {
@@ -411,7 +475,120 @@ export class Renderer implements CameraControlHost {
     particles.length = 0;
   }
 
+  /**
+   * Shatter the breakable wall on piece `index` (called when the car smashes
+   * through it). Hides the brick barrier and flings brick debris from its
+   * centre. No-op if the index has no wall mesh.
+   */
+  smashWall(index: number): void {
+    const group = this.trackGroup.children[index];
+    if (!group) return;
+    const wall = group.getObjectByName('wall');
+    if (!wall || !wall.visible) return;
+    wall.visible = false;
+    const centre = (wall.userData.wallCenter as THREE.Vector3 | undefined)?.clone()
+      ?? group.position.clone();
+    this._spawnBurst(centre, {
+      count: 18,
+      color: COLORS.debris,
+      emissive: COLORS.wallEm,
+      size: 0.09,
+      speed: 3.2,
+      upBias: 1.6,
+      duration: 1.3,
+      gravity: 9.8,
+      fade: true,
+    });
+  }
+
+  /**
+   * Spawn a transient particle burst at a world position. Used for wall debris
+   * and the crash explosion. Particles are animated and disposed by
+   * updateAnimations.
+   */
+  private _spawnBurst(centre: THREE.Vector3, opts: {
+    count: number; color: number; emissive: number; size: number;
+    speed: number; upBias: number; duration: number; gravity: number; fade: boolean;
+  }): void {
+    const geom = new THREE.BoxGeometry(opts.size, opts.size, opts.size);
+    const meshes: THREE.Mesh[] = [];
+    const vels: THREE.Vector3[] = [];
+    for (let i = 0; i < opts.count; i++) {
+      const mat = new THREE.MeshStandardMaterial({
+        color: opts.color, emissive: opts.emissive, emissiveIntensity: 0.7,
+        roughness: 0.7, transparent: true, opacity: 1,
+      });
+      const m = new THREE.Mesh(geom.clone(), mat);
+      m.position.copy(centre);
+      m.castShadow = false;
+      const dir = new THREE.Vector3(
+        Math.random() * 2 - 1,
+        Math.random() * 2 - 1 + opts.upBias,
+        Math.random() * 2 - 1,
+      ).normalize();
+      vels.push(dir.multiplyScalar(opts.speed * (0.6 + Math.random() * 0.8)));
+      this.scene.add(m);
+      meshes.push(m);
+    }
+    this._effects.push({ meshes, vels, elapsed: 0, duration: opts.duration, gravity: opts.gravity, fade: opts.fade });
+  }
+
+  /**
+   * Flicker the ring-of-fire decorations: pulse each flame's scale (a fast
+   * noisy bob) and the emissive glow, and slowly rotate the whole ring so the
+   * fire reads as alive. Cheap per-frame math over a handful of small meshes.
+   */
+  private _animateFireRings(): void {
+    if (this._fireRings.length === 0) return;
+    const t = this._fireClock;
+    for (const ring of this._fireRings) {
+      ring.group.rotation.y = Math.sin(t * 0.6) * 0.05;
+      for (const f of ring.flames) {
+        const flick = 0.75 + 0.45 * Math.abs(Math.sin(t * 9 + f.phase)) + 0.15 * Math.sin(t * 21 + f.phase * 2);
+        f.mesh.scale.set(1, f.baseScale * flick, 1);
+        const mat = f.mesh.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = 0.8 + 0.6 * flick;
+      }
+      // Pulse the charred ring body glow with a steadier ember beat.
+      const body = ring.glowMats[0];
+      if (body) body.emissiveIntensity = 0.35 + 0.2 * (0.5 + 0.5 * Math.sin(t * 4));
+    }
+  }
+
+  private _updateEffects(dt: number): void {
+    if (this._effects.length === 0) return;
+    for (let e = this._effects.length - 1; e >= 0; e--) {
+      const fx = this._effects[e];
+      fx.elapsed += dt;
+      const progress = fx.elapsed / fx.duration;
+      if (progress >= 1) {
+        for (const m of fx.meshes) {
+          this.scene.remove(m);
+          m.geometry.dispose();
+          (m.material as THREE.Material).dispose();
+        }
+        this._effects.splice(e, 1);
+        continue;
+      }
+      for (let i = 0; i < fx.meshes.length; i++) {
+        const m = fx.meshes[i];
+        const v = fx.vels[i];
+        v.y -= fx.gravity * dt;
+        m.position.addScaledVector(v, dt);
+        m.rotation.x += dt * 6;
+        m.rotation.y += dt * 5;
+        if (fx.fade) {
+          const mat = m.material as THREE.MeshStandardMaterial;
+          mat.opacity = Math.max(0, 1 - progress);
+        }
+      }
+    }
+  }
+
   updateAnimations(_dt: number): void {
+    this._fireClock += _dt;
+    this._animateFireRings();
+    this._updateEffects(_dt);
     if (!this._launchAnim) return;
     const plunger = this.startGroup.getObjectByName('plunger');
     if (!plunger) { this._launchAnim = null; return; }

@@ -340,6 +340,11 @@ function frame(now: number): void {
   lastFrameTime = now;
 
   if (mode === 'play' && sim) {
+    // Drain any walls the car smashed through this frame and shatter them.
+    if (sim.smashedWalls.length) {
+      for (const idx of sim.smashedWalls) renderer.smashWall(idx);
+      sim.smashedWalls.length = 0;
+    }
     if (sim.isRunning()) {
       const subSteps = 4;
       const sdt = (dt * SPEED_SCALE) / subSteps;

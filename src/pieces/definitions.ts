@@ -6,14 +6,15 @@
 
 import {
   pathStraight, pathCurveR, pathCurveL,
-  pathRampUp, pathRampDown,
-  pathLoop, pathCorkscrew, pathJump,
+  pathWideR2, pathWideL2, pathWideR3, pathWideL3,
+  pathRampUp, pathRampDown, pathSteepRampUp, pathSteepRampDown,
+  pathLoop, pathCorkscrew, pathJump, pathWall,
   pathSpiral, pathSteepHill,
   pathHelixUp, pathHelixDown, pathSpiralTower,
   pathGiantLoop, pathGiantJump,
 } from './paths.js';
 import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS, GIANT_LOOP_RADIUS } from '../constants.js';
-import type { Piece, PieceId } from '../types.js';
+import type { DecorationId, Piece, PieceId } from '../types.js';
 
 // A vertical loop only stays "stuck to the track" while the car is fast enough
 // that the required centripetal pull doesn't exceed what gravity + the track can
@@ -53,6 +54,16 @@ const RAMP_UP_MIN_V2 =
   2 * G * RAMP_UP_RISE +
   2 * FRICTION * RAMP_FRICTION_MULT * RAMP_UP_LEN +
   RAMP_UP_CREST_BUFFER;
+
+// Entry-speed gate for the Steep Ramp Up, derived exactly like Ramp Up but for a
+// 2-unit climb over ~2.30 of (much steeper) track. The bigger rise makes this a
+// demanding climb — it needs a solid drop or a booster.
+const STEEP_RAMP_UP_RISE = 2;    // mirrors STEEP_RAMP_UP.dz below
+const STEEP_RAMP_UP_LEN = 2.30;  // mirrors STEEP_RAMP_UP.pathLen below
+const STEEP_RAMP_UP_MIN_V2 =
+  2 * G * STEEP_RAMP_UP_RISE +
+  2 * FRICTION * RAMP_FRICTION_MULT * STEEP_RAMP_UP_LEN +
+  4;
 
 // Entry-speed gate for Steep Hill, derived the same way as Ramp Up. The car
 // must crest a 1.5-unit peak with friction along half the path length (~1.87).
@@ -116,6 +127,34 @@ export const PIECES: Record<PieceId, Piece> = {
     color: '#ff7a1a',
     pathLocal: pathCurveR,
   },
+  WIDE_L_2: {
+    id: 'WIDE_L_2', name: 'Wide Left', icon: '⤴', category: 'turn',
+    forward: 2, turn: -1, dz: 0,
+    pathLen: 1.64, excitement: 4, minV2: 0, boostEnergy: 0,
+    color: '#ff7a1a',
+    pathLocal: pathWideL2,
+  },
+  WIDE_R_2: {
+    id: 'WIDE_R_2', name: 'Wide Right', icon: '⤵', category: 'turn',
+    forward: 2, turn: 1, dz: 0,
+    pathLen: 1.64, excitement: 4, minV2: 0, boostEnergy: 0,
+    color: '#ff7a1a',
+    pathLocal: pathWideR2,
+  },
+  WIDE_L_3: {
+    id: 'WIDE_L_3', name: 'Sweep Left', icon: '⤺', category: 'turn',
+    forward: 3, turn: -1, dz: 0,
+    pathLen: 2.57, excitement: 6, minV2: 0, boostEnergy: 0,
+    color: '#ff7a1a',
+    pathLocal: pathWideL3,
+  },
+  WIDE_R_3: {
+    id: 'WIDE_R_3', name: 'Sweep Right', icon: '⤻', category: 'turn',
+    forward: 3, turn: 1, dz: 0,
+    pathLen: 2.57, excitement: 6, minV2: 0, boostEnergy: 0,
+    color: '#ff7a1a',
+    pathLocal: pathWideR3,
+  },
   RAMP_UP: {
     id: 'RAMP_UP', name: 'Ramp Up', icon: '⬈', category: 'elev',
     forward: 1, turn: 0, dz: 1,
@@ -129,6 +168,20 @@ export const PIECES: Record<PieceId, Piece> = {
     pathLen: 1.5, excitement: 2, minV2: 0, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathRampDown,
+  },
+  STEEP_RAMP_UP: {
+    id: 'STEEP_RAMP_UP', name: 'Steep Ramp Up', icon: '⏫', category: 'elev', featured: true,
+    forward: 1, turn: 0, dz: 2,
+    pathLen: 2.30, excitement: 6, minV2: STEEP_RAMP_UP_MIN_V2, boostEnergy: 0,
+    color: '#ff8c1a',
+    pathLocal: pathSteepRampUp,
+  },
+  STEEP_RAMP_DN: {
+    id: 'STEEP_RAMP_DN', name: 'Steep Ramp Down', icon: '⏬', category: 'elev', featured: true,
+    forward: 1, turn: 0, dz: -2,
+    pathLen: 2.30, excitement: 6, minV2: 0, boostEnergy: 0,
+    color: '#ff8c1a',
+    pathLocal: pathSteepRampDown,
   },
   LOOP: {
     id: 'LOOP', name: 'Loop', icon: '⭕', category: 'stunt', featured: true,
@@ -164,6 +217,16 @@ export const PIECES: Record<PieceId, Piece> = {
     pathLen: 3.0, excitement: 12, minV2: 18, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathJump,
+  },
+  WALL: {
+    id: 'WALL', name: 'Smash Wall', icon: '🧱', category: 'special', featured: true,
+    forward: 1, turn: 0, dz: 0,
+    // minV2 stays 0: the smash/explode gate (WALL_SMASH_V2) is handled specially
+    // in physics.ts so failing it triggers an EXPLOSION ('crash'), not the
+    // generic "too slow" speed-gate launch.
+    pathLen: 1, excitement: 14, minV2: 0, boostEnergy: 0,
+    color: '#b5483a',
+    pathLocal: pathWall,
   },
   GIANT_LOOP: {
     id: 'GIANT_LOOP', name: 'Giant Loop', icon: '⭕', category: 'stunt', featured: true,
@@ -225,8 +288,9 @@ export const PIECES: Record<PieceId, Piece> = {
 
 export const PALETTE_ORDER: PieceId[] = [
   'STRAIGHT', 'CURVE_L', 'CURVE_R',
-  'RAMP_UP', 'RAMP_DN',
-  'LOOP', 'GIANT_LOOP', 'CORKSCREW', 'JUMP', 'GIANT_JUMP',
+  'WIDE_L_2', 'WIDE_R_2', 'WIDE_L_3', 'WIDE_R_3',
+  'RAMP_UP', 'RAMP_DN', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN',
+  'LOOP', 'GIANT_LOOP', 'CORKSCREW', 'JUMP', 'GIANT_JUMP', 'WALL',
   'SPIRAL', 'SPIRAL_TOWER', 'HELIX_UP', 'HELIX_DN', 'STEEP_HILL',
   'BOOSTER', 'BRAKE', 'FINISH',
 ];
@@ -234,4 +298,43 @@ export const PALETTE_ORDER: PieceId[] = [
 /** Narrows an arbitrary string to a known PieceId (used at the JSON boundary). */
 export function isPieceId(id: string): id is PieceId {
   return Object.prototype.hasOwnProperty.call(PIECES, id);
+}
+
+/** A decoration that can be attached to (some) pieces. */
+export interface Decoration {
+  id: DecorationId;
+  name: string;
+  icon: string;
+  /** Bonus excitement added to the decorated piece's score. */
+  excitement: number;
+}
+
+export const DECORATIONS: Record<DecorationId, Decoration> = {
+  RING_OF_FIRE: {
+    id: 'RING_OF_FIRE', name: 'Ring of Fire', icon: '🔥', excitement: 12,
+  },
+};
+
+/** Decoration ordering for the palette. */
+export const DECORATION_ORDER: DecorationId[] = ['RING_OF_FIRE'];
+
+/** Narrows an arbitrary string to a known DecorationId. */
+export function isDecorationId(id: string): id is DecorationId {
+  return Object.prototype.hasOwnProperty.call(DECORATIONS, id);
+}
+
+/**
+ * Pieces a Ring of Fire (and any future flat decoration) can be attached to:
+ * the straight-ish pieces the car drives along upright — straights, ramps,
+ * jumps, boosters/brakes, the wall, and the finish. Curves, loops, coils and
+ * helixes are excluded (the ring would clip the banked/curved track).
+ */
+const DECORATABLE: ReadonlySet<PieceId> = new Set<PieceId>([
+  'STRAIGHT', 'RAMP_UP', 'RAMP_DN', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN',
+  'JUMP', 'GIANT_JUMP', 'BOOSTER', 'BRAKE', 'WALL', 'FINISH',
+]);
+
+/** Whether a Ring of Fire can be placed on the given piece type. */
+export function canDecorate(pieceId: PieceId): boolean {
+  return DECORATABLE.has(pieceId);
 }

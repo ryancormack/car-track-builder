@@ -49,13 +49,20 @@ export type PieceId =
   | 'STRAIGHT'
   | 'CURVE_L'
   | 'CURVE_R'
+  | 'WIDE_L_2'
+  | 'WIDE_R_2'
+  | 'WIDE_L_3'
+  | 'WIDE_R_3'
   | 'RAMP_UP'
   | 'RAMP_DN'
+  | 'STEEP_RAMP_UP'
+  | 'STEEP_RAMP_DN'
   | 'LOOP'
   | 'CORKSCREW'
   | 'BOOSTER'
   | 'BRAKE'
   | 'JUMP'
+  | 'WALL'
   | 'GIANT_LOOP'
   | 'GIANT_JUMP'
   | 'SPIRAL'
@@ -64,6 +71,13 @@ export type PieceId =
   | 'HELIX_UP'
   | 'HELIX_DN'
   | 'FINISH';
+
+/**
+ * Decorations are overlays attached to an existing piece (not pieces
+ * themselves). They are stored in a parallel array on the Track, aligned with
+ * `pieces` by index.
+ */
+export type DecorationId = 'RING_OF_FIRE';
 
 export type PieceCategory =
   | 'meta'
@@ -131,6 +145,11 @@ export interface ScoreResult {
 export interface TrackJSON {
   dropHeight: number;
   pieces: PieceId[];
+  /**
+   * Optional per-piece decorations, aligned with `pieces` by index. A `null`
+   * entry means the piece has no decoration. Omitted entirely for legacy saves.
+   */
+  decorations?: (DecorationId | null)[];
 }
 
 /** The DOM elements the app wires up at boot. */

@@ -25,6 +25,22 @@ export const COLORS = {
   finishPost: 0xddddee,
   ghost: 0x3da9fc,
   gap: 0x7488a6,
+
+  // ---- Smash Wall ----
+  wall: 0xb5483a,           // brick-red barrier body
+  wallBrick: 0xc25a44,      // lighter brick face
+  wallMortar: 0x6e2f26,     // dark mortar / shading
+  wallEm: 0x3a0f0a,
+  debris: 0xb5483a,         // brick chunks flung on smash
+  // ---- Explosion (wall crash / boom) ----
+  explosionCore: 0xffd24a,
+  explosionFire: 0xff5a1e,
+  explosionSmoke: 0x3a2a22,
+  // ---- Ring of Fire ----
+  fireRing: 0x521208,       // charred ring body
+  fireFlame: 0xff6a1a,      // flame mid
+  fireFlameHot: 0xffd24a,   // flame core
+  fireFlameEm: 0xff4500,
   car: 0x00ffd5,
   carEm: 0x004455,
   carAccent: 0xff3c00,

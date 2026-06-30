@@ -9,9 +9,18 @@
 //  • Booster penalty: -15 per booster used (rewarding "natural" momentum)
 //  • Fail penalty: ×0.4 multiplier if the car failed mid-run
 
-import { PIECES } from './pieces/index.js';
+import { PIECES, DECORATIONS } from './pieces/index.js';
 import type { Track } from './track.js';
 import type { ScoreResult, SimSummary } from './types.js';
+
+/** Total excitement contributed by ring-of-fire (and future) decorations. */
+function decorationExcitement(track: Track): number {
+  let bonus = 0;
+  for (const d of track.decorations) {
+    if (d) bonus += DECORATIONS[d].excitement;
+  }
+  return bonus;
+}
 
 export function computeScore(track: Track, sim: SimSummary | null | undefined): ScoreResult {
   let length = 0;
@@ -30,6 +39,7 @@ export function computeScore(track: Track, sim: SimSummary | null | undefined): 
       stuntStreak = 0;
     }
   }
+  excitement += decorationExcitement(track);
 
   const topSpeed = sim?.topSpeed ?? 0;
   const speedBonus = Math.round(topSpeed * 4);
@@ -63,5 +73,5 @@ export function designScore(track: Track): number {
     length += 5;
     excitement += p.excitement;
   }
-  return length + excitement;
+  return length + excitement + decorationExcitement(track);
 }

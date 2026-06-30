@@ -11,7 +11,7 @@
 import { PIECES, trackFrameAt, resolvePathLocal } from './pieces/index.js';
 import {
   G, FRICTION, RAMP_FRICTION_MULT, DRAG,
-  CORNER_MAX_V2, STALL_SPEED, LOOP_RADIUS, GIANT_LOOP_RADIUS,
+  CORNER_MAX_V2, STALL_SPEED, LOOP_RADIUS, GIANT_LOOP_RADIUS, WALL_SMASH_V2,
 } from './constants.js';
 import type { Track } from './track.js';
 import type { TrackFrame } from './pieces/frames.js';
@@ -25,7 +25,7 @@ export { G, FRICTION, RAMP_FRICTION_MULT, DRAG };
 const ROLLBACK_EPS = 0.5; // how far below "energy to crest" counts as doomed
 const CONTACT_EPS = 0.25; // how far below the loop contact threshold counts as a peel-off
 
-export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' | 'fly_off' | null;
+export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' | 'fly_off' | 'crash' | null;
 
 // Pieces that carry a graded surface (a non-trivial up/down slope) and so pay
 // the steeper-grade friction surcharge: the ramps plus every coil. Loops, jumps
@@ -34,6 +34,7 @@ export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' 
 // that every coil is treated consistently.
 export function isRampGrade(id: string): boolean {
   return id === 'RAMP_UP' || id === 'RAMP_DN' || id === 'STEEP_HILL'
+    || id === 'STEEP_RAMP_UP' || id === 'STEEP_RAMP_DN'
     || id === 'HELIX_UP' || id === 'HELIX_DN' || id === 'SPIRAL' || id === 'SPIRAL_TOWER';
 }
 
@@ -41,7 +42,7 @@ export function isRampGrade(id: string): boolean {
 // or coiling around). These are the only pieces where running out of speed
 // means rolling back down rather than peeling off or stalling.
 export function isHill(id: string): boolean {
-  return id === 'RAMP_UP' || id === 'STEEP_HILL' || id === 'HELIX_UP';
+  return id === 'RAMP_UP' || id === 'STEEP_RAMP_UP' || id === 'STEEP_HILL' || id === 'HELIX_UP';
 }
 
 export class Simulator {
@@ -58,6 +59,12 @@ export class Simulator {
   failPieceIndex = -1;
   finished = false;
   elapsed = 0;
+  /**
+   * Indices of WALL pieces the car has smashed through this run (entered with
+   * enough speed). main.ts drains this to trigger the smash effect + hide the
+   * wall mesh. A list (not a flag) so a track with multiple walls is handled.
+   */
+  smashedWalls: number[] = [];
   private _enteredPiece = -1; // last piece index where we ran the entry check
   private _resolvedPath: PathFn | null = null;
 
@@ -79,6 +86,7 @@ export class Simulator {
     this.failPieceIndex = -1;
     this.finished = false;
     this.elapsed = 0;
+    this.smashedWalls = [];
     this._enteredPiece = -1;
     // Eagerly initialize the resolved path so the hot loop never hits a null.
     this._resolvedPath = this.track.pieces.length > 0
@@ -107,6 +115,20 @@ export class Simulator {
     if (this._enteredPiece !== this.pieceIndex) {
       this._enteredPiece = this.pieceIndex;
       this._resolvedPath = resolvePathLocal(this.track.pieces, this.pieceIndex);
+
+      // Wall: smash through if fast enough, otherwise crash and explode.
+      if (pieceId === 'WALL') {
+        if (this.v2 < WALL_SMASH_V2) {
+          this.failed = true;
+          this.failReason = 'Not enough speed to smash the wall — the car explodes!';
+          this.failType = 'crash';
+          this.failPieceIndex = this.pieceIndex;
+          return;
+        }
+        // Smashed through: record it so the renderer can shatter the barrier.
+        this.smashedWalls.push(this.pieceIndex);
+      }
+
       if (piece.minV2 > 0 && this.v2 < piece.minV2) {
         this.failed = true;
         this.failReason = `Too slow for ${piece.name}! Add a booster or higher drop.`;

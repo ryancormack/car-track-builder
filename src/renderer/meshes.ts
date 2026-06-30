@@ -376,6 +376,141 @@ function buildFinishPiece(path: PathFn, entry: GridState): THREE.Group {
   return group;
 }
 
+// ---------- Smash Wall ----------
+
+/**
+ * The Smash Wall: normal road plus a breakable brick barrier standing across
+ * the track at its midpoint. The barrier is a sub-group named 'wall' (so the
+ * renderer can find and shatter it on a successful smash); its world centre is
+ * cached on `userData.wallCenter` for spawning debris. Bricks are individual
+ * boxes so the wall reads as breakable.
+ */
+function buildWallPiece(path: PathFn, entry: GridState): THREE.Group {
+  const group = buildRailedTrack(path, entry, COLORS.wall, {
+    emissive: COLORS.wallEm,
+    emissiveIntensity: 0.15,
+  });
+
+  const { pos, tang, up, side } = frameAt(path, entry, 0.5);
+  const wall = new THREE.Group();
+  wall.name = 'wall';
+
+  const brickMat = new THREE.MeshStandardMaterial({
+    color: COLORS.wallBrick, metalness: 0.05, roughness: 0.85,
+    emissive: COLORS.wallEm, emissiveIntensity: 0.12,
+  });
+  const mortarMat = new THREE.MeshStandardMaterial({
+    color: COLORS.wallMortar, metalness: 0.05, roughness: 0.9,
+  });
+
+  const cols = 5;
+  const rows = 4;
+  const totalW = 0.62;     // spans the road width + a little
+  const totalH = 0.62;     // wall height
+  const brickW = totalW / cols;
+  const brickH = totalH / rows;
+  const depth = 0.12;
+  // Orientation basis: bricks face along the tangent, stack along up, run along side.
+  const basis = new THREE.Matrix4().makeBasis(tang, up, side);
+  const quat = new THREE.Quaternion().setFromRotationMatrix(basis);
+
+  for (let r = 0; r < rows; r++) {
+    const offset = (r % 2) * brickW * 0.5; // running-bond brick stagger
+    for (let c = 0; c < cols; c++) {
+      const sOff = -totalW / 2 + brickW * (c + 0.5) + offset - brickW * 0.25;
+      const uOff = brickH * (r + 0.5);
+      const brick = new THREE.Mesh(
+        new THREE.BoxGeometry(depth, brickH * 0.86, brickW * 0.86),
+        (r + c) % 2 === 0 ? brickMat : mortarMat,
+      );
+      brick.quaternion.copy(quat);
+      brick.position.copy(pos)
+        .addScaledVector(side, sOff)
+        .addScaledVector(up, uOff);
+      brick.castShadow = true;
+      brick.receiveShadow = true;
+      wall.add(brick);
+    }
+  }
+
+  // Cache the wall centre (world space) for debris spawning on smash.
+  wall.userData.wallCenter = pos.clone().addScaledVector(up, totalH / 2);
+  group.add(wall);
+  return group;
+}
+
+// ---------- Ring of Fire (decoration) ----------
+
+/** Animatable handles for a ring-of-fire decoration, consumed by the renderer. */
+export interface FireRingHandle {
+  group: THREE.Group;
+  /** Per-flame { mesh, base scale, animation phase } for the flicker loop. */
+  flames: { mesh: THREE.Mesh; baseScale: number; phase: number }[];
+  /** Emissive materials to pulse. */
+  glowMats: THREE.MeshStandardMaterial[];
+}
+
+/**
+ * A ring of fire encircling the track at the piece midpoint — the car drives
+ * straight through the hole. Returns the group plus handles the renderer
+ * animates each frame (flickering flames + pulsing glow). Purely decorative.
+ */
+export function buildRingOfFire(path: PathFn, entry: GridState): FireRingHandle {
+  const { pos, tang, up } = frameAt(path, entry, 0.5);
+  const group = new THREE.Group();
+  const flames: FireRingHandle['flames'] = [];
+  const glowMats: THREE.MeshStandardMaterial[] = [];
+
+  const ringRadius = 0.52;   // clears the ~0.44-wide road + the car
+  const tubeRadius = 0.07;
+  // Centre the ring above the road so the hole surrounds the passing car.
+  const centre = pos.clone().addScaledVector(up, ringRadius - 0.04);
+
+  // Orient the torus so its hole axis points along the track tangent.
+  const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tang.clone().normalize());
+
+  // Charred ring body.
+  const ringMat = new THREE.MeshStandardMaterial({
+    color: COLORS.fireRing, metalness: 0.2, roughness: 0.8,
+    emissive: COLORS.fireFlameEm, emissiveIntensity: 0.4,
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(ringRadius, tubeRadius, 10, 36), ringMat);
+  ring.position.copy(centre);
+  ring.quaternion.copy(quat);
+  group.add(ring);
+  glowMats.push(ringMat);
+
+  // Flame tongues spaced around the ring, pointing radially outward and licking
+  // upward. Each gets a phase so they flicker out of sync.
+  const flameCount = 14;
+  // Two in-plane axes perpendicular to the tangent (the ring's own plane).
+  const planeX = new THREE.Vector3(1, 0, 0).applyQuaternion(quat).normalize();
+  const planeY = new THREE.Vector3(0, 1, 0).applyQuaternion(quat).normalize();
+  for (let i = 0; i < flameCount; i++) {
+    const ang = (i / flameCount) * Math.PI * 2;
+    const dir = planeX.clone().multiplyScalar(Math.cos(ang)).addScaledVector(planeY, Math.sin(ang)).normalize();
+    const hot = i % 3 === 0;
+    const flameMat = new THREE.MeshStandardMaterial({
+      color: hot ? COLORS.fireFlameHot : COLORS.fireFlame,
+      emissive: hot ? COLORS.fireFlameHot : COLORS.fireFlameEm,
+      emissiveIntensity: 1.0,
+      transparent: true,
+      opacity: 0.92,
+      roughness: 0.6,
+    });
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.28, 6), flameMat);
+    // Base of the cone sits on the ring; tip licks outward + up.
+    const lickDir = dir.clone().addScaledVector(up, 0.55).normalize();
+    flame.position.copy(centre).addScaledVector(dir, ringRadius);
+    flame.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), lickDir);
+    group.add(flame);
+    flames.push({ mesh: flame, baseScale: 0.8 + Math.random() * 0.5, phase: Math.random() * Math.PI * 2 });
+    glowMats.push(flameMat);
+  }
+
+  return { group, flames, glowMats };
+}
+
 // ---------- Public dispatcher ----------
 
 export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): THREE.Group {
@@ -384,6 +519,16 @@ export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): TH
   if (piece.id === 'FINISH') return buildFinishPiece(path, entry);
   if (piece.id === 'JUMP') return buildJumpPiece(path, entry);
   if (piece.id === 'GIANT_JUMP') return buildGiantJumpPiece(path, entry);
+  if (piece.id === 'WALL') return buildWallPiece(path, entry);
+  if (piece.id === 'STEEP_RAMP_UP' || piece.id === 'STEEP_RAMP_DN') {
+    return buildRailedTrack(path, entry, COLORS.trackOrangeBright, { segments: 40 });
+  }
+  if (piece.id === 'WIDE_L_2' || piece.id === 'WIDE_R_2') {
+    return buildRailedTrack(path, entry, COLORS.trackOrange, { segments: 48 });
+  }
+  if (piece.id === 'WIDE_L_3' || piece.id === 'WIDE_R_3') {
+    return buildRailedTrack(path, entry, COLORS.trackOrange, { segments: 64 });
+  }
   if (piece.id === 'SPIRAL') {
     return buildRailedTrack(path, entry, COLORS.trackBlue, {
       emissive: COLORS.trackBlue,
