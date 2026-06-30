@@ -7,15 +7,17 @@ import assert from 'node:assert/strict';
 import {
   pathSteepRampUp, pathSteepRampDown, pathRampUp,
   pathWideR2, pathWideL2, pathWideR3, pathWideL3, pathTopHat,
+  pathChicaneR, pathChicaneL,
+  pathSwitchbackR, pathSwitchbackL,
 } from '../src/pieces/paths.js';
-import { PIECES, canDecorate } from '../src/pieces/definitions.js';
+import { PIECES, PALETTE_GROUPS, canDecorate } from '../src/pieces/definitions.js';
 import { applyPiece, localToWorld } from '../src/pieces/geometry.js';
 import { trackFrames } from '../src/pieces/frames.js';
 import { resolvePathLocal } from '../src/pieces/resolve.js';
 import { Track } from '../src/track.js';
 import { Simulator } from '../src/physics.js';
 import { computeScore, designScore } from '../src/scoring.js';
-import { WALL_SMASH_V2, G } from '../src/constants.js';
+import { WALL_SMASH_V2, CRUMBLE_BRIDGE_V2, G } from '../src/constants.js';
 import type { GridState, PieceId } from '../src/types.js';
 
 // --- Steep ramps --------------------------------------------------------------
@@ -342,4 +344,152 @@ test('Top Hat keeps the car upright (never inverts) and demands real entry speed
   assert.ok(minUpZ > 0, `car should never invert (up.z stays > 0); got ${minUpZ.toFixed(3)}`);
   // Tall climb -> a much higher gate than a single ramp.
   assert.ok(PIECES.TOP_HAT.minV2 > 2 * PIECES.RAMP_UP.minV2, 'top hat needs a tall drop or a booster');
+});
+
+
+// --- Banked turns -------------------------------------------------------------
+
+test('banked turns share the standard curve footprint but are not overspeed-gated', () => {
+  const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 };
+  // Same grid transition as the tight curve (forward 1, ±90°).
+  assert.deepEqual(applyPiece(start, PIECES.BANK_R), applyPiece(start, PIECES.CURVE_R));
+  assert.deepEqual(applyPiece(start, PIECES.BANK_L), applyPiece(start, PIECES.CURVE_L));
+  // No overspeed gate (the lean lets you take them flat out).
+  assert.equal(PIECES.BANK_R.minV2, 0);
+  assert.equal(PIECES.BANK_L.minV2, 0);
+});
+
+test('banked turns lean into the turn (road rolls toward the inside)', () => {
+  const entry: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 }; // East
+  // BANK_R curves toward +y (inside +y) → the road's up should tilt toward +y.
+  const fr = trackFrames(PIECES.BANK_R.pathLocal, entry, 80);
+  const mid = fr[Math.floor(fr.length / 2)];
+  assert.ok(mid.up.y > 0.1, `banked-right up should lean toward +y, got ${mid.up.y.toFixed(2)}`);
+  assert.ok(mid.up.z > 0.5, 'still mostly upright');
+  // BANK_L leans the other way.
+  const frL = trackFrames(PIECES.BANK_L.pathLocal, entry, 80);
+  assert.ok(frL[Math.floor(frL.length / 2)].up.y < -0.1, 'banked-left leans toward -y');
+  // Level at the seams so it joins flat track cleanly.
+  assert.ok(Math.abs(fr[0].up.z - 1) < 1e-6 && Math.abs(fr[fr.length - 1].up.z - 1) < 1e-6);
+});
+
+test('a banked turn survives booster-level speed that throws a normal curve off', () => {
+  const bank = new Track(); bank.dropHeight = 6;
+  ['STRAIGHT', 'BOOSTER', 'BANK_R', 'FINISH'].forEach((id) => bank.addPiece(id));
+  const sb = new Simulator(bank); let n = 0;
+  while (sb.isRunning() && n++ < 40000) sb.step(1 / 240);
+  assert.ok(!sb.failed, `banked turn should hold at speed: ${sb.failReason}`);
+  // The same speed flings a standard curve off (overspeed).
+  const curve = new Track(); curve.dropHeight = 6;
+  ['STRAIGHT', 'BOOSTER', 'CURVE_R', 'FINISH'].forEach((id) => curve.addPiece(id));
+  const sc = new Simulator(curve); let m = 0;
+  while (sc.isRunning() && m++ < 40000) sc.step(1 / 240);
+  assert.equal(sc.failType, 'overspeed_corner', 'a normal curve should overspeed at this speed');
+});
+
+// --- Chicane / S-bend ---------------------------------------------------------
+
+test('chicane shifts one lane sideways and keeps the same heading', () => {
+  for (const [fn, sign] of [[pathChicaneR, 1], [pathChicaneL, -1]] as const) {
+    const s = fn(0), e = fn(1);
+    assert.ok(Math.abs(s.lx) < 1e-9 && Math.abs(s.ly) < 1e-9, 'starts at origin');
+    assert.ok(Math.abs(e.lx - 2) < 1e-6 && Math.abs(e.ly - sign) < 1e-6, `ends 2 forward, ${sign} sideways`);
+    // Heading is +x at both ends (lateral slope ~0 at the seams).
+    assert.ok(Math.abs(fn(0.001).ly - fn(0).ly) < 1e-3, 'enters heading +x');
+    assert.ok(Math.abs(fn(1).ly - fn(0.999).ly) < 1e-3, 'exits heading +x');
+  }
+  // Grid: shifts to the proper lane and keeps the heading.
+  const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 };
+  assert.deepEqual(applyPiece(start, PIECES.CHICANE_R), { gx: 2, gy: 1, gz: 0, dir: 1 });
+  assert.deepEqual(applyPiece(start, PIECES.CHICANE_L), { gx: 2, gy: -1, gz: 0, dir: 1 });
+});
+
+// --- Launchpad ----------------------------------------------------------------
+
+test('launchpad climbs and boosts harder than a booster, lifting a slow car', () => {
+  assert.equal(PIECES.LAUNCHPAD.dz, 2, 'climbs 2 units');
+  assert.ok(PIECES.LAUNCHPAD.boostEnergy > PIECES.BOOSTER.boostEnergy, 'stronger than a booster');
+  // Even from a tiny drop, the boost flings the car up and over the climb.
+  const t = new Track(); t.dropHeight = 1;
+  ['STRAIGHT', 'LAUNCHPAD', 'STRAIGHT', 'FINISH'].forEach((id) => assert.ok(t.addPiece(id)));
+  const sim = new Simulator(t); let n = 0;
+  while (sim.isRunning() && n++ < 40000) sim.step(1 / 240);
+  assert.ok(!sim.failed && sim.finished, `launchpad should fling the car up: ${sim.failReason}`);
+});
+
+// --- Crumbling bridge ---------------------------------------------------------
+
+function crumbleRun(drop: number): Simulator {
+  const t = new Track(); t.dropHeight = drop;
+  ['STRAIGHT', 'CRUMBLE_BRIDGE', 'STRAIGHT', 'FINISH'].forEach((id) => t.addPiece(id));
+  const sim = new Simulator(t); let n = 0;
+  while (sim.isRunning() && n++ < 40000) sim.step(1 / 240);
+  return sim;
+}
+
+test('crumbling bridge: cross fast enough and it holds (recording the crossing)', () => {
+  const sim = crumbleRun(3); // v2 = 58.8 > gate
+  assert.ok(!sim.failed && sim.finished, `should cross: ${sim.failReason}`);
+  assert.deepEqual(sim.crossedBridges, [1], 'records the crossed bridge for the crumble effect');
+});
+
+test('crumbling bridge: too slow and it gives way (collapse, game over)', () => {
+  const sim = crumbleRun(1); // v2 = 19.6 < gate
+  assert.ok(sim.failed);
+  assert.equal(sim.failType, 'collapse');
+  assert.equal(sim.crossedBridges.length, 0, 'nothing recorded when it collapses');
+});
+
+test('CRUMBLE_BRIDGE_V2 gate sits between a low and a moderate drop', () => {
+  assert.ok(2 * G * 1 < CRUMBLE_BRIDGE_V2, 'drop 1 is below the gate');
+  assert.ok(2 * G * 3 > CRUMBLE_BRIDGE_V2, 'drop 3 is above the gate');
+});
+
+// --- Zig-zag switchback ramp --------------------------------------------------
+
+test('switchback climbs while reversing, exiting two lanes over and 2 higher', () => {
+  for (const [fn, sign] of [[pathSwitchbackR, 1], [pathSwitchbackL, -1]] as const) {
+    const s = fn(0), e = fn(1);
+    assert.ok(Math.abs(s.lx) < 1e-9 && Math.abs(s.ly) < 1e-9 && Math.abs(s.lz) < 1e-9, 'starts at origin');
+    assert.ok(Math.abs(e.lx) < 1e-6 && Math.abs(e.ly - sign * 2) < 1e-6 && Math.abs(e.lz - 2) < 1e-6,
+      `ends reversed at (0, ${sign * 2}, 2), got (${e.lx},${e.ly},${e.lz})`);
+  }
+  // Grid: from East, exits West (dir 3), 2 lanes over and 2 up.
+  const start: GridState = { gx: 0, gy: 0, gz: 0, dir: 1 };
+  const exR = applyPiece(start, PIECES.SWITCHBACK_R);
+  assert.deepEqual({ gx: exR.gx, gy: exR.gy, gz: exR.gz, dir: exR.dir }, { gx: -1, gy: 2, gz: 2, dir: 3 });
+});
+
+test('switchback stays upright, is speed-gated, and places after an approach', () => {
+  let minUpZ = 1;
+  for (const f of trackFrames(PIECES.SWITCHBACK_R.pathLocal, { gx: 0, gy: 0, gz: 0, dir: 1 }, 200)) {
+    assert.ok(Number.isFinite(f.up.x + f.up.y + f.up.z));
+    minUpZ = Math.min(minUpZ, f.up.z);
+  }
+  assert.ok(minUpZ > 0.4, `switchback should stay upright, got ${minUpZ.toFixed(3)}`);
+  assert.ok(PIECES.SWITCHBACK_R.minV2 > 0, 'climbing switchback needs entry speed');
+  // Placeable after a straight approach — the offset lane avoids self-overlap.
+  const t = new Track();
+  ['STRAIGHT', 'STRAIGHT', 'SWITCHBACK_R', 'STRAIGHT', 'FINISH'].forEach(
+    (id) => assert.ok(t.addPiece(id), `should place ${id}`),
+  );
+  // Two alternating switchbacks zig-zag up: net heading restored, climbed 4.
+  const z = new Track(); z.dropHeight = 6;
+  ['STRAIGHT', 'BOOSTER', 'SWITCHBACK_R', 'SWITCHBACK_L', 'FINISH'].forEach((id) => assert.ok(z.addPiece(id)));
+});
+
+// --- Palette organisation -----------------------------------------------------
+
+test('palette groups cover every non-meta piece exactly once (plus FINISH)', () => {
+  const grouped = PALETTE_GROUPS.flatMap((g) => g.ids);
+  // No duplicates.
+  assert.equal(new Set(grouped).size, grouped.length, 'no piece appears in two groups');
+  // Every catalogue piece except the hidden START is placed in a group.
+  const expected = (Object.keys(PIECES) as PieceId[]).filter((id) => !PIECES[id].hidden);
+  for (const id of expected) {
+    assert.ok(grouped.includes(id), `${id} should appear in a palette group`);
+  }
+  assert.equal(grouped.length, expected.length, 'no extra/missing ids in the groups');
+  // Every group has a non-empty label.
+  for (const g of PALETTE_GROUPS) assert.ok(g.label.length > 0 && g.ids.length > 0);
 });

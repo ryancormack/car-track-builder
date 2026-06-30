@@ -1,6 +1,6 @@
 // editor.ts -- Build-mode UI: palette buttons, hover ghost preview, undo/clear.
 
-import { PIECES, PALETTE_ORDER, DECORATIONS, DECORATION_ORDER, canDecorate } from './pieces/index.js';
+import { PIECES, PALETTE_GROUPS, DECORATIONS, DECORATION_ORDER, canDecorate } from './pieces/index.js';
 import type { Track } from './track.js';
 import type { Renderer } from './renderer/index.js';
 import type { DecorationId, PieceId } from './types.js';
@@ -54,25 +54,32 @@ export class Editor {
   private _build(): void {
     this.paletteEl.innerHTML = '';
     this.buttons = [];
-    for (const id of PALETTE_ORDER) {
-      const piece = PIECES[id];
-      if (!piece || piece.hidden) continue;
-
-      const btn = document.createElement('button');
-      btn.className = 'piece-btn';
-      if (piece.featured) btn.classList.add('featured');
-      if (piece.boost) btn.classList.add('boost');
-      btn.dataset.pieceId = id;
-      btn.innerHTML = `
-        <span class="icon">${piece.icon}</span>
-        <span class="label">${piece.name}</span>
-      `;
-
-      btn.addEventListener('mouseenter', () => this._hover(id));
-      btn.addEventListener('mouseleave', () => this._unhover());
-      btn.addEventListener('click', () => this._add(id));
-      this.paletteEl.appendChild(btn);
-      this.buttons.push(btn);
+    // Render the palette grouped into labelled sections so the catalogue is easy
+    // to scan.
+    for (const group of PALETTE_GROUPS) {
+      const visible = group.ids.filter((id) => PIECES[id] && !PIECES[id].hidden);
+      if (visible.length === 0) continue;
+      const sep = document.createElement('div');
+      sep.className = 'palette-sep';
+      sep.textContent = group.label;
+      this.paletteEl.appendChild(sep);
+      for (const id of visible) {
+        const piece = PIECES[id];
+        const btn = document.createElement('button');
+        btn.className = 'piece-btn';
+        if (piece.featured) btn.classList.add('featured');
+        if (piece.boost) btn.classList.add('boost');
+        btn.dataset.pieceId = id;
+        btn.innerHTML = `
+          <span class="icon">${piece.icon}</span>
+          <span class="label">${piece.name}</span>
+        `;
+        btn.addEventListener('mouseenter', () => this._hover(id));
+        btn.addEventListener('mouseleave', () => this._unhover());
+        btn.addEventListener('click', () => this._add(id));
+        this.paletteEl.appendChild(btn);
+        this.buttons.push(btn);
+      }
     }
 
     // Decoration buttons (e.g. Ring of Fire). These attach to the SELECTED piece

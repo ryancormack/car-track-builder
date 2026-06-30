@@ -354,6 +354,11 @@ export class Renderer implements CameraControlHost {
         duration = 1.4;
         velocity = new THREE.Vector3(0, 0, 0);
         break;
+      case 'collapse':
+        // Bridge gave way: the car drops straight down.
+        duration = 1.6;
+        velocity = new THREE.Vector3(0, -1.5, 0);
+        break;
       default: // stall, speed_gate
         duration = 1.0;
         velocity = new THREE.Vector3(0, 0.5, 0);
@@ -448,6 +453,13 @@ export class Renderer implements CameraControlHost {
         if (progress >= 0.5) this.car.visible = false;
         break;
       }
+      case 'collapse': {
+        // Fall with the bridge: accelerate downward and tumble.
+        w.velocity.y -= 9.8 * dt;
+        this.car.position.add(w.velocity.clone().multiplyScalar(dt));
+        this.car.rotateZ(dt * 3);
+        break;
+      }
       default: {
         // stall / speed_gate: small bounce up then settle
         const bounceHeight = Math.sin(progress * Math.PI) * 0.3;
@@ -507,6 +519,32 @@ export class Renderer implements CameraControlHost {
       upBias: 1.6,
       duration: 1.3,
       gravity: 9.8,
+      fade: true,
+    });
+  }
+
+  /**
+   * Collapse the crumbling bridge on piece `index`: hide its plank deck and
+   * shower wooden debris that tumbles downward. Used both when the car crosses
+   * it (planks fall behind) and when it gives way under a too-slow car.
+   */
+  crumbleBridge(index: number): void {
+    const group = this.trackGroup.children[index];
+    if (!group) return;
+    const deck = group.getObjectByName('bridge');
+    if (!deck || !deck.visible) return;
+    deck.visible = false;
+    const centre = (deck.userData.bridgeCenter as THREE.Vector3 | undefined)?.clone()
+      ?? group.position.clone();
+    this._spawnBurst(centre, {
+      count: 20,
+      color: COLORS.bridgeDebris,
+      emissive: COLORS.bridgePlankEm,
+      size: 0.1,
+      speed: 1.8,
+      upBias: 0.1,   // mostly sideways/down — planks drop, not fly up
+      duration: 1.6,
+      gravity: 11,
       fade: true,
     });
   }

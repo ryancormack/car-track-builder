@@ -349,6 +349,11 @@ function frame(now: number): void {
       for (const idx of sim.smashedWalls) renderer.smashWall(idx);
       sim.smashedWalls.length = 0;
     }
+    // Drain any crumbling bridges the car crossed and collapse them behind it.
+    if (sim.crossedBridges.length) {
+      for (const idx of sim.crossedBridges) renderer.crumbleBridge(idx);
+      sim.crossedBridges.length = 0;
+    }
     if (sim.isRunning()) {
       const subSteps = 4;
       const sdt = (dt * SPEED_SCALE) / subSteps;
@@ -381,6 +386,8 @@ function frame(now: number): void {
     } else if (!runResult) {
       const s = sim;
       if (s.failed) {
+        // A collapsing bridge gives way visibly as the car drops.
+        if (s.failType === 'collapse' && s.failPieceIndex >= 0) renderer.crumbleBridge(s.failPieceIndex);
         renderer.startWipeoutAnimation(s.failType, s.carSample());
         wipeoutPlaying = true;
       } else {

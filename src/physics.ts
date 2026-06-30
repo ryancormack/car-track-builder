@@ -11,7 +11,7 @@
 import { PIECES, trackFrameAt, resolvePathLocal } from './pieces/index.js';
 import {
   G, FRICTION, RAMP_FRICTION_MULT, DRAG,
-  CORNER_MAX_V2, STALL_SPEED, LOOP_RADIUS, GIANT_LOOP_RADIUS, WALL_SMASH_V2,
+  CORNER_MAX_V2, STALL_SPEED, LOOP_RADIUS, GIANT_LOOP_RADIUS, WALL_SMASH_V2, CRUMBLE_BRIDGE_V2,
 } from './constants.js';
 import type { Track } from './track.js';
 import type { TrackFrame } from './pieces/frames.js';
@@ -25,7 +25,7 @@ export { G, FRICTION, RAMP_FRICTION_MULT, DRAG };
 const ROLLBACK_EPS = 0.5; // how far below "energy to crest" counts as doomed
 const CONTACT_EPS = 0.25; // how far below the loop contact threshold counts as a peel-off
 
-export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' | 'fly_off' | 'crash' | null;
+export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' | 'fly_off' | 'crash' | 'collapse' | null;
 
 // Pieces that carry a graded surface (a non-trivial up/down slope) and so pay
 // the steeper-grade friction surcharge: the ramps plus every coil. Loops, jumps
@@ -35,6 +35,7 @@ export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' 
 export function isRampGrade(id: string): boolean {
   return id === 'RAMP_UP' || id === 'RAMP_DN' || id === 'STEEP_HILL'
     || id === 'STEEP_RAMP_UP' || id === 'STEEP_RAMP_DN' || id === 'TOP_HAT'
+    || id === 'SWITCHBACK_L' || id === 'SWITCHBACK_R' || id === 'LAUNCHPAD'
     || id === 'HELIX_UP' || id === 'HELIX_DN' || id === 'SPIRAL' || id === 'SPIRAL_TOWER';
 }
 
@@ -42,7 +43,8 @@ export function isRampGrade(id: string): boolean {
 // or coiling around). These are the only pieces where running out of speed
 // means rolling back down rather than peeling off or stalling.
 export function isHill(id: string): boolean {
-  return id === 'RAMP_UP' || id === 'STEEP_RAMP_UP' || id === 'STEEP_HILL' || id === 'HELIX_UP' || id === 'TOP_HAT';
+  return id === 'RAMP_UP' || id === 'STEEP_RAMP_UP' || id === 'STEEP_HILL' || id === 'HELIX_UP'
+    || id === 'TOP_HAT' || id === 'SWITCHBACK_L' || id === 'SWITCHBACK_R';
 }
 
 export class Simulator {
@@ -65,6 +67,11 @@ export class Simulator {
    * wall mesh. A list (not a flag) so a track with multiple walls is handled.
    */
   smashedWalls: number[] = [];
+  /**
+   * Indices of CRUMBLE_BRIDGE pieces the car has crossed (entered fast enough).
+   * Drained by main.ts to crumble the planks behind the car.
+   */
+  crossedBridges: number[] = [];
   private _enteredPiece = -1; // last piece index where we ran the entry check
   private _resolvedPath: PathFn | null = null;
 
@@ -87,6 +94,7 @@ export class Simulator {
     this.finished = false;
     this.elapsed = 0;
     this.smashedWalls = [];
+    this.crossedBridges = [];
     this._enteredPiece = -1;
     // Eagerly initialize the resolved path so the hot loop never hits a null.
     this._resolvedPath = this.track.pieces.length > 0
@@ -127,6 +135,19 @@ export class Simulator {
         }
         // Smashed through: record it so the renderer can shatter the barrier.
         this.smashedWalls.push(this.pieceIndex);
+      }
+
+      // Crumbling bridge: cross fast enough or it gives way and the car falls.
+      if (pieceId === 'CRUMBLE_BRIDGE') {
+        if (this.v2 < CRUMBLE_BRIDGE_V2) {
+          this.failed = true;
+          this.failReason = 'Too slow — the bridge gave way and the car fell!';
+          this.failType = 'collapse';
+          this.failPieceIndex = this.pieceIndex;
+          return;
+        }
+        // Made it: record it so the planks crumble behind the car.
+        this.crossedBridges.push(this.pieceIndex);
       }
 
       if (piece.minV2 > 0 && this.v2 < piece.minV2) {
