@@ -127,14 +127,17 @@ export const PIECES: Record<PieceId, Piece> = {
   CURVE_L: {
     id: 'CURVE_L', name: 'Turn Left', icon: '↰', category: 'turn',
     forward: 1, turn: -1, dz: 0,
-    pathLen: 1.2, excitement: 2, minV2: 0, boostEnergy: 0,
+    // Quarter circle of radius CURVE_RADIUS (0.5): arc = 0.5·π/2 ≈ 0.785. (The
+    // old 1.2 made the car crawl through corners — pathLen drives the t-advance
+    // and friction toll, so an overstated length slows traversal and over-brakes.)
+    pathLen: 0.79, excitement: 2, minV2: 0, boostEnergy: 0,
     color: '#ff7a1a',
     pathLocal: pathCurveL,
   },
   CURVE_R: {
     id: 'CURVE_R', name: 'Turn Right', icon: '↱', category: 'turn',
     forward: 1, turn: 1, dz: 0,
-    pathLen: 1.2, excitement: 2, minV2: 0, boostEnergy: 0,
+    pathLen: 0.79, excitement: 2, minV2: 0, boostEnergy: 0,
     color: '#ff7a1a',
     pathLocal: pathCurveR,
   },
