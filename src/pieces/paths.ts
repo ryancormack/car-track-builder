@@ -156,17 +156,19 @@ export const pathCrumbleBridge: PathFn = (t) => ({ lx: 2 * t, ly: 0, lz: 0, bank
 // turn=2, sideAdvance=±2, dz=2.
 export function makeSwitchbackPath(sign: number): PathFn {
   const R = 1, dz = 2;
-  const SB_BANK = 0.4; // lean into the U-turn (eased to level at the seams)
   return (t) => {
     const phi = Math.PI * t;
     return {
       lx: R * Math.sin(phi),
       ly: sign * R * (1 - Math.cos(phi)),
-      lz: dz * t,
-      // Lean into the U-turn (same convention as the banked turns: a right/+y
-      // turn rolls toward +y via a negative angle). 0 at both seams. Verified to
-      // tilt toward the turn centre.
-      banking: -sign * SB_BANK * Math.sin(Math.PI * t),
+      // Ease the climb at both seams (easedProgress) so the ramp glides out of
+      // and back into flat track — and stacks cleanly with the next switchback —
+      // instead of kinking sharply upward right at the join. Total rise is still
+      // dz; only the grade at the ends is flattened.
+      lz: dz * easedProgress(t),
+      // Level road (no roll): a clean, upright parking-ramp hairpin. Rolling the
+      // tight climbing turn looked twisted, so the switchback now rides flat.
+      banking: 0,
     };
   };
 }
@@ -184,34 +186,50 @@ export const pathWall: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 // air, then descends a parallel leg, exiting in the OPPOSITE direction one lane
 // over (so the return track runs beside the approach instead of on top of it).
 //
-// Built planar-ish in three phases, all with banking 0 so the car stays upright
+// Built planar-ish in five phases, all with banking 0 so the car stays upright
 // (the reversal is a horizontal U-turn at the top, not a vertical loop):
-//   • up-ramp   : (0,0,0) climbs to (D, 0, H), easing to horizontal at the top;
-//   • U-turn    : a flat semicircle (radius R) at height H, from (D,0,H) heading
-//                 +x round to (D, 2R, H) heading -x;
-//   • down-ramp : descends from (D, 2R, H) back to (0, 2R, 0) heading -x.
+//   • lead-in   : a short flat run along +x, so the steep leg rises OUT of flat
+//                 track (the base curves up smoothly instead of kinking — the
+//                 same trick the loop/helix use at their seams);
+//   • up-ramp   : steep climb to the apex, eased to horizontal at the top;
+//   • U-turn    : a flat semicircle (radius R) at height H, reversing heading;
+//   • down-ramp : the mirror descent in the parallel (ly = 2R) lane;
+//   • lead-out  : a short flat run to the exit corner.
 // Endpoints: t=0 → (0,0,0) heading +x; t=1 → (0, 2R, 0) heading -x. Paired with
 // turn=2 (180°) and sideAdvance=2R in the catalogue so the exit connects.
 const TOP_HAT_HEIGHT = 4;     // apex height (grid units) — a tall tower
 const TOP_HAT_RUN = 1.2;      // horizontal run of each steep leg
 const TOP_HAT_RADIUS = 1;     // U-turn radius (lateral offset = 2R = 2 cells)
+const TOP_HAT_LEAD = 0.35;    // short flat lead-in / lead-out for a smooth join
 export const pathTopHat: PathFn = (t) => {
-  const H = TOP_HAT_HEIGHT, D = TOP_HAT_RUN, R = TOP_HAT_RADIUS;
-  const upEnd = 0.32, dnStart = 0.68;
-  if (t < upEnd) {
-    // Up-ramp: steep climb, eased to level at the top so it meets the U-turn.
-    const u = t / upEnd;
-    return { lx: D * u, ly: 0, lz: H * easedProgress(u), banking: 0 };
+  const H = TOP_HAT_HEIGHT, D = TOP_HAT_RUN, R = TOP_HAT_RADIUS, L = TOP_HAT_LEAD;
+  // Phase boundaries in t (lead-in / up-leg / U-turn / down-leg / lead-out).
+  const p0 = 0.08, p1 = 0.34, p2 = 0.66, p3 = 0.92;
+  if (t < p0) {
+    // Flat lead-in along +x.
+    const u = t / p0;
+    return { lx: L * u, ly: 0, lz: 0, banking: 0 };
   }
-  if (t > dnStart) {
+  if (t < p1) {
+    // Up-ramp: steep climb, eased to level at the top so it meets the U-turn,
+    // and eased at the bottom so it lifts smoothly off the lead-in.
+    const u = (t - p0) / (p1 - p0);
+    return { lx: L + D * u, ly: 0, lz: H * easedProgress(u), banking: 0 };
+  }
+  if (t < p2) {
+    // Flat 180° U-turn at the apex.
+    const u = (t - p1) / (p2 - p1);
+    const phi = Math.PI * u;
+    return { lx: L + D + R * Math.sin(phi), ly: R * (1 - Math.cos(phi)), lz: H, banking: 0 };
+  }
+  if (t < p3) {
     // Down-ramp: mirror of the up-ramp in the parallel (ly = 2R) lane.
-    const u = (t - dnStart) / (1 - dnStart);
-    return { lx: D * (1 - u), ly: 2 * R, lz: H * (1 - easedProgress(u)), banking: 0 };
+    const u = (t - p2) / (p3 - p2);
+    return { lx: L + D * (1 - u), ly: 2 * R, lz: H * (1 - easedProgress(u)), banking: 0 };
   }
-  // Flat 180° U-turn at the apex.
-  const u = (t - upEnd) / (dnStart - upEnd);
-  const phi = Math.PI * u;
-  return { lx: D + R * Math.sin(phi), ly: R * (1 - Math.cos(phi)), lz: H, banking: 0 };
+  // Flat lead-out back to the exit corner, heading -x.
+  const u = (t - p3) / (1 - p3);
+  return { lx: L * (1 - u), ly: 2 * R, lz: 0, banking: 0 };
 };
 
 export const pathLoop: PathFn = (t) => {
