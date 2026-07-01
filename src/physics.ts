@@ -16,6 +16,7 @@ import {
 import type { Track } from './track.js';
 import type { TrackFrame } from './pieces/frames.js';
 import type { PathFn } from './types.js';
+import { BASELINE_PHYSICS, type VehiclePhysics } from './vehicles.js';
 
 // Re-exported for convenience (and backwards compatibility for importers/tests).
 export { G, FRICTION, RAMP_FRICTION_MULT, DRAG };
@@ -49,6 +50,14 @@ export function isHill(id: string): boolean {
 
 export class Simulator {
   track: Track;
+  /**
+   * The handling profile of the chosen vehicle. Its multipliers scale the
+   * global physics constants: lower `drag`/`friction` → keeps speed better,
+   * higher `corner` → can take a curve faster before flying off. Defaults to
+   * the neutral baseline (all 1.0) so a Simulator created without a vehicle
+   * behaves exactly as before.
+   */
+  vehicle: VehiclePhysics;
   pieceIndex = 0;
   t = 0;
   v2 = 0;
@@ -75,8 +84,9 @@ export class Simulator {
   private _enteredPiece = -1; // last piece index where we ran the entry check
   private _resolvedPath: PathFn | null = null;
 
-  constructor(track: Track) {
+  constructor(track: Track, vehicle: VehiclePhysics = BASELINE_PHYSICS) {
     this.track = track;
+    this.vehicle = vehicle;
     this.reset();
   }
 
@@ -157,7 +167,7 @@ export class Simulator {
         this.failPieceIndex = this.pieceIndex;
         return;
       }
-      if ((pieceId === 'CURVE_L' || pieceId === 'CURVE_R') && this.v2 > CORNER_MAX_V2) {
+      if ((pieceId === 'CURVE_L' || pieceId === 'CURVE_R') && this.v2 > CORNER_MAX_V2 * this.vehicle.corner) {
         this.failed = true;
         this.failReason = 'Too fast for the corner! The car flew off the edge!';
         this.failType = 'overspeed_corner';
@@ -212,7 +222,9 @@ export class Simulator {
     const p2 = resolvedPath(t_new);
     const dh = p2.lz - p1.lz; // local altitude change (grid units)
 
-    this.v2 += -2 * G * dh - 2 * FRICTION * frictionMult * ds_actual - 2 * DRAG * this.v2 * ds_actual;
+    this.v2 += -2 * G * dh
+      - 2 * FRICTION * frictionMult * this.vehicle.friction * ds_actual
+      - 2 * DRAG * this.vehicle.drag * this.v2 * ds_actual;
 
     if (this.v2 < 0) this.v2 = 0;
 
@@ -280,7 +292,7 @@ export class Simulator {
       arc += Math.hypot(pt.lx - prev.lx, pt.ly - prev.ly, pt.lz - prev.lz);
       const climb = pt.lz - here.lz;
       if (climb > 0) {
-        const need = 2 * G * climb + 2 * FRICTION * frictionMult * arc;
+        const need = 2 * G * climb + 2 * FRICTION * frictionMult * this.vehicle.friction * arc;
         if (need > required) required = need;
       }
       prev = pt;

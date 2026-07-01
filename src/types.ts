@@ -186,6 +186,7 @@ export interface UIElements {
   drop: HTMLInputElement;
   dropVal: HTMLElement;
   palette: HTMLElement;
+  garage: HTMLElement;
   status: HTMLElement;
   btnUndo: HTMLElement;
   btnClear: HTMLElement;
