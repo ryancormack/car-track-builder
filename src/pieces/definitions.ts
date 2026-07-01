@@ -115,7 +115,7 @@ const TOP_HAT_MIN_V2 =
 // 180° U-turn (arc ~3.72). Derived like the other climbs — gravity to the top
 // plus friction along the way, with a margin.
 const SWITCHBACK_RISE = 2;
-const SWITCHBACK_LEN = 3.72;
+const SWITCHBACK_LEN = 3.84;
 const SWITCHBACK_MIN_V2 =
   2 * G * SWITCHBACK_RISE +
   2 * FRICTION * RAMP_FRICTION_MULT * SWITCHBACK_LEN +
@@ -245,14 +245,14 @@ export const PIECES: Record<PieceId, Piece> = {
     // Climbs 2 while doing a flat 180° U-turn to the left, exiting two lanes
     // over and reversed. Stack alternating L/R for a zig-zag climb.
     forward: 1, turn: 2, sideAdvance: -2, dz: 2,
-    pathLen: 3.72, excitement: 18, minV2: SWITCHBACK_MIN_V2, boostEnergy: 0,
+    pathLen: 3.84, excitement: 18, minV2: SWITCHBACK_MIN_V2, boostEnergy: 0,
     color: '#ff8c1a',
     pathLocal: pathSwitchbackL,
   },
   SWITCHBACK_R: {
     id: 'SWITCHBACK_R', name: 'Switchback Right', icon: '⮎', category: 'elev', featured: true,
     forward: 1, turn: 2, sideAdvance: 2, dz: 2,
-    pathLen: 3.72, excitement: 18, minV2: SWITCHBACK_MIN_V2, boostEnergy: 0,
+    pathLen: 3.84, excitement: 18, minV2: SWITCHBACK_MIN_V2, boostEnergy: 0,
     color: '#ff8c1a',
     pathLocal: pathSwitchbackR,
   },
@@ -325,7 +325,7 @@ export const PIECES: Record<PieceId, Piece> = {
     // Doubles back: 180° U-turn high in the air, exiting one lane over (turn=2 +
     // sideAdvance=2). A tall climb, so it needs real entry speed.
     forward: 1, entryAdvance: 0, sideAdvance: 2, turn: 2, dz: 0,
-    pathLen: 11.74, excitement: 34, minV2: TOP_HAT_MIN_V2, boostEnergy: 0,
+    pathLen: 12.44, excitement: 34, minV2: TOP_HAT_MIN_V2, boostEnergy: 0,
     color: '#ff7a1a',
     pathLocal: pathTopHat,
   },

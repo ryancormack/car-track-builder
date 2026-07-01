@@ -220,11 +220,11 @@ body {
   background: linear-gradient(180deg, var(--panel-1), var(--panel-2));
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 12px;
   box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .panel-title {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 2.5px;
@@ -402,20 +402,25 @@ body {
 .piece-btn.deco.deco-active .label { color: #ffd9a0; }
 
 /* ---- Garage (vehicle picker) ---- */
+/* A compact single-row strip so the Track Pieces palette below keeps the bulk
+   of the sidebar height (pieces are the primary tool). Buttons flex to share
+   the width and wrap gracefully on very narrow layouts. */
 .garage {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 9px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .veh-btn {
+  flex: 1 1 42px;
+  min-width: 42px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   background: linear-gradient(180deg, #16294a, #0f1d34);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 10px 4px;
+  padding: 7px 2px;
   cursor: pointer;
   color: var(--text);
   transition: transform 0.12s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
@@ -429,16 +434,19 @@ body {
 .veh-btn:active { transform: translateY(0); }
 .veh-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .veh-btn .icon {
-  font-size: 22px;
+  font-size: 19px;
   line-height: 1;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
 }
 .veh-btn .label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+  font-size: 8px;
+  letter-spacing: 0.2px;
   font-weight: 700;
   color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .veh-btn.selected {
   border-color: var(--cyan);
