@@ -519,3 +519,70 @@ test('palette groups cover every non-meta piece exactly once (plus FINISH)', () 
   // Every group has a non-empty label.
   for (const g of PALETTE_GROUPS) assert.ok(g.label.length > 0 && g.ids.length > 0);
 });
+
+
+// --- Elevation piece smoothness (no kinks at the seams) ----------------------
+// Every elevation-changing piece should meet flat track — and its neighbours —
+// with matching tangents, so joining pieces never produces a visible crease.
+
+/** Local rise/run grade of a piece's default path at its entry and exit. */
+function endGrades(id: PieceId): { entry: number; exit: number } {
+  const p = PIECES[id].pathLocal;
+  const d = 1e-3;
+  const grade = (a: number, b: number): number => {
+    const pa = p(a), pb = p(b);
+    const run = Math.hypot(pb.lx - pa.lx, pb.ly - pa.ly);
+    return run > 1e-9 ? Math.abs(pb.lz - pa.lz) / run : 0;
+  };
+  return { entry: grade(0, d), exit: grade(1 - d, 1) };
+}
+
+/** World-tangent angle (degrees) between the end of piece i and the start of i+1. */
+function seamAngleDeg(pieces: PieceId[], i: number): number {
+  const track = new Track();
+  track.dropHeight = 6;
+  for (const id of pieces) assert.ok(track.addPiece(id), `should place ${id}`);
+  const fA = trackFrames(resolvePathLocal(track.pieces, i), track.entryStateAt(i), 160);
+  const fB = trackFrames(resolvePathLocal(track.pieces, i + 1), track.entryStateAt(i + 1), 160);
+  const a = fA[fA.length - 1].tangent;
+  const b = fB[0].tangent;
+  const dot = a.x * b.x + a.y * b.y + a.z * b.z;
+  return (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+}
+
+test('every elevation piece joins flat track level (near-zero grade at both ends)', () => {
+  const elevation: PieceId[] = [
+    'RAMP_UP', 'RAMP_DN', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN', 'STEEP_HILL',
+    'SWITCHBACK_L', 'SWITCHBACK_R', 'LAUNCHPAD', 'JUMP', 'GIANT_JUMP',
+  ];
+  for (const id of elevation) {
+    const g = endGrades(id);
+    assert.ok(g.entry < 0.1, `${id} entry grade should be ~0 to join flat track (got ${g.entry.toFixed(2)})`);
+    assert.ok(g.exit < 0.1, `${id} exit grade should be ~0 to join flat track (got ${g.exit.toFixed(2)})`);
+  }
+});
+
+test('the jump connects smoothly to steep ramps (the reported kink is gone)', () => {
+  const seq: PieceId[] = ['STRAIGHT', 'STEEP_RAMP_UP', 'JUMP', 'STEEP_RAMP_DN', 'STRAIGHT', 'FINISH'];
+  // Seam into the jump (index 1|2) and out of it (2|3) must be near-flat.
+  assert.ok(seamAngleDeg(seq, 1) < 3, 'steep ramp -> jump should be smooth');
+  assert.ok(seamAngleDeg(seq, 2) < 3, 'jump -> steep ramp should be smooth');
+});
+
+test('a jump and a steep hill join straight track without a kink', () => {
+  for (const id of ['JUMP', 'GIANT_JUMP', 'STEEP_HILL'] as PieceId[]) {
+    const seq: PieceId[] = ['STRAIGHT', id, 'STRAIGHT', 'FINISH'];
+    assert.ok(seamAngleDeg(seq, 0) < 3, `STRAIGHT -> ${id} should be smooth`);
+    assert.ok(seamAngleDeg(seq, 1) < 3, `${id} -> STRAIGHT should be smooth`);
+  }
+});
+
+test('multiple same-type ramps chain into one continuous ramp (matching tangents at joints)', () => {
+  for (const ramp of ['RAMP_UP', 'STEEP_RAMP_UP'] as PieceId[]) {
+    const seq: PieceId[] = ['STRAIGHT', ramp, ramp, ramp, 'STRAIGHT', 'FINISH'];
+    // The two internal ramp|ramp joints (indices 2 and 3) must be perfectly
+    // continuous — one straight incline, no flat-spot bump.
+    assert.ok(seamAngleDeg(seq, 2) < 1, `${ramp} chain joint 1 should be continuous`);
+    assert.ok(seamAngleDeg(seq, 3) < 1, `${ramp} chain joint 2 should be continuous`);
+  }
+});

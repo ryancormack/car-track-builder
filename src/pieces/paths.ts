@@ -361,13 +361,24 @@ export const pathCorkscrew: PathFn = (t) => {
   return { lx: 3 * t, ly: r * Math.sin(theta), lz: r * (1 - Math.cos(theta)), banking: theta };
 };
 
+// A symmetric "hump" profile that is FLAT (zero grade) at both ends and peaks at
+// the midpoint: sin²(πt) = ½(1 − cos 2πt). Used by the jumps and the steep hill
+// so they lift out of — and settle back into — flat/ramped track with no crease
+// at the seam, while still building a steep face toward the middle (a kicker
+// launch for jumps, a rounded crown for the hill). Contrast with a plain
+// sin(πt) arc, whose grade is STEEPEST exactly at the seams (the old kink).
+function smoothHump(t: number): number {
+  const s = Math.sin(Math.PI * t);
+  return s * s;
+}
+
 export const pathJump: PathFn = (t) => {
-  // Spans two cells (lx: 0 -> 2): a take-off ramp, an airborne ballistic arc
-  // over a one-cell gap, then a landing ramp. Net dz = 0. The renderer omits
-  // the track over the middle so the gap reads as empty space.
-  const lx = 2 * t;
-  const lz = 1.15 * Math.sin(Math.PI * t);
-  return { lx, ly: 0, lz, banking: 0 };
+  // Spans two cells (lx: 0 -> 2): a take-off ramp, an airborne arc over a
+  // one-cell gap, then a landing ramp. Net dz = 0. The renderer omits the track
+  // over the middle so the gap reads as empty space. The smoothHump profile
+  // eases the take-off/landing to level at the seams (so it joins straight track
+  // or a ramp with no kink) while still rearing up into a steep kicker at the lip.
+  return { lx: 2 * t, ly: 0, lz: 1.3 * smoothHump(t), banking: 0 };
 };
 
 // --- True helix construction (shared by spiral + helix + spiral tower) --------
@@ -420,8 +431,10 @@ export const pathSpiral: PathFn = (t) =>
   helixCoil(t, 2, SPIRAL_RADIUS, 1, -2);
 
 export const pathSteepHill: PathFn = (t) => {
-  // Steep symmetric hill: rises to 1.5 units at midpoint, returns to 0.
-  return { lx: 2 * t, ly: 0, lz: 1.5 * Math.sin(Math.PI * t), banking: 0 };
+  // Steep symmetric hill: rises to 1.5 units at the midpoint and returns to 0.
+  // Uses the smoothHump profile so it eases out of and back into flat track with
+  // no crease at the seams (a plain sine arc was steepest right at the joins).
+  return { lx: 2 * t, ly: 0, lz: 1.5 * smoothHump(t), banking: 0 };
 };
 
 export const pathHelixDown: PathFn = (t) =>
@@ -459,9 +472,9 @@ export const pathGiantLoop: PathFn = (t) => {
 };
 
 export const pathGiantJump: PathFn = (t) => {
-  // Giant jump: spans 3 cells (lx: 0->3) with a taller ballistic arc than the
-  // standard jump. The wider gap creates a more dramatic airborne section.
-  const lx = 3 * t;
-  const lz = 1.8 * Math.sin(Math.PI * t);
-  return { lx, ly: 0, lz, banking: 0 };
+  // Giant jump: spans 3 cells (lx: 0->3) with a taller arc than the standard
+  // jump — a more dramatic airborne section. Same smoothHump profile so the
+  // take-off/landing meet neighbouring track level (no kink) yet still kick up
+  // steeply at the lips.
+  return { lx: 3 * t, ly: 0, lz: 2.0 * smoothHump(t), banking: 0 };
 };
