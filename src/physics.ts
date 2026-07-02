@@ -193,7 +193,13 @@ export class Simulator {
     // out the instant it can no longer reach the next crest, rather than waiting
     // for a fixed low-speed threshold. This reports "rolled back" at the right
     // moment for any climb height instead of silently degrading into a stall.
-    if (isHill(pieceId) && this.v2 > 0.01 &&
+    //
+    // The Top Hat is deliberately EXCLUDED: it has no entry gate, so instead of
+    // predicting failure the instant the car arrives underpowered (which would
+    // freeze it at the base of the tower), we let it physically drive up the
+    // steep leg, shed speed to gravity, and coast to a stop where its momentum
+    // runs out — the near-stop check below then rolls it back down from there.
+    if (isHill(pieceId) && pieceId !== 'TOP_HAT' && this.v2 > 0.01 &&
         this.cannotReachCrest(resolvedPath, frictionMult)) {
       this.failed = true;
       this.failReason = 'Not enough speed! The car rolls back down the hill...';
@@ -202,9 +208,21 @@ export class Simulator {
       return;
     }
     if (v < STALL_SPEED) {
-      this.failed = true;
-      this.failReason = 'Car ran out of speed.';
-      this.failType = 'stall';
+      // Ran out of speed. If it happened on an uphill grade (e.g. partway up the
+      // Top Hat's tower) the car slides back down — a rollback; on flat or
+      // downhill track it's a plain stall. Probe the grade just ahead to tell
+      // the two apart so the right failure (and wipeout animation) is used.
+      const ahead = resolvedPath(Math.min(this.t + 0.02, 1));
+      const ascending = ahead.lz - resolvedPath(this.t).lz > 1e-3;
+      if (isHill(pieceId) && ascending) {
+        this.failed = true;
+        this.failReason = 'Not enough speed! The car rolls back down the hill...';
+        this.failType = 'rollback';
+      } else {
+        this.failed = true;
+        this.failReason = 'Car ran out of speed.';
+        this.failType = 'stall';
+      }
       this.failPieceIndex = this.pieceIndex;
       return;
     }

@@ -11,7 +11,7 @@ import {
   pathRampUp, pathRampDown, pathSteepRampUp, pathSteepRampDown,
   pathSwitchbackR, pathSwitchbackL, pathLaunchpad, pathCrumbleBridge,
   pathLoop, pathCorkscrew, pathJump, pathWall, pathTopHat,
-  TOP_HAT_LENGTH, TOP_HAT_CLIMB_LENGTH,
+  TOP_HAT_LENGTH,
   pathSpiral, pathSteepHill,
   pathHelixUp, pathHelixDown, pathSpiralTower,
   pathGiantLoop, pathGiantJump,
@@ -101,17 +101,12 @@ const GIANT_JUMP_MIN_V2 = 30;
 // (gravity assists).
 const SPIRAL_TOWER_LEN = 29.45;
 
-// Entry-speed gate for the Top Hat tower: the car must climb to the apex
-// (height 4) up the steep leg before the flat U-turn, so it needs a lot of
-// speed — a tall drop or a booster. Derived like the other climbs: gravity to
-// the apex plus friction along the climbing leg, with a safety margin. The
-// climb length is measured directly from the piece geometry (TOP_HAT_CLIMB_LENGTH)
-// so the gate tracks the shape automatically.
-const TOP_HAT_RISE = 4;
-const TOP_HAT_MIN_V2 =
-  2 * G * TOP_HAT_RISE +
-  2 * FRICTION * RAMP_FRICTION_MULT * TOP_HAT_CLIMB_LENGTH +
-  8;
+// The Top Hat has NO entry-speed gate (minV2 = 0). Unlike a loop, its apex is a
+// flat 180° U-turn with no centripetal requirement, so nothing physically has to
+// be satisfied on entry. Instead of gating (which would freeze an underpowered
+// car at the base), the simulator lets the car drive up the steep leg and roll
+// back down when it runs out of momentum — see the rollback handling in
+// physics.ts. A tall drop or a booster is still needed to actually clear it.
 
 // Entry-speed gate for the Switchback ramp: it climbs 2 units while doing a flat
 // 180° U-turn (arc ~3.72). Derived like the other climbs — gravity to the top
@@ -327,7 +322,7 @@ export const PIECES: Record<PieceId, Piece> = {
     // Doubles back: 180° U-turn high in the air, exiting one lane over (turn=2 +
     // sideAdvance=2). A tall climb, so it needs real entry speed.
     forward: 1, entryAdvance: 0, sideAdvance: 2, turn: 2, dz: 0,
-    pathLen: TOP_HAT_LENGTH, excitement: 34, minV2: TOP_HAT_MIN_V2, boostEnergy: 0,
+    pathLen: TOP_HAT_LENGTH, excitement: 34, minV2: 0, boostEnergy: 0,
     color: '#ff7a1a',
     pathLocal: pathTopHat,
   },
