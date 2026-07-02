@@ -298,7 +298,7 @@ export const PIECES: Record<PieceId, Piece> = {
   JUMP: {
     id: 'JUMP', name: 'Jump', icon: '⤴', category: 'stunt', featured: true,
     forward: 2, turn: 0, dz: 0,
-    pathLen: 3.0, excitement: 12, minV2: 18, boostEnergy: 0,
+    pathLen: 3.4, excitement: 12, minV2: 18, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathJump,
   },
@@ -341,7 +341,7 @@ export const PIECES: Record<PieceId, Piece> = {
   GIANT_JUMP: {
     id: 'GIANT_JUMP', name: 'Giant Jump', icon: '⤴', category: 'stunt', featured: true,
     forward: 3, turn: 0, dz: 0,
-    pathLen: 4.5, excitement: 20, minV2: GIANT_JUMP_MIN_V2, boostEnergy: 0,
+    pathLen: 5.18, excitement: 20, minV2: GIANT_JUMP_MIN_V2, boostEnergy: 0,
     color: '#ff9d3d',
     pathLocal: pathGiantJump,
   },
