@@ -198,39 +198,118 @@ export const pathWall: PathFn = (t) => ({ lx: t, ly: 0, lz: 0, banking: 0 });
 // Endpoints: t=0 → (0,0,0) heading +x; t=1 → (0, 2R, 0) heading -x. Paired with
 // turn=2 (180°) and sideAdvance=2R in the catalogue so the exit connects.
 const TOP_HAT_HEIGHT = 4;     // apex height (grid units) — a tall tower
-const TOP_HAT_RUN = 1.2;      // horizontal run of each steep leg
+const TOP_HAT_RUN = 1.5;      // horizontal run of each steep leg (a touch longer
+                              //   than before → a gentler, more ramp-like grade)
 const TOP_HAT_RADIUS = 1;     // U-turn radius (lateral offset = 2R = 2 cells)
-const TOP_HAT_LEAD = 0.35;    // short flat lead-in / lead-out for a smooth join
-export const pathTopHat: PathFn = (t) => {
+const TOP_HAT_LEAD = 0.45;    // short flat lead-in / lead-out for a smooth join
+
+// Quintic "smootherstep": S(0)=0, S(1)=1 with BOTH the first and second
+// derivatives zero at each end. Used for the elevation of each leg instead of
+// the trapezoidal easedProgress (which is only C¹ and runs at a constant, very
+// steep slope through its middle). Being C², each leg now lifts off the flat
+// base and settles onto the flat U-turn with continuous curvature — the on- and
+// off-ramps read as one smooth, sweeping ramp rather than a straight incline
+// with a slope-crease where the easing hands over to the linear middle.
+function smootherstep(x: number): number {
+  const c = x < 0 ? 0 : x > 1 ? 1 : x;
+  return c * c * c * (c * (c * 6 - 15) + 10);
+}
+
+// The Top Hat's raw geometry as a function of a phase parameter s ∈ [0, 1],
+// split into five phases (flat lead-in, steep climb, flat U-turn, steep descent,
+// flat lead-out). The phase-boundary values of s below are arbitrary book-keeping
+// — pathTopHat re-parametrises this shape by ARC LENGTH so the car (and the
+// rendered road) advance at a uniform rate along the whole element.
+function topHatGeom(s: number): LocalPoint {
   const H = TOP_HAT_HEIGHT, D = TOP_HAT_RUN, R = TOP_HAT_RADIUS, L = TOP_HAT_LEAD;
-  // Phase boundaries in t (lead-in / up-leg / U-turn / down-leg / lead-out).
   const p0 = 0.08, p1 = 0.34, p2 = 0.66, p3 = 0.92;
-  if (t < p0) {
+  if (s < p0) {
     // Flat lead-in along +x.
-    const u = t / p0;
+    const u = s / p0;
     return { lx: L * u, ly: 0, lz: 0, banking: 0 };
   }
-  if (t < p1) {
-    // Up-ramp: steep climb, eased to level at the top so it meets the U-turn,
-    // and eased at the bottom so it lifts smoothly off the lead-in.
-    const u = (t - p0) / (p1 - p0);
-    return { lx: L + D * u, ly: 0, lz: H * easedProgress(u), banking: 0 };
+  if (s < p1) {
+    // Climb: smootherstep elevation, level (slope 0) at both the base and the
+    // apex so it joins the lead-in and the U-turn with no crease.
+    const u = (s - p0) / (p1 - p0);
+    return { lx: L + D * u, ly: 0, lz: H * smootherstep(u), banking: 0 };
   }
-  if (t < p2) {
+  if (s < p2) {
     // Flat 180° U-turn at the apex.
-    const u = (t - p1) / (p2 - p1);
+    const u = (s - p1) / (p2 - p1);
     const phi = Math.PI * u;
     return { lx: L + D + R * Math.sin(phi), ly: R * (1 - Math.cos(phi)), lz: H, banking: 0 };
   }
-  if (t < p3) {
-    // Down-ramp: mirror of the up-ramp in the parallel (ly = 2R) lane.
-    const u = (t - p2) / (p3 - p2);
-    return { lx: L + D * (1 - u), ly: 2 * R, lz: H * (1 - easedProgress(u)), banking: 0 };
+  if (s < p3) {
+    // Descent: mirror of the climb in the parallel (ly = 2R) lane.
+    const u = (s - p2) / (p3 - p2);
+    return { lx: L + D * (1 - u), ly: 2 * R, lz: H * (1 - smootherstep(u)), banking: 0 };
   }
   // Flat lead-out back to the exit corner, heading -x.
-  const u = (t - p3) / (1 - p3);
+  const u = (s - p3) / (1 - p3);
   return { lx: L * (1 - u), ly: 2 * R, lz: 0, banking: 0 };
-};
+}
+
+// --- Arc-length reparametrisation of the Top Hat ------------------------------
+// Because topHatGeom packs phases of very different length into fixed spans of
+// s (a 0.45 lead-in vs. a ~4.5-long steep leg), equal steps of s cover wildly
+// different distances. The simulator advances the path parameter by ds/pathLen
+// assuming a CONSTANT distance-per-parameter, so with the raw shape the car
+// would crawl along the flat lead-ins and then rocket up and down the legs
+// (measured: a 5× swing in real speed). The renderer, sampling evenly in the
+// parameter, likewise starved the long legs of segments and made them look
+// faceted.
+//
+// We fix both at the source by remapping the piece parameter t to a phase s such
+// that arc length is proportional to t. A one-off table of cumulative chord
+// length (built at module load) is inverted with a binary search + linear
+// interpolation. After this, |d(pos)/dt| is essentially constant, so the car
+// moves at a steady speed and the road tessellates evenly.
+const TOP_HAT_ARC_SAMPLES = 1024;
+const { phase: TOP_HAT_PHASE, cumLen: TOP_HAT_CUM_LEN, total: TOP_HAT_LENGTH, climb: TOP_HAT_CLIMB_LENGTH } =
+  buildTopHatArcTable();
+
+function buildTopHatArcTable(): { phase: number[]; cumLen: number[]; total: number; climb: number } {
+  const phase: number[] = [0];
+  const cumLen: number[] = [0];
+  let prev = topHatGeom(0);
+  let acc = 0;
+  let climb = 0;
+  for (let i = 1; i <= TOP_HAT_ARC_SAMPLES; i++) {
+    const s = i / TOP_HAT_ARC_SAMPLES;
+    const p = topHatGeom(s);
+    const seg = Math.hypot(p.lx - prev.lx, p.ly - prev.ly, p.lz - prev.lz);
+    acc += seg;
+    // Accumulate the length of the climbing leg (still rising, before the apex)
+    // so the entry-speed gate in definitions.ts can be derived from the true
+    // climb distance rather than a hand-guessed constant.
+    if (p.lz > prev.lz && p.lz < TOP_HAT_HEIGHT - 1e-9) climb += seg;
+    phase.push(s);
+    cumLen.push(acc);
+    prev = p;
+  }
+  return { phase, cumLen, total: acc, climb };
+}
+
+/** Invert the arc-length table: uniform arc fraction t → phase parameter s. */
+function topHatArcToPhase(t: number): number {
+  const target = (t < 0 ? 0 : t > 1 ? 1 : t) * TOP_HAT_LENGTH;
+  const cum = TOP_HAT_CUM_LEN;
+  let lo = 1;
+  let hi = cum.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cum[mid] < target) lo = mid + 1; else hi = mid;
+  }
+  const segLen = cum[lo] - cum[lo - 1];
+  const f = segLen > 1e-12 ? (target - cum[lo - 1]) / segLen : 0;
+  return TOP_HAT_PHASE[lo - 1] + (TOP_HAT_PHASE[lo] - TOP_HAT_PHASE[lo - 1]) * f;
+}
+
+export { TOP_HAT_LENGTH, TOP_HAT_CLIMB_LENGTH };
+
+// The Top Hat path: arc-length parametrised so equal t = equal distance.
+export const pathTopHat: PathFn = (t) => topHatGeom(topHatArcToPhase(t));
 
 export const pathLoop: PathFn = (t) => {
   // Approach (0..0.1): straight from back edge to loop bottom (lx=0.5, lz=0).
