@@ -334,7 +334,7 @@ test('Top Hat exits reversed + laterally offset on the grid, and places after an
   );
 });
 
-test('Top Hat keeps the car upright (never inverts) and demands real entry speed', () => {
+test('Top Hat keeps the car upright, has no entry gate, and rolls back when underpowered', () => {
   let minUpZ = 1;
   const frames = trackFrames(PIECES.TOP_HAT.pathLocal, { gx: 0, gy: 0, gz: 0, dir: 1 }, 240);
   for (const f of frames) {
@@ -342,8 +342,34 @@ test('Top Hat keeps the car upright (never inverts) and demands real entry speed
     minUpZ = Math.min(minUpZ, f.up.z);
   }
   assert.ok(minUpZ > 0, `car should never invert (up.z stays > 0); got ${minUpZ.toFixed(3)}`);
-  // Tall climb -> a much higher gate than a single ramp.
-  assert.ok(PIECES.TOP_HAT.minV2 > 2 * PIECES.RAMP_UP.minV2, 'top hat needs a tall drop or a booster');
+
+  // No entry gate: the Top Hat is a hill you drive over (its apex is a flat
+  // U-turn), so unlike a loop it isn't speed-gated at the seam.
+  assert.equal(PIECES.TOP_HAT.minV2, 0, 'top hat has no entry speed gate');
+
+  // Underpowered: the car should actually drive UP the tower, run out of
+  // momentum, and roll back — not freeze at the base with a speed-gate failure.
+  const slow = new Track(); slow.dropHeight = 2;
+  ['STRAIGHT', 'STRAIGHT', 'TOP_HAT', 'STRAIGHT', 'FINISH'].forEach((id) => slow.addPiece(id));
+  const slowSim = new Simulator(slow);
+  let climbed = 0; let n = 0;
+  while (slowSim.isRunning() && n++ < 60000) {
+    slowSim.step(1 / 240);
+    if (slowSim.pieceIndex === 2) {
+      const s = slowSim.carSample();
+      if (s) climbed = Math.max(climbed, s.pos.z);
+    }
+  }
+  assert.equal(slowSim.failType, 'rollback', `underpowered top hat should roll back, got ${slowSim.failType}`);
+  assert.ok(climbed > 0.3, `car should climb the tower before rolling back, got ${climbed.toFixed(2)}`);
+
+  // Well-powered (tall drop + booster): clears the tower and finishes.
+  const fast = new Track(); fast.dropHeight = 6;
+  ['STRAIGHT', 'BOOSTER', 'STRAIGHT', 'TOP_HAT', 'STRAIGHT', 'FINISH'].forEach((id) => fast.addPiece(id));
+  const fastSim = new Simulator(fast);
+  let m = 0;
+  while (fastSim.isRunning() && m++ < 60000) fastSim.step(1 / 240);
+  assert.ok(!fastSim.failed && fastSim.finished, `strong run should clear the top hat: ${fastSim.failReason}`);
 });
 
 
