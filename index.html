@@ -15,6 +15,12 @@
       <button id="mode-play" class="mode-btn" data-mode="play">▶ Play</button>
     </div>
 
+    <label class="drop-control" title="Higher drops give more starting speed">
+      <span class="drop-label">⬇ Drop</span>
+      <input id="drop-height" type="range" min="0" max="6" step="1" value="3" />
+      <output id="drop-height-val">3</output>
+    </label>
+
     <button id="env-toggle" class="env-toggle" title="Cycle the room backdrop: Auto (room only in Play) → On → Off">🛋 Room: Auto</button>
 
     <div class="hud">
@@ -26,16 +32,6 @@
 
   <main class="layout">
     <aside class="sidebar" id="sidebar">
-      <section class="panel">
-        <h2 class="panel-title">Start</h2>
-        <label class="row">
-          <span>Drop height</span>
-          <input id="drop-height" type="range" min="0" max="6" step="1" value="3" />
-          <output id="drop-height-val">3</output>
-        </label>
-        <p class="hint">Higher drops give more starting speed.</p>
-      </section>
-
       <section class="panel">
         <h2 class="panel-title">Garage</h2>
         <div id="garage" class="garage"></div>

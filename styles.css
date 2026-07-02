@@ -261,9 +261,42 @@ body {
 }
 .hint { color: var(--muted-dim); font-size: 11px; margin: 8px 0 0; line-height: 1.4; }
 
+/* Drop-height control (lives in the top bar, next to Play) */
+.drop-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(5, 13, 26, 0.7);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: opacity 0.25s;
+}
+.drop-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.drop-control output {
+  min-width: 18px;
+  text-align: center;
+  font-weight: 800;
+  color: var(--cyan);
+  font-variant-numeric: tabular-nums;
+  background: rgba(37, 224, 255, 0.08);
+  border-radius: 6px;
+  padding: 2px 5px;
+}
+/* Dim the control while playing (it's a build-time setting; JS also disables it). */
+body.mode-play .drop-control { opacity: 0.5; }
+
 /* Range slider */
-.row input[type="range"] {
-  flex: 1;
+.drop-control input[type="range"] {
+  width: 116px;
   -webkit-appearance: none;
   appearance: none;
   height: 6px;
@@ -272,7 +305,7 @@ body {
   outline: none;
   cursor: pointer;
 }
-.row input[type="range"]::-webkit-slider-thumb {
+.drop-control input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 18px; height: 18px;
   border-radius: 50%;
@@ -281,14 +314,14 @@ body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   transition: transform 0.12s;
 }
-.row input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
-.row input[type="range"]::-moz-range-thumb {
+.drop-control input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+.drop-control input[type="range"]::-moz-range-thumb {
   width: 16px; height: 16px;
   border-radius: 50%;
   background: #fff;
   border: 3px solid var(--orange);
 }
-.row input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
+.drop-control input[type="range"]:disabled { cursor: not-allowed; }
 
 /* Buttons */
 .btn {
