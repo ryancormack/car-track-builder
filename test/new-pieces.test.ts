@@ -18,7 +18,7 @@ import { Track } from '../src/track.js';
 import { Simulator } from '../src/physics.js';
 import { computeScore, designScore } from '../src/scoring.js';
 import { WALL_SMASH_V2, CRUMBLE_BRIDGE_V2, G } from '../src/constants.js';
-import type { GridState, PieceId } from '../src/types.js';
+import type { GridState, PieceId, PathFn } from '../src/types.js';
 
 // --- Steep ramps --------------------------------------------------------------
 
@@ -585,4 +585,42 @@ test('multiple same-type ramps chain into one continuous ramp (matching tangents
     assert.ok(seamAngleDeg(seq, 2) < 1, `${ramp} chain joint 1 should be continuous`);
     assert.ok(seamAngleDeg(seq, 3) < 1, `${ramp} chain joint 2 should be continuous`);
   }
+});
+
+
+test('mixed-steepness ramps chain into a continuous incline (no flat-spot shelf)', () => {
+  // A normal + steep ramp alternating climb. Each internal joint should hold a
+  // real, matching grade on both sides (blended) — NOT ease flat, which used to
+  // leave a stair-step shelf between the sloped sections.
+  const seq: PieceId[] = ['STRAIGHT', 'RAMP_UP', 'STEEP_RAMP_UP', 'RAMP_UP', 'STEEP_RAMP_UP', 'STRAIGHT', 'FINISH'];
+  const track = new Track();
+  track.dropHeight = 6;
+  for (const id of seq) assert.ok(track.addPiece(id), `should place ${id}`);
+
+  const d = 1e-3;
+  const localGrade = (p: PathFn, a: number, b: number): number => {
+    const pa = p(a), pb = p(b);
+    const run = Math.hypot(pb.lx - pa.lx, pb.ly - pa.ly);
+    return run > 1e-9 ? (pb.lz - pa.lz) / run : 0;
+  };
+
+  const rampIdx = [1, 2, 3, 4];
+  for (let k = 0; k < rampIdx.length - 1; k++) {
+    const i = rampIdx[k];
+    const exit = localGrade(resolvePathLocal(track.pieces, i), 1 - d, 1);
+    const entry = localGrade(resolvePathLocal(track.pieces, i + 1), 0, d);
+    // Slopes match across the joint (continuous, no crease) ...
+    assert.ok(Math.abs(exit - entry) < 0.05, `joint ${i}|${i + 1} slopes should match (got ${exit.toFixed(2)} vs ${entry.toFixed(2)})`);
+    // ... and the incline keeps a real grade through the joint (no flat shelf).
+    assert.ok(exit > 0.5, `joint ${i}|${i + 1} should stay inclined, not flatten (got ${exit.toFixed(2)})`);
+  }
+
+  // A run of ramps that REVERSES direction (climb then descend) still eases to a
+  // rounded crest at the turnaround rather than a spike.
+  const crest: PieceId[] = ['STRAIGHT', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN', 'STRAIGHT', 'FINISH'];
+  const ct = new Track();
+  ct.dropHeight = 6;
+  for (const id of crest) ct.addPiece(id);
+  const upExit = localGrade(resolvePathLocal(ct.pieces, 1), 1 - d, 1);
+  assert.ok(Math.abs(upExit) < 0.1, `crest should ease level at the turnaround (got ${upExit.toFixed(2)})`);
 });
