@@ -1,41 +1,54 @@
-// pieces/resolve.ts — context-aware path resolution for consecutive ramp pieces.
-// When two ramps of the same type are adjacent, their shared joint should use a
-// linear (constant-slope) profile instead of easing to zero, eliminating the
-// flat "ladder step" bump between them.
+// pieces/resolve.ts — context-aware path resolution for ramp pieces.
+//
+// A ramp on its own eases to level (grade 0) at both seams so it joins flat
+// track without a crease. But when ramps are chained, easing every joint flat
+// leaves a stair-step "shelf" between the sloped sections — most visible when
+// the chained ramps have DIFFERENT steepness. To make any run of ramps read as
+// one continuous incline, we blend the grade at a joint shared with a
+// neighbouring ramp that runs the SAME vertical direction: both sides meet at
+// the average of their natural grades, so the tangent is continuous (no crease)
+// and there is no flat shelf. Against flat track, a non-ramp, or a ramp that
+// REVERSES direction (a crest or dip), we still ease that end to level — giving
+// a clean join or a smoothly rounded crest.
 
 import { PIECES } from './definitions.js';
-import {
-  makeRampUpPath, makeRampDownPath,
-  makeSteepRampUpPath, makeSteepRampDownPath,
-} from './paths.js';
+import { makeGradedRampPath } from './paths.js';
 import type { PathFn, PieceId } from '../types.js';
 
-// Ramp pieces and their context-aware path factories. Any piece in this map gets
-// its entry/exit easing suppressed at a joint shared with another ramp of the
-// SAME type, so a run of identical ramps forms one continuous slope.
-const RAMP_FACTORIES: Partial<Record<PieceId, (easeIn: boolean, easeOut: boolean) => PathFn>> = {
-  RAMP_UP: makeRampUpPath,
-  RAMP_DN: makeRampDownPath,
-  STEEP_RAMP_UP: makeSteepRampUpPath,
-  STEEP_RAMP_DN: makeSteepRampDownPath,
+// Ramp pieces eligible for slope-blending, keyed to their per-cell rise (grade).
+// (forward = 1 for every ramp, so the natural grade equals the elevation change.)
+const RAMP_GRADE: Partial<Record<PieceId, number>> = {
+  RAMP_UP: 1,
+  RAMP_DN: -1,
+  STEEP_RAMP_UP: 2,
+  STEEP_RAMP_DN: -2,
 };
 
+/** The blended seam grade between a ramp and a neighbour, or 0 to ease level. */
+function jointGrade(self: number, neighbour: number | undefined): number {
+  // Blend only with a ramp running the same way (both climbing / both
+  // descending). Otherwise ease to level: a clean join to flat/non-ramp track,
+  // or a rounded crest/dip where the direction reverses.
+  if (neighbour !== undefined && Math.sign(neighbour) === Math.sign(self)) {
+    return (self + neighbour) / 2;
+  }
+  return 0;
+}
+
 /**
- * Resolve the effective path function for piece at `index` given its neighbors.
- * For ramp pieces (standard and steep), easing is suppressed at any joint shared
- * with another ramp of the same type, so a chain of identical ramps becomes a
- * single straight constant-grade incline rather than a series of bumps.
- * All other pieces return their default `pathLocal` unchanged.
+ * Resolve the effective path function for piece at `index` given its neighbours.
+ * Ramp pieces (standard and steep) blend their entry/exit grade with any
+ * same-direction ramp neighbour so a chain — even of mixed steepness — forms one
+ * continuous, crease-free incline. All other pieces return their default
+ * `pathLocal` unchanged.
  */
 export function resolvePathLocal(pieces: PieceId[], index: number): PathFn {
   const id = pieces[index];
-  const factory = RAMP_FACTORIES[id];
-  if (!factory) {
+  const grade = RAMP_GRADE[id];
+  if (grade === undefined) {
     return PIECES[id].pathLocal;
   }
-  const prev = index > 0 ? pieces[index - 1] : null;
-  const next = index < pieces.length - 1 ? pieces[index + 1] : null;
-  // Ease at entry unless preceded by the same ramp type; ease at exit unless
-  // followed by the same ramp type.
-  return factory(prev !== id, next !== id);
+  const prevGrade = index > 0 ? RAMP_GRADE[pieces[index - 1]] : undefined;
+  const nextGrade = index < pieces.length - 1 ? RAMP_GRADE[pieces[index + 1]] : undefined;
+  return makeGradedRampPath(grade, jointGrade(grade, prevGrade), jointGrade(grade, nextGrade));
 }

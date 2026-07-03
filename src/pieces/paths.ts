@@ -23,20 +23,38 @@ export const pathCurveL: PathFn = (t) => {
 
 // Ramps change elevation by one unit. The elevation profile is a cubic Hermite
 // interpolant from (0,0) to (1,1) with configurable entry/exit slopes. When
-// easeIn is true, slope=0 at t=0 (smooth join to flat track); when false,
-// slope=1 (linear join to a neighboring ramp). Likewise for easeOut at t=1.
-function rampElevation(t: number, easeIn: boolean, easeOut: boolean): number {
-  const m0 = easeIn ? 0 : 1;
-  const m1 = easeOut ? 0 : 1;
+// The normalized tangents m0 (entry) and m1 (exit) are the Hermite end slopes in
+// normalized units (the piece spans lx 0->1). m = 0 gives a level join to flat
+// track; m = 1 gives the ramp's own constant slope (a straight incline).
+function rampElevation(t: number, m0: number, m1: number): number {
   const t2 = t * t;
   const t3 = t2 * t;
   // Hermite basis: H(t) = h01*p1 + h10*m0 + h11*m1  (p0 = 0, p1 = 1)
   return (-2 * t3 + 3 * t2) + (t3 - 2 * t2 + t) * m0 + (t3 - t2) * m1;
 }
 
-/** Factory for context-aware ramp paths of a given height (sign = direction). */
+/**
+ * Factory for a ramp of the given signed height with explicit WORLD grades
+ * (d lz / d lx) at the entry and exit seams. Because the piece spans one cell
+ * (lx 0->1), the Hermite tangent is grade/height. A grade of 0 makes that end
+ * level (a clean join to flat track); a grade equal to the ramp's own natural
+ * grade (== height) makes that end its full constant slope; an in-between value
+ * lets neighbouring ramps meet at a shared, blended slope with no crease.
+ */
+export function makeGradedRampPath(height: number, entryGrade: number, exitGrade: number): PathFn {
+  const m0 = height !== 0 ? entryGrade / height : 0;
+  const m1 = height !== 0 ? exitGrade / height : 0;
+  return (t) => ({ lx: t, ly: 0, lz: height * rampElevation(t, m0, m1), banking: 0 });
+}
+
+/**
+ * Backwards-compatible boolean factory: easeIn/easeOut = true means that end is
+ * level (grade 0); false means it runs at the ramp's own natural grade (a linear
+ * join to an identical ramp). Implemented on top of makeGradedRampPath — the
+ * ramp's natural grade equals its per-cell rise (`height`, since forward = 1).
+ */
 function makeRampPath(height: number, easeIn: boolean, easeOut: boolean): PathFn {
-  return (t) => ({ lx: t, ly: 0, lz: height * rampElevation(t, easeIn, easeOut), banking: 0 });
+  return makeGradedRampPath(height, easeIn ? 0 : height, easeOut ? 0 : height);
 }
 
 /** Factory for context-aware ramp-up paths (1 unit). */
@@ -60,10 +78,9 @@ export function makeSteepRampDownPath(easeIn: boolean, easeOut: boolean): PathFn
 }
 
 // Default both-eased variants: zero slope at both ends, so they join flat track
-// (and each other in the legacy sense) with no sharp crease. When ramps of the
-// SAME type are chained, resolvePathLocal swaps in the un-eased variants at the
-// shared joints so the chain forms one continuous constant-slope incline (no
-// flat-spot "bump" between consecutive ramps).
+// with no sharp crease. When ramps are chained, resolvePathLocal blends the
+// shared-joint slopes so the chain forms one continuous incline (no flat-spot
+// "shelf" between consecutive ramps, even of mixed steepness).
 export const pathRampUp: PathFn = makeRampUpPath(true, true);
 export const pathRampDown: PathFn = makeRampDownPath(true, true);
 
