@@ -588,6 +588,37 @@ test('multiple same-type ramps chain into one continuous ramp (matching tangents
 });
 
 
+test('every ordered pair of pieces joins without a sharp crease (full seam audit)', () => {
+  // Exhaustively check that the exit tangent of piece A matches the entry
+  // tangent of piece B for EVERY A->B combination, so no join creases. Entry
+  // states are chained from a high start so grounding never blocks a descending
+  // pairing (we only measure tangents/headings, not floor validity).
+  const all = (Object.keys(PIECES) as PieceId[]).filter((id) => !PIECES[id].hidden);
+  const leaders = all.filter((id) => id !== 'FINISH');
+  let worst = 0;
+  let worstPair = '';
+  for (const a of leaders) {
+    for (const b of all) {
+      const seq: PieceId[] = ['STRAIGHT', a, b];
+      let s: GridState = { gx: 0, gy: 0, gz: 100, dir: 1 };
+      const entries: GridState[] = [];
+      for (const id of seq) { entries.push(s); s = applyPiece(s, PIECES[id]); }
+      const fA = trackFrames(resolvePathLocal(seq, 1), entries[1], 48);
+      const fB = trackFrames(resolvePathLocal(seq, 2), entries[2], 48);
+      const ta = fA[fA.length - 1].tangent;
+      const tb = fB[0].tangent;
+      const dot = ta.x * tb.x + ta.y * tb.y + ta.z * tb.z;
+      const ang = (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+      if (ang > worst) { worst = ang; worstPair = `${a} -> ${b}`; }
+    }
+  }
+  // A real crease (a sin-arc jump/hill, or an un-eased steep seam) measured
+  // 55-67deg; a smooth join sits near 0. The only residual is finite-difference
+  // tangent sampling on the high-curvature sin^2 hump/hill (~3.4deg), so 8deg is
+  // a comfortable guard that still catches any reintroduced crease.
+  assert.ok(worst < 8, `a seam has a sharp crease: ${worstPair} = ${worst.toFixed(1)}deg`);
+});
+
 test('mixed-steepness ramps chain into a continuous incline (no flat-spot shelf)', () => {
   // A normal + steep ramp alternating climb. Each internal joint should hold a
   // real, matching grade on both sides (blended) — NOT ease flat, which used to
