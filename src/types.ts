@@ -185,6 +185,10 @@ export interface UIElements {
   hudPieces: HTMLElement;
   drop: HTMLInputElement;
   dropVal: HTMLElement;
+  carCount: HTMLInputElement;
+  carCountVal: HTMLElement;
+  btnLaunch: HTMLElement;
+  hudCars: HTMLElement;
   palette: HTMLElement;
   garage: HTMLElement;
   status: HTMLElement;
@@ -199,6 +203,7 @@ export interface UIElements {
   overlayScore: HTMLElement;
   overlayTop: HTMLElement;
   overlayLength: HTMLElement;
+  overlayCarsList: HTMLElement;
   overlayClose: HTMLElement;
   selBar: HTMLElement;
   selName: HTMLElement;

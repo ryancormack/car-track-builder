@@ -2,10 +2,23 @@
 
 import { designScore } from '../scoring.js';
 import type { Track } from '../track.js';
-import type { Simulator } from '../physics.js';
-import type { ScoreResult, UIElements } from '../types.js';
+import type { UIElements } from '../types.js';
 
 export type StatusKind = 'ok' | 'err' | '';
+
+/** Aggregated race stats consumed by {@link Hud.updateForPlay}. */
+export interface RaceHudStats {
+  /** Speed of the car currently being followed by the camera (0 if none running). */
+  speed: number;
+  /** Sum of the scores of every car that has finished its run so far. */
+  scoreSoFar: number;
+  /** How many launched cars have completed their run (finished or crashed). */
+  carsDone: number;
+  /** How many cars have been launched down the track so far. */
+  carsLaunched: number;
+  /** The configured total number of cars for this race. */
+  carsTotal: number;
+}
 
 export class Hud {
   els: UIElements;
@@ -17,12 +30,14 @@ export class Hud {
     this.els.hudPieces.textContent = String(track.nonEmptyCount());
     this.els.hudSpeed.textContent = '0';
     this.els.hudScore.textContent = String(designScore(track));
+    this.els.hudCars.textContent = '—';
   }
 
-  updateForPlay(track: Track, sim: Simulator | null, runResult: { score: ScoreResult } | null): void {
+  updateForPlay(track: Track, stats: RaceHudStats): void {
     this.els.hudPieces.textContent = String(track.nonEmptyCount());
-    this.els.hudSpeed.textContent = sim ? sim.speed.toFixed(1) : '0';
-    this.els.hudScore.textContent = runResult ? String(runResult.score.total) : '—';
+    this.els.hudSpeed.textContent = stats.speed.toFixed(1);
+    this.els.hudScore.textContent = stats.carsDone > 0 ? String(stats.scoreSoFar) : '—';
+    this.els.hudCars.textContent = `${stats.carsDone}/${stats.carsTotal}`;
   }
 
   flashStatus(msg: string, kind: StatusKind = ''): void {

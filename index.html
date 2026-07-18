@@ -21,11 +21,20 @@
       <output id="drop-height-val">3</output>
     </label>
 
+    <label class="drop-control" title="How many cars will race down the track this round">
+      <span class="drop-label">🚗 Cars</span>
+      <input id="car-count" type="range" min="1" max="6" step="1" value="1" />
+      <output id="car-count-val">1</output>
+    </label>
+
+    <button id="btn-launch" class="launch-btn hidden" title="Send another car down the track">🔴 Launch Car</button>
+
     <button id="env-toggle" class="env-toggle" title="Cycle the room backdrop: Auto (room only in Play) → On → Off">🛋 Room: Auto</button>
 
     <div class="hud">
       <div class="hud-item"><span class="hud-label">Speed</span><span id="hud-speed" class="hud-value">0</span></div>
       <div class="hud-item"><span class="hud-label">Score</span><span id="hud-score" class="hud-value">0</span></div>
+      <div class="hud-item"><span class="hud-label">Cars</span><span id="hud-cars" class="hud-value">—</span></div>
       <div class="hud-item"><span class="hud-label">Pieces</span><span id="hud-pieces" class="hud-value">0</span></div>
     </div>
   </header>
@@ -77,6 +86,7 @@
             <div><span class="hud-label">Top Speed</span><strong id="overlay-top">0</strong></div>
             <div><span class="hud-label">Length</span><strong id="overlay-length">0</strong></div>
           </div>
+          <div id="overlay-cars-list" class="overlay-cars-list hidden"></div>
           <button id="overlay-close" class="btn primary">Back to Build</button>
         </div>
       </div>

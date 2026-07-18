@@ -6,6 +6,9 @@ const SAVE_KEY = 'hotTrack.save.v1';
 // Player's chosen vehicle — a profile preference, kept separate from the track
 // save so it persists across tracks (and clearing a track doesn't reset it).
 const VEHICLE_KEY = 'hotTrack.vehicle.v1';
+// Player's chosen car count — also a profile preference, independent of the
+// track save, so it persists across tracks.
+const CAR_COUNT_KEY = 'hotTrack.carCount.v1';
 
 export function saveTrackJSON(json: TrackJSON): boolean {
   try {
@@ -47,6 +50,32 @@ export function saveVehicleId(id: string): boolean {
 export function loadVehicleId(): string | null {
   try {
     return localStorage.getItem(VEHICLE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+
+/** Persist the player's chosen number of cars. Returns false if storage failed. */
+export function saveCarCount(count: number): boolean {
+  try {
+    localStorage.setItem(CAR_COUNT_KEY, String(count));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns the raw stored car count (unvalidated) or null. Callers should clamp
+ * it to the valid [MIN_CARS, MAX_CARS] range before use.
+ */
+export function loadCarCount(): number | null {
+  try {
+    const raw = localStorage.getItem(CAR_COUNT_KEY);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
   } catch {
     return null;
   }
