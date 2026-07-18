@@ -6,10 +6,14 @@ import { Renderer } from './renderer/index.js';
 import { Editor } from './editor.js';
 import { Simulator } from './physics.js';
 import { computeScore } from './scoring.js';
-import { SPEED_SCALE } from './constants.js';
+import { SPEED_SCALE, MIN_CARS, MAX_CARS, DEFAULT_CARS } from './constants.js';
 import { Hud } from './app/hud.js';
+import type { RaceHudStats } from './app/hud.js';
 import { ResultOverlay } from './app/overlay.js';
-import { saveTrackJSON, loadTrackJSON, saveVehicleId, loadVehicleId } from './app/storage.js';
+import type { CarRunResult } from './app/overlay.js';
+import {
+  saveTrackJSON, loadTrackJSON, saveVehicleId, loadVehicleId, saveCarCount, loadCarCount,
+} from './app/storage.js';
 import { encodeTrackHash, decodeTrackHash } from './app/hash.js';
 import {
   environmentVisible,
@@ -21,13 +25,25 @@ import {
 import {
   VEHICLES, VEHICLE_ORDER, DEFAULT_VEHICLE_ID, isVehicleId, type VehicleId,
 } from './vehicles.js';
-import type { ScoreResult, UIElements } from './types.js';
+import type { UIElements } from './types.js';
 
 type Mode = 'build' | 'play';
 
-interface RunResult {
-  score: ScoreResult;
+/**
+ * One car actively on (or having finished) the track during the current play
+ * session. `id` is a stable renderer key (see Renderer's per-car mesh map);
+ * `label` is the user-facing "Car N" name in launch order.
+ */
+interface RaceCar {
+  id: number;
+  label: string;
   sim: Simulator;
+  /** True once this car's wipeout animation has finished playing (or it never crashed). */
+  wipeoutDone: boolean;
+  /** True once this car's score has been computed (finished running + any wipeout settled). */
+  done: boolean;
+  score: ReturnType<typeof computeScore> | null;
+  splashedPieces: Set<number>;
 }
 
 /** Look up a required element by id, narrowing to the expected element type. */
@@ -47,6 +63,10 @@ const els: UIElements = {
   hudPieces: el('hud-pieces'),
   drop: el<HTMLInputElement>('drop-height'),
   dropVal: el('drop-height-val'),
+  carCount: el<HTMLInputElement>('car-count'),
+  carCountVal: el('car-count-val'),
+  btnLaunch: el('btn-launch'),
+  hudCars: el('hud-cars'),
   palette: el('palette'),
   garage: el('garage'),
   status: el('status'),
@@ -61,6 +81,7 @@ const els: UIElements = {
   overlayScore: el('overlay-score'),
   overlayTop: el('overlay-top'),
   overlayLength: el('overlay-length'),
+  overlayCarsList: el('overlay-cars-list'),
   overlayClose: el('overlay-close'),
   selBar: el('selbar'),
   selName: el('sel-name'),
@@ -138,12 +159,11 @@ function updateInsertModeUI(): void {
 let mode: Mode = 'build';
 let envOverride: EnvOverride = loadEnvOverride();
 let selectedVehicleId: VehicleId = DEFAULT_VEHICLE_ID;
-let sim: Simulator | null = null;
-let runResult: RunResult | null = null;
-let wipeoutPlaying = false;
-// Water-splash decorations already triggered this run (so each splashes once
-// as the car drives through it).
-let splashedPieces = new Set<number>();
+let carCount = DEFAULT_CARS; // configured number of cars for the race
+let nextCarId = 0; // monotonically increasing renderer car id
+let cars: RaceCar[] = []; // every car launched so far this play session
+let followedCarId: number | null = null; // which car's sim the camera + HUD speed track
+let raceResultsShown = false; // guards against showing the overlay twice
 let lastFrameTime = performance.now();
 let mouseDownPos: { x: number; y: number } | null = null;
 
@@ -169,6 +189,7 @@ if (!booted) {
   }
 }
 syncDropUi();
+syncCarCountUi();
 renderer.rebuildTrack(track);
 editor.refresh();
 refreshHud();
@@ -182,6 +203,16 @@ els.drop.addEventListener('input', () => {
   els.dropVal.textContent = String(track.dropHeight);
   renderer.rebuildTrack(track);
 });
+
+els.carCount.addEventListener('input', () => {
+  carCount = clampCarCount(Number(els.carCount.value));
+  els.carCountVal.textContent = String(carCount);
+  saveCarCount(carCount);
+  refreshHud();
+  updateLaunchButton();
+});
+
+els.btnLaunch.addEventListener('click', () => launchCar());
 
 els.btnUndo.addEventListener('click', () => editor.undo());
 els.btnClear.addEventListener('click', () => {
@@ -309,12 +340,11 @@ function switchMode(next: Mode): void {
     els.modePlay.classList.add('active');
     editor.setEnabled(false);
     els.drop.disabled = true; // drop height is a build-time setting
-    sim = new Simulator(track, VEHICLES[selectedVehicleId].physics);
-    runResult = null;
-    wipeoutPlaying = false;
-    splashedPieces = new Set<number>();
-    renderer.setCar(true, sim.carSample());
-    renderer.animateLauncher();
+    els.carCount.disabled = true; // car count is a build-time setting too
+    cars = [];
+    followedCarId = null;
+    raceResultsShown = false;
+    launchCar(); // the Play button always sends the first car off
   } else {
     mode = 'build';
     document.body.classList.remove('mode-play');
@@ -322,20 +352,77 @@ function switchMode(next: Mode): void {
     els.modeBuild.classList.add('active');
     editor.setEnabled(true);
     els.drop.disabled = false;
-    renderer.setCar(false);
+    els.carCount.disabled = false;
+    renderer.clearCars();
     renderer.stopLauncher();
     renderer.cleanupWipeout();
     renderer.resetCameraToTrack(track);
-    wipeoutPlaying = false;
-    sim = null;
+    cars = [];
+    followedCarId = null;
   }
   applyEnvironment();
   refreshHud();
+  updateLaunchButton();
+}
+
+/**
+ * Launch one more car down the track: a new Simulator + car mesh, using the
+ * currently selected vehicle. No-op once `carCount` cars have already been
+ * launched, or outside play mode. The plunger animation replays on every
+ * launch, including the very first one from the Play button.
+ */
+function launchCar(): void {
+  if (mode !== 'play') return;
+  if (cars.length >= carCount) return;
+  const id = nextCarId++;
+  const sim = new Simulator(track, VEHICLES[selectedVehicleId].physics);
+  const car: RaceCar = {
+    id,
+    label: `Car ${cars.length + 1}`,
+    sim,
+    wipeoutDone: false,
+    done: false,
+    score: null,
+    splashedPieces: new Set<number>(),
+  };
+  cars.push(car);
+  followedCarId = id;
+  renderer.setCar(id, true, sim.carSample());
+  renderer.animateLauncher();
+  refreshHud();
+  updateLaunchButton();
+}
+
+/** Show/hide + enable/disable the "Launch Car" button for the current race state. */
+function updateLaunchButton(): void {
+  // With just one car configured, the Play button already sends it off and
+  // there's nothing left to launch — keep the plunger button out of the way.
+  if (mode !== 'play' || carCount <= 1) {
+    els.btnLaunch.classList.add('hidden');
+    return;
+  }
+  els.btnLaunch.classList.remove('hidden');
+  const canLaunch = cars.length < carCount;
+  (els.btnLaunch as HTMLButtonElement).disabled = !canLaunch;
+  els.btnLaunch.textContent = canLaunch
+    ? `🔴 Launch Car (${cars.length}/${carCount})`
+    : `🏁 All ${carCount} cars launched`;
 }
 
 function refreshHud(): void {
-  if (mode === 'play') hud.updateForPlay(track, sim, runResult);
-  else hud.updateForBuild(track);
+  if (mode === 'play') {
+    const followed = followedCarId !== null ? cars.find((c) => c.id === followedCarId) : undefined;
+    const stats: RaceHudStats = {
+      speed: followed && !followed.done ? followed.sim.speed : 0,
+      scoreSoFar: cars.reduce((sum, c) => sum + (c.score?.total ?? 0), 0),
+      carsDone: cars.filter((c) => c.done).length,
+      carsLaunched: cars.length,
+      carsTotal: carCount,
+    };
+    hud.updateForPlay(track, stats);
+  } else {
+    hud.updateForBuild(track);
+  }
   // Visually disable play button unless the track is complete.
   if (track.isComplete()) {
     els.modePlay.classList.remove('disabled');
@@ -347,6 +434,18 @@ function refreshHud(): void {
 function syncDropUi(): void {
   els.drop.value = String(track.dropHeight);
   els.dropVal.textContent = String(track.dropHeight);
+}
+
+function clampCarCount(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_CARS;
+  return Math.max(MIN_CARS, Math.min(MAX_CARS, Math.round(n)));
+}
+
+function syncCarCountUi(): void {
+  const saved = loadCarCount();
+  if (saved !== null) carCount = clampCarCount(saved);
+  els.carCount.value = String(carCount);
+  els.carCountVal.textContent = String(carCount);
 }
 
 /** Apply the current environment override for the active mode + refresh the toggle UI. */
@@ -412,66 +511,108 @@ function highlightVehicle(): void {
 
 // ---------- Run loop ----------
 
+/**
+ * Advance one car's simulation/animation by one frame. Returns true once this
+ * car's run (including its wipeout animation, if any) has fully settled and
+ * its score has been computed.
+ */
+function stepCar(car: RaceCar, dt: number): void {
+  if (car.done) return;
+  const { sim } = car;
+
+  // Drain any walls this car smashed through this frame and shatter them.
+  if (sim.smashedWalls.length) {
+    for (const idx of sim.smashedWalls) renderer.smashWall(idx);
+    sim.smashedWalls.length = 0;
+  }
+  // Drain any crumbling bridges this car crossed and collapse them behind it.
+  if (sim.crossedBridges.length) {
+    for (const idx of sim.crossedBridges) renderer.crumbleBridge(idx);
+    sim.crossedBridges.length = 0;
+  }
+
+  if (sim.isRunning()) {
+    const subSteps = 4;
+    const sdt = (dt * SPEED_SCALE) / subSteps;
+    for (let i = 0; i < subSteps && sim.isRunning(); i++) sim.step(sdt);
+    // Splash through any water decoration on the piece this car is crossing.
+    if (track.decorationAt(sim.pieceIndex) === 'WATER_SPLASH' && !car.splashedPieces.has(sim.pieceIndex)) {
+      car.splashedPieces.add(sim.pieceIndex);
+      renderer.splashThrough(sim.pieceIndex);
+    }
+    const sample = sim.carSample();
+    if (sample) {
+      renderer.setCar(car.id, true, sample);
+      if (car.id === followedCarId) renderer.followCar(sample.pos, dt);
+    }
+    return;
+  }
+
+  if (renderer.isWipeoutPlaying(car.id)) {
+    const still = renderer.updateWipeoutAnimation(car.id, dt * SPEED_SCALE);
+    if (!still) {
+      car.wipeoutDone = true;
+      finishCar(car);
+    }
+    return;
+  }
+
+  if (sim.failed && !car.wipeoutDone) {
+    // A collapsing bridge gives way visibly as the car drops.
+    if (sim.failType === 'collapse' && sim.failPieceIndex >= 0) renderer.crumbleBridge(sim.failPieceIndex);
+    renderer.startWipeoutAnimation(car.id, sim.failType, sim.carSample());
+    return;
+  }
+
+  if (!sim.failed) {
+    finishCar(car);
+  }
+}
+
+/** Compute a finished car's score and check whether the whole race is over. */
+function finishCar(car: RaceCar): void {
+  if (car.done) return;
+  car.score = computeScore(track, car.sim);
+  car.done = true;
+  // Hand the camera off to another car still racing, if this was the one being
+  // followed (so the view keeps tracking live action instead of freezing).
+  if (car.id === followedCarId) {
+    const stillRunning = cars.find((c) => !c.done);
+    followedCarId = stillRunning ? stillRunning.id : null;
+  }
+  refreshHud();
+  updateLaunchButton();
+  maybeShowResults();
+}
+
+/**
+ * The race ends once every car that WILL be launched has crossed the finish
+ * line (or crashed out): all `carCount` cars have been launched, and every
+ * launched car has finished its run + settled its wipeout animation.
+ */
+function maybeShowResults(): void {
+  if (raceResultsShown) return;
+  if (cars.length < carCount) return;
+  if (!cars.every((c) => c.done)) return;
+  raceResultsShown = true;
+  const results: CarRunResult[] = cars.map((c) => ({
+    label: c.label,
+    score: c.score!,
+    sim: c.sim,
+  }));
+  const delay = cars.some((c) => c.sim.failed) ? 200 : 700;
+  setTimeout(() => {
+    if (mode === 'play') overlay.show(track, results);
+  }, delay);
+}
+
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
   lastFrameTime = now;
 
-  if (mode === 'play' && sim) {
-    // Drain any walls the car smashed through this frame and shatter them.
-    if (sim.smashedWalls.length) {
-      for (const idx of sim.smashedWalls) renderer.smashWall(idx);
-      sim.smashedWalls.length = 0;
-    }
-    // Drain any crumbling bridges the car crossed and collapse them behind it.
-    if (sim.crossedBridges.length) {
-      for (const idx of sim.crossedBridges) renderer.crumbleBridge(idx);
-      sim.crossedBridges.length = 0;
-    }
-    if (sim.isRunning()) {
-      const subSteps = 4;
-      const sdt = (dt * SPEED_SCALE) / subSteps;
-      for (let i = 0; i < subSteps && sim.isRunning(); i++) sim.step(sdt);
-      // Splash through any water decoration on the piece the car is crossing.
-      if (track.decorationAt(sim.pieceIndex) === 'WATER_SPLASH' && !splashedPieces.has(sim.pieceIndex)) {
-        splashedPieces.add(sim.pieceIndex);
-        renderer.splashThrough(sim.pieceIndex);
-      }
-      const sample = sim.carSample();
-      if (sample) {
-        renderer.setCar(true, sample);
-        renderer.followCar(sample.pos, dt);
-      }
-      els.hudSpeed.textContent = sim.speed.toFixed(1);
-    } else if (wipeoutPlaying) {
-      const still = renderer.updateWipeoutAnimation(dt * SPEED_SCALE);
-      if (!still) {
-        wipeoutPlaying = false;
-        if (!runResult) {
-          const s = sim;
-          const result: RunResult = { score: computeScore(track, s), sim: s };
-          runResult = result;
-          els.hudScore.textContent = String(result.score.total);
-          setTimeout(() => {
-            if (mode === 'play') overlay.show(track, result.score, s);
-          }, 200);
-        }
-      }
-    } else if (!runResult) {
-      const s = sim;
-      if (s.failed) {
-        // A collapsing bridge gives way visibly as the car drops.
-        if (s.failType === 'collapse' && s.failPieceIndex >= 0) renderer.crumbleBridge(s.failPieceIndex);
-        renderer.startWipeoutAnimation(s.failType, s.carSample());
-        wipeoutPlaying = true;
-      } else {
-        const result: RunResult = { score: computeScore(track, s), sim: s };
-        runResult = result;
-        els.hudScore.textContent = String(result.score.total);
-        setTimeout(() => {
-          if (mode === 'play') overlay.show(track, result.score, s);
-        }, 700);
-      }
-    }
+  if (mode === 'play') {
+    for (const car of cars) stepCar(car, dt);
+    refreshHud(); // keep the live speed readout current every frame
   }
 
   renderer.updateAnimations(dt);

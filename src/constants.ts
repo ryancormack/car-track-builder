@@ -15,6 +15,14 @@ export const DRAG = 0.0008;              // tiny v²-proportional drag, keeps th
 // ceiling everywhere.
 export const MAX_DROP_HEIGHT = 6;
 
+// Configurable number of cars that can race down the track in one session.
+// The "Cars" slider (index.html) is clamped to this range, and each press of
+// the launch/plunger button sends one more car down the track (up to the
+// configured total). Kept modest so the scene doesn't get too cluttered.
+export const MIN_CARS = 1;
+export const MAX_CARS = 6;
+export const DEFAULT_CARS = 1;
+
 // Below this speed the car is treated as stopped (stall). Kept as a named knob
 // rather than a literal so the stall point is obvious and tunable.
 export const STALL_SPEED = 0.1;

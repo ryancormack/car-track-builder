@@ -36,7 +36,14 @@ export class Renderer implements CameraControlHost {
   ghostGroup: THREE.Group;
   startGroup: THREE.Group;
   decorGroup: THREE.Group;
-  car: THREE.Group;
+
+  /**
+   * One entry per car currently on the track, keyed by an app-assigned car id
+   * (main.ts hands out a fresh id each time the plunger launches a car, so
+   * multiple simultaneous cars — and repeat launches of "the same" car slot —
+   * each get their own mesh + wipeout state).
+   */
+  private _cars = new Map<number, THREE.Group>();
   private _vehicleId: VehicleId = DEFAULT_VEHICLE_ID;
 
   // Optional living-room backdrop. Hidden by default; toggled via
@@ -59,14 +66,16 @@ export class Renderer implements CameraControlHost {
     duration: number;
   } | null = null;
 
-  private _wipeout: {
+  // Keyed by car id so several cars can wipe out independently while others
+  // are still racing (e.g. car 1 crashes while car 2 is mid-loop).
+  private _wipeouts = new Map<number, {
     type: FailType;
     elapsed: number;
     duration: number;
     startPos: THREE.Vector3;
     velocity: THREE.Vector3;
     particles: THREE.Mesh[];
-  } | null = null;
+  }>();
 
   private _particleGeom: THREE.SphereGeometry;
   private _particleMat: THREE.MeshStandardMaterial;
@@ -137,10 +146,6 @@ export class Renderer implements CameraControlHost {
     this.startGroup = new THREE.Group(); this.scene.add(this.startGroup);
     this.decorGroup = new THREE.Group(); this.scene.add(this.decorGroup);
 
-    this.car = buildVehicle(DEFAULT_VEHICLE_ID);
-    this.car.visible = false;
-    this.scene.add(this.car);
-
     this._particleGeom = new THREE.SphereGeometry(0.05, 6, 6);
     this._particleMat = new THREE.MeshStandardMaterial({
       color: 0xff8800,
@@ -154,28 +159,71 @@ export class Renderer implements CameraControlHost {
 
   // -------- public API --------
 
-  setCar(visible: boolean, sample: TrackFrame | null = null): void {
-    this.car.visible = !!visible;
-    // Reset any wipeout transform (a crash shrinks/hides the car) so a fresh run
-    // shows it whole again.
-    if (visible) this.car.scale.setScalar(1);
-    if (visible && sample) placeCar(this.car, sample);
+  /**
+   * Ensure a car mesh exists for `carId`, building it (using the currently
+   * selected vehicle) if this is the first time we've seen that id.
+   */
+  private _ensureCar(carId: number): THREE.Group {
+    let car = this._cars.get(carId);
+    if (!car) {
+      car = buildVehicle(this._vehicleId);
+      car.visible = false;
+      this.scene.add(car);
+      this._cars.set(carId, car);
+    }
+    return car;
   }
 
   /**
-   * Swap the active vehicle mesh (garage selection). Disposes the old mesh and
-   * builds the chosen one, preserving the current visibility so the swap is
-   * seamless in either build or play mode. No-op if the id is already active.
+   * Show/hide and place the car mesh for `carId`. Each racing car gets its own
+   * mesh + id, so several cars can be visible and animated simultaneously.
+   */
+  setCar(carId: number, visible: boolean, sample: TrackFrame | null = null): void {
+    const car = this._ensureCar(carId);
+    car.visible = !!visible;
+    // Reset any wipeout transform (a crash shrinks/hides the car) so a fresh run
+    // shows it whole again.
+    if (visible) car.scale.setScalar(1);
+    if (visible && sample) placeCar(car, sample);
+  }
+
+  /** Remove a car's mesh entirely (e.g. once its run result has been shown). */
+  removeCar(carId: number): void {
+    const car = this._cars.get(carId);
+    if (!car) return;
+    this.scene.remove(car);
+    this._disposeObject(car);
+    this._cars.delete(carId);
+    const w = this._wipeouts.get(carId);
+    if (w) {
+      this._removeParticles(w.particles);
+      this._wipeouts.delete(carId);
+    }
+  }
+
+  /** Remove every car mesh currently on the track (switching back to build mode). */
+  clearCars(): void {
+    for (const carId of Array.from(this._cars.keys())) this.removeCar(carId);
+  }
+
+  /**
+   * Swap the active vehicle mesh (garage selection) for every car currently on
+   * the track, plus future cars. Disposes the old meshes and builds the chosen
+   * one, preserving each car's visibility so the swap is seamless in either
+   * build or play mode. No-op if the id is already active.
    */
   setVehicle(id: VehicleId): void {
     if (id === this._vehicleId) return;
     this._vehicleId = id;
-    const wasVisible = this.car.visible;
-    this.scene.remove(this.car);
-    this._disposeObject(this.car);
-    this.car = buildVehicle(id);
-    this.car.visible = wasVisible;
-    this.scene.add(this.car);
+    for (const [carId, oldCar] of this._cars) {
+      const wasVisible = oldCar.visible;
+      this.scene.remove(oldCar);
+      this._disposeObject(oldCar);
+      const newCar = buildVehicle(id);
+      newCar.visible = wasVisible;
+      this.scene.add(newCar);
+      this._cars.set(carId, newCar);
+    }
   }
 
   /**
@@ -335,9 +383,10 @@ export class Renderer implements CameraControlHost {
     if (plunger) plunger.scale.y = 1;
   }
 
-  startWipeoutAnimation(failType: FailType, frame: TrackFrame | null): void {
-    this.cleanupWipeout();
-    const startPos = this.car.position.clone();
+  startWipeoutAnimation(carId: number, failType: FailType, frame: TrackFrame | null): void {
+    this.cleanupWipeout(carId);
+    const car = this._ensureCar(carId);
+    const startPos = car.position.clone();
     let duration: number;
     let velocity: THREE.Vector3;
 
@@ -405,24 +454,30 @@ export class Renderer implements CameraControlHost {
       });
     }
 
-    this._wipeout = {
+    this._wipeouts.set(carId, {
       type: failType,
       elapsed: 0,
       duration,
       startPos,
       velocity,
       particles,
-    };
+    });
   }
 
-  updateWipeoutAnimation(dt: number): boolean {
-    if (!this._wipeout) return false;
-    const w = this._wipeout;
+  /** Whether the given car currently has a wipeout animation in progress. */
+  isWipeoutPlaying(carId: number): boolean {
+    return this._wipeouts.has(carId);
+  }
+
+  updateWipeoutAnimation(carId: number, dt: number): boolean {
+    const w = this._wipeouts.get(carId);
+    if (!w) return false;
+    const car = this._ensureCar(carId);
     w.elapsed += dt;
 
     if (w.elapsed >= w.duration) {
       this._removeParticles(w.particles);
-      this._wipeout = null;
+      this._wipeouts.delete(carId);
       return false;
     }
 
@@ -433,15 +488,15 @@ export class Renderer implements CameraControlHost {
         // Slide backward and slow down, no gravity
         const slowdown = 1 - progress;
         const offset = w.velocity.clone().multiplyScalar(w.elapsed * slowdown);
-        this.car.position.copy(w.startPos).add(offset);
+        car.position.copy(w.startPos).add(offset);
         break;
       }
       case 'overspeed_corner': {
         // Apply gravity to velocity
         w.velocity.y -= 9.8 * dt;
-        this.car.position.add(w.velocity.clone().multiplyScalar(dt));
+        car.position.add(w.velocity.clone().multiplyScalar(dt));
         // Spin car
-        this.car.rotateY(dt * 8);
+        car.rotateY(dt * 8);
         // Move particles outward and fade them
         for (let i = 0; i < w.particles.length; i++) {
           const p = w.particles[i];
@@ -460,30 +515,30 @@ export class Renderer implements CameraControlHost {
       case 'fly_off': {
         // Ballistic arc with gravity
         w.velocity.y -= 9.8 * dt;
-        this.car.position.add(w.velocity.clone().multiplyScalar(dt));
+        car.position.add(w.velocity.clone().multiplyScalar(dt));
         // Slight spin
-        this.car.rotateZ(dt * 2);
+        car.rotateZ(dt * 2);
         break;
       }
       case 'crash': {
         // Car is destroyed: shrink it away as the explosion takes over.
         const scale = Math.max(0.01, 1 - progress * 2);
-        this.car.scale.setScalar(scale);
-        if (progress >= 0.5) this.car.visible = false;
+        car.scale.setScalar(scale);
+        if (progress >= 0.5) car.visible = false;
         break;
       }
       case 'collapse': {
         // Fall with the bridge: accelerate downward and tumble.
         w.velocity.y -= 9.8 * dt;
-        this.car.position.add(w.velocity.clone().multiplyScalar(dt));
-        this.car.rotateZ(dt * 3);
+        car.position.add(w.velocity.clone().multiplyScalar(dt));
+        car.rotateZ(dt * 3);
         break;
       }
       default: {
         // stall / speed_gate: small bounce up then settle
         const bounceHeight = Math.sin(progress * Math.PI) * 0.3;
-        this.car.position.copy(w.startPos);
-        this.car.position.y += bounceHeight;
+        car.position.copy(w.startPos);
+        car.position.y += bounceHeight;
         break;
       }
     }
@@ -491,12 +546,24 @@ export class Renderer implements CameraControlHost {
     return true;
   }
 
-  cleanupWipeout(): void {
-    if (this._wipeout) {
-      this._removeParticles(this._wipeout.particles);
-      this._wipeout = null;
+  /**
+   * Clean up wipeout state for one car (`carId` given) or every car (no
+   * argument — used when leaving play mode entirely).
+   */
+  cleanupWipeout(carId?: number): void {
+    if (carId !== undefined) {
+      const w = this._wipeouts.get(carId);
+      if (w) {
+        this._removeParticles(w.particles);
+        this._wipeouts.delete(carId);
+      }
+      const car = this._cars.get(carId);
+      if (car) car.scale.setScalar(1);
+      return;
     }
-    // Dispose any in-flight debris/explosion bursts and restore the car transform.
+    for (const w of this._wipeouts.values()) this._removeParticles(w.particles);
+    this._wipeouts.clear();
+    // Dispose any in-flight debris/explosion bursts and restore every car's transform.
     for (const fx of this._effects) {
       for (const m of fx.meshes) {
         this.scene.remove(m);
@@ -505,7 +572,7 @@ export class Renderer implements CameraControlHost {
       }
     }
     this._effects.length = 0;
-    this.car.scale.setScalar(1);
+    for (const car of this._cars.values()) car.scale.setScalar(1);
   }
 
   private _removeParticles(particles: THREE.Mesh[]): void {
