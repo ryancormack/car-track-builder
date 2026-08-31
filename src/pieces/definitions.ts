@@ -10,6 +10,11 @@ import {
   pathBankR, pathBankL, pathChicaneR, pathChicaneL,
   pathRampUp, pathRampDown, pathSteepRampUp, pathSteepRampDown,
   pathSwitchbackR, pathSwitchbackL, pathLaunchpad, pathCrumbleBridge,
+  pathDiveTurnR, pathDiveTurnL, pathZeroGRoll, pathWaveTurnR, pathWaveTurnL,
+  ZERO_G_ROLL_RISE, WAVE_TURN_RISE,
+  pathImmelmann, pathCobraRoll,
+  IMMELMANN_LENGTH, COBRA_ROLL_LENGTH,
+  HALF_LOOP_RADIUS, COBRA_SECOND_HUMP, IMMELMANN_RISE,
   pathLoop, pathCorkscrew, pathJump, pathWall, pathTopHat,
   TOP_HAT_LENGTH,
   pathSpiral, pathSteepHill,
@@ -117,6 +122,55 @@ const SWITCHBACK_MIN_V2 =
   2 * G * SWITCHBACK_RISE +
   2 * FRICTION * RAMP_FRICTION_MULT * SWITCHBACK_LEN +
   6;
+
+// The Dive Turn is the same hairpin taken DOWNHILL, so it has no climb to pay
+// for and no gate: it is the piece that gives height back. It shares the
+// Switchback's arc, hence the shared length.
+const DIVE_TURN_LEN = SWITCHBACK_LEN;
+
+// Entry-speed gate for the Zero-g roll: it must crest the same hill the Steep
+// Hill uses (gravity to the crest + friction over the climbing half), and it must
+// arrive there with enough speed to be carried through the inverted apex rather
+// than flopping over it. The inversion allowance is a gameplay figure; it puts
+// the finished gate just above the Steep Hill's and above the plain Loop's,
+// making this the most demanding inversion short of the Giant Loop — you need a
+// real drop or a booster behind it.
+const ZERO_G_ROLL_LEN = 3.73;
+const ZERO_G_ROLL_INVERSION_ALLOWANCE = 8;
+const ZERO_G_ROLL_MIN_V2 =
+  2 * G * ZERO_G_ROLL_RISE +
+  2 * FRICTION * RAMP_FRICTION_MULT * ZERO_G_ROLL_LEN / 2 +
+  ZERO_G_ROLL_INVERSION_ALLOWANCE;
+
+// Entry-speed gate for the Wave turn: only the small hump has to be cleared, so
+// this is a low gate — it stays a corner you can take at speed (like the Bank it
+// is based on, it is deliberately NOT subject to the flat-corner overspeed gate
+// in physics.ts), just not one you can crawl over.
+const WAVE_TURN_LEN = 1.32;
+const WAVE_TURN_MIN_V2 =
+  2 * G * WAVE_TURN_RISE +
+  2 * FRICTION * RAMP_FRICTION_MULT * WAVE_TURN_LEN / 2 +
+  3;
+
+// Entry-speed gates for the two compound inversions. Both open with a genuine
+// vertical half-loop, so the binding constraint is the same apex-contact
+// condition the Loop uses — reuse loopEntryGate rather than inventing a second
+// derivation — plus the friction toll over the rolling section that follows.
+// These are the most expensive pieces in the catalogue after the Giant Loop,
+// which is the intent: a double inversion should demand a real drop or a launch.
+const IMMELMANN_ROLLOUT_LEN = IMMELMANN_LENGTH - HALF_LOOP_RADIUS * (1 + Math.PI);
+const IMMELMANN_MIN_V2 =
+  loopEntryGate(HALF_LOOP_RADIUS) +
+  2 * FRICTION * IMMELMANN_ROLLOUT_LEN +
+  2 * G * IMMELMANN_RISE;
+
+const COBRA_ROLLOUT_LEN = COBRA_ROLL_LENGTH - HALF_LOOP_RADIUS * (1 + Math.PI);
+const COBRA_ROLL_MIN_V2 =
+  loopEntryGate(HALF_LOOP_RADIUS) +
+  2 * FRICTION * COBRA_ROLLOUT_LEN +
+  // The second hump is taken while rolling through fully inverted, so it needs
+  // headroom of its own rather than just the energy to crest it.
+  2 * G * COBRA_SECOND_HUMP;
 
 export const PIECES: Record<PieceId, Piece> = {
   START: {
@@ -252,6 +306,74 @@ export const PIECES: Record<PieceId, Piece> = {
     pathLen: 3.84, excitement: 18, minV2: SWITCHBACK_MIN_V2, boostEnergy: 0,
     color: '#ff8c1a',
     pathLocal: pathSwitchbackR,
+  },
+  DIVE_TURN_L: {
+    id: 'DIVE_TURN_L', name: 'Dive Turn Left', icon: '⤵', category: 'elev', featured: true,
+    // The Switchback's descending twin: the same flat 180° hairpin, dropping 2
+    // instead of climbing 2. Trades height back for speed, so unlike the
+    // Switchback it needs no entry speed at all — this is how a stacked track
+    // gets back down to the floor while reversing, in one piece.
+    forward: 1, turn: 2, sideAdvance: -2, dz: -2,
+    pathLen: DIVE_TURN_LEN, excitement: 20, minV2: 0, boostEnergy: 0,
+    color: '#ff8c1a',
+    pathLocal: pathDiveTurnL,
+  },
+  DIVE_TURN_R: {
+    id: 'DIVE_TURN_R', name: 'Dive Turn Right', icon: '⤷', category: 'elev', featured: true,
+    forward: 1, turn: 2, sideAdvance: 2, dz: -2,
+    pathLen: DIVE_TURN_LEN, excitement: 20, minV2: 0, boostEnergy: 0,
+    color: '#ff8c1a',
+    pathLocal: pathDiveTurnR,
+  },
+  WAVE_TURN_L: {
+    id: 'WAVE_TURN_L', name: 'Wave Turn Left', icon: '🌊', category: 'turn', featured: true,
+    // A Bank with an airtime hump over the apex: same footprint and same
+    // endpoints as Banked Left, so it drops into any slot a Bank fits, but it
+    // lifts the car over a crest mid-corner and leans harder doing it.
+    forward: 1, turn: -1, dz: 0,
+    pathLen: WAVE_TURN_LEN, excitement: 12, minV2: WAVE_TURN_MIN_V2, boostEnergy: 0,
+    color: '#ffc247',
+    pathLocal: pathWaveTurnL,
+  },
+  WAVE_TURN_R: {
+    id: 'WAVE_TURN_R', name: 'Wave Turn Right', icon: '🌊', category: 'turn', featured: true,
+    forward: 1, turn: 1, dz: 0,
+    pathLen: WAVE_TURN_LEN, excitement: 12, minV2: WAVE_TURN_MIN_V2, boostEnergy: 0,
+    color: '#ffc247',
+    pathLocal: pathWaveTurnR,
+  },
+  ZERO_G_ROLL: {
+    id: 'ZERO_G_ROLL', name: 'Zero-G Roll', icon: '🔃', category: 'stunt', featured: true,
+    // A full 360° roll taken over the crest of an airtime hill — inverted and
+    // weightless at the same instant. Same two-cell footprint and level exit as
+    // the Steep Hill it is built on, but it costs more entry speed than either
+    // that or the flat Corkscrew.
+    forward: 2, turn: 0, dz: 0,
+    pathLen: ZERO_G_ROLL_LEN, excitement: 26, minV2: ZERO_G_ROLL_MIN_V2, boostEnergy: 0,
+    color: '#3da9fc',
+    pathLocal: pathZeroGRoll,
+  },
+  IMMELMANN: {
+    id: 'IMMELMANN', name: 'Immelmann', icon: '🛩', category: 'stunt', featured: true,
+    // Pitches up and over through a vertical half-loop (inverting), then rolls
+    // upright as it eases down into the parallel lane — so it inverts AND turns
+    // the car around, which nothing else in the catalogue does. Exits reversed,
+    // one lane over and one unit HIGHER than it entered: it converts speed into
+    // height and a change of direction.
+    forward: 4, turn: 2, sideAdvance: 2, dz: 1,
+    pathLen: IMMELMANN_LENGTH, excitement: 32, minV2: IMMELMANN_MIN_V2, boostEnergy: 0,
+    color: '#3da9fc',
+    pathLocal: pathImmelmann,
+  },
+  COBRA_ROLL: {
+    id: 'COBRA_ROLL', name: 'Cobra Roll', icon: '🐍', category: 'stunt', featured: true,
+    // Two humps, two inversions, exits reversed and level. The biggest
+    // single-piece excitement payoff in the catalogue and the most demanding
+    // gate after the Giant Loop.
+    forward: 6, turn: 2, sideAdvance: 2, dz: 0,
+    pathLen: COBRA_ROLL_LENGTH, excitement: 44, minV2: COBRA_ROLL_MIN_V2, boostEnergy: 0,
+    color: '#3da9fc',
+    pathLocal: pathCobraRoll,
   },
   LAUNCHPAD: {
     id: 'LAUNCHPAD', name: 'Launchpad', icon: '🚀', category: 'special', boost: true, featured: true,
@@ -398,15 +520,15 @@ export const PALETTE_GROUPS: PaletteGroup[] = [
   { label: 'Basics', ids: ['STRAIGHT'] },
   {
     label: 'Turns',
-    ids: ['CURVE_L', 'CURVE_R', 'BANK_L', 'BANK_R', 'WIDE_L_2', 'WIDE_R_2', 'WIDE_L_3', 'WIDE_R_3', 'CHICANE_L', 'CHICANE_R'],
+    ids: ['CURVE_L', 'CURVE_R', 'BANK_L', 'BANK_R', 'WAVE_TURN_L', 'WAVE_TURN_R', 'WIDE_L_2', 'WIDE_R_2', 'WIDE_L_3', 'WIDE_R_3', 'CHICANE_L', 'CHICANE_R'],
   },
   {
     label: 'Elevation',
-    ids: ['RAMP_UP', 'RAMP_DN', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN', 'STEEP_HILL', 'SWITCHBACK_L', 'SWITCHBACK_R'],
+    ids: ['RAMP_UP', 'RAMP_DN', 'STEEP_RAMP_UP', 'STEEP_RAMP_DN', 'STEEP_HILL', 'SWITCHBACK_L', 'SWITCHBACK_R', 'DIVE_TURN_L', 'DIVE_TURN_R'],
   },
   {
     label: 'Stunts',
-    ids: ['LOOP', 'GIANT_LOOP', 'CORKSCREW', 'JUMP', 'GIANT_JUMP', 'TOP_HAT', 'SPIRAL', 'SPIRAL_TOWER', 'HELIX_UP', 'HELIX_DN'],
+    ids: ['LOOP', 'GIANT_LOOP', 'CORKSCREW', 'ZERO_G_ROLL', 'IMMELMANN', 'COBRA_ROLL', 'JUMP', 'GIANT_JUMP', 'TOP_HAT', 'SPIRAL', 'SPIRAL_TOWER', 'HELIX_UP', 'HELIX_DN'],
   },
   { label: 'Hazards', ids: ['WALL', 'CRUMBLE_BRIDGE'] },
   { label: 'Boost', ids: ['BOOSTER', 'BRAKE', 'LAUNCHPAD'] },

@@ -714,6 +714,35 @@ export function buildPieceMesh(piece: Piece, entry: GridState, path: PathFn): TH
       emissive: COLORS.trackOrangeBright, emissiveIntensity: 0.12, segments: 160,
     });
   }
+  if (piece.id === 'DIVE_TURN_L' || piece.id === 'DIVE_TURN_R') {
+    // Same hairpin geometry as the Switchback, so it gets the same tessellation.
+    return buildRailedTrack(path, entry, COLORS.trackOrangeBright, {
+      emissive: COLORS.trackOrangeBright, emissiveIntensity: 0.12, segments: 160,
+    });
+  }
+  if (piece.id === 'WAVE_TURN_L' || piece.id === 'WAVE_TURN_R') {
+    // Reads as a Bank, so it keeps the bank palette; the extra segments carry the
+    // hump and the deeper lean without faceting.
+    return buildRailedTrack(path, entry, COLORS.bank, {
+      emissive: COLORS.bankEm, emissiveIntensity: 0.25, segments: 72,
+    });
+  }
+  if (piece.id === 'ZERO_G_ROLL') {
+    // An inversion, so it takes the blue stunt palette like the Loop/Corkscrew.
+    return buildRailedTrack(path, entry, COLORS.trackBlue, {
+      emissive: COLORS.trackBlue, emissiveIntensity: 0.15, segments: 180,
+    });
+  }
+  if (piece.id === 'IMMELMANN' || piece.id === 'COBRA_ROLL') {
+    // Long compound inversions: they pack a vertical half-loop and a rolling run
+    // into one piece, so they need the highest segment counts in the catalogue to
+    // keep both the loop's curvature and the roll's twist smooth.
+    return buildRailedTrack(path, entry, COLORS.trackBlue, {
+      emissive: COLORS.trackBlue,
+      emissiveIntensity: 0.15,
+      segments: piece.id === 'COBRA_ROLL' ? 320 : 240,
+    });
+  }
   if (piece.id === 'TOP_HAT') {
     return buildRailedTrack(path, entry, COLORS.trackOrange, {
       emissive: COLORS.trackOrange, emissiveIntensity: 0.1, segments: 200,

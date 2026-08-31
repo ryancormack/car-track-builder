@@ -12,6 +12,12 @@ export interface CameraControlHost {
   frustumSize: number;
   updateCamera(): void;
   _updateFrustum(): void;
+  /**
+   * Accumulate a manual pan. The renderer keeps this separate from the camera
+   * anchor so a pan survives a track rebuild and is not overwritten by the
+   * follow-cam during play.
+   */
+  panBy(delta: THREE.Vector3): void;
 }
 
 export function installCameraControls(host: CameraControlHost): void {
@@ -44,9 +50,10 @@ export function installCameraControls(host: CameraControlHost): void {
     const right = new THREE.Vector3();
     const up = new THREE.Vector3();
     host.camera.matrixWorld.extractBasis(right, up, new THREE.Vector3());
-    host.cameraTarget.addScaledVector(right, -dx * panSpeed);
-    host.cameraTarget.addScaledVector(up, dy * panSpeed);
-    host.updateCamera();
+    const delta = new THREE.Vector3();
+    delta.addScaledVector(right, -dx * panSpeed);
+    delta.addScaledVector(up, dy * panSpeed);
+    host.panBy(delta);
   });
 
   canvas.addEventListener('wheel', (e) => {
