@@ -3,14 +3,43 @@
 import { PIECES, PALETTE_GROUPS, DECORATIONS, DECORATION_ORDER, canDecorate } from './pieces/index.js';
 import type { Track } from './track.js';
 import type { Renderer } from './renderer/index.js';
-import type { DecorationId, PieceId } from './types.js';
+import type { DecorationId, Piece, PieceId } from './types.js';
 import type { StatusKind } from './app/hud.js';
+import { loadCollapsedGroups, saveCollapsedGroups } from './app/storage.js';
+
+/**
+ * Hover text for a palette button, derived from the piece's OWN fields rather
+ * than a hand-written blurb per piece. With 40-odd pieces the catalogue is far
+ * past the point where a name alone tells a player what a piece does, and a
+ * generated description cannot go stale: change `dz` or `minV2` and the tooltip
+ * follows. Reads e.g. "Turns 180° · climbs 2 · needs speed 50 · +18 excitement".
+ */
+export function describePiece(piece: Piece): string {
+  const parts: string[] = [];
+  const turn = Math.abs(piece.turn);
+  if (turn === 2) parts.push('Turns 180°');
+  else if (turn === 1) parts.push(`Turns 90° ${piece.turn < 0 ? 'left' : 'right'}`);
+  if (piece.sideAdvance) parts.push(`shifts ${Math.abs(piece.sideAdvance)} across`);
+  if (piece.dz > 0) parts.push(`climbs ${piece.dz}`);
+  else if (piece.dz < 0) parts.push(`drops ${Math.abs(piece.dz)}`);
+  if (piece.boostEnergy > 0) parts.push(`boosts speed (+${piece.boostEnergy})`);
+  else if (piece.boostEnergy < 0) parts.push('slows the car');
+  if (piece.minV2 > 0) parts.push(`needs speed ${Math.round(piece.minV2)}`);
+  if (piece.excitement > 0) parts.push(`+${piece.excitement} excitement`);
+  if (parts.length === 0) parts.push('Plain track');
+  return `${piece.name} — ${parts.join(' · ')}`;
+}
 
 export interface EditorOptions {
   track: Track;
   renderer: Renderer;
   paletteEl: HTMLElement;
   statusEl: HTMLElement | null;
+  /**
+   * Optional palette filter box. Injected like the other elements rather than
+   * looked up by id, so the unit tests can simply omit it.
+   */
+  searchEl?: HTMLInputElement | null;
   onChange?: () => void;
   /** Called whenever the selected slot changes (null when nothing is selected). */
   onSelectionChange?: (sel: { index: number; name: string } | null) => void;
@@ -21,6 +50,7 @@ export class Editor {
   renderer: Renderer;
   paletteEl: HTMLElement;
   statusEl: HTMLElement | null;
+  searchEl: HTMLInputElement | null;
   onChange: () => void;
   onSelectionChange: (sel: { index: number; name: string } | null) => void;
   enabled = true;
@@ -39,13 +69,21 @@ export class Editor {
    * insert mode (delete or replace), cleared on (de)select.
    */
   insertAnchor: number | null = null;
+  /** Palette groups, so a heading click can hide exactly its own members. */
+  private _groups: { label: string; sep: HTMLElement; members: HTMLElement[] }[] = [];
+  /** Labels of collapsed groups, restored from the player's last session. */
+  private _collapsed: Set<string> = new Set(loadCollapsedGroups() ?? []);
+  /** Current lower-cased palette filter; empty means unfiltered. */
+  private _query = '';
+  private _emptyNote: HTMLElement | null = null;
   private _statusTimer?: ReturnType<typeof setTimeout>;
 
-  constructor({ track, renderer, paletteEl, statusEl, onChange, onSelectionChange }: EditorOptions) {
+  constructor({ track, renderer, paletteEl, statusEl, searchEl, onChange, onSelectionChange }: EditorOptions) {
     this.track = track;
     this.renderer = renderer;
     this.paletteEl = paletteEl;
     this.statusEl = statusEl;
+    this.searchEl = searchEl ?? null;
     this.onChange = onChange ?? (() => {});
     this.onSelectionChange = onSelectionChange ?? (() => {});
     this._build();
@@ -54,15 +92,17 @@ export class Editor {
   private _build(): void {
     this.paletteEl.innerHTML = '';
     this.buttons = [];
+    this._groups = [];
     // Render the palette grouped into labelled sections so the catalogue is easy
-    // to scan.
+    // to scan. Each heading is a button that collapses its own group: with 40-odd
+    // pieces the full list is several screens tall, so being able to shut the
+    // groups you are not using is what makes it navigable.
     for (const group of PALETTE_GROUPS) {
       const visible = group.ids.filter((id) => PIECES[id] && !PIECES[id].hidden);
       if (visible.length === 0) continue;
-      const sep = document.createElement('div');
-      sep.className = 'palette-sep';
-      sep.textContent = group.label;
+      const sep = this._makeGroupHeader(group.label, visible.length);
       this.paletteEl.appendChild(sep);
+      const members: HTMLElement[] = [];
       for (const id of visible) {
         const piece = PIECES[id];
         const btn = document.createElement('button');
@@ -70,6 +110,15 @@ export class Editor {
         if (piece.featured) btn.classList.add('featured');
         if (piece.boost) btn.classList.add('boost');
         btn.dataset.pieceId = id;
+        btn.title = describePiece(piece);
+        // Lower-cased haystack for the search box, built once. Covers the piece
+        // name, its id, its group, and the generated description -- so as well as
+        // names you can search a group ("stunts"), or anything the description
+        // states, e.g. "180" for the reversals or "drops" for the descents. It
+        // deliberately holds no hand-written keywords: those would be another
+        // per-piece copy to maintain, so the searchable text is exactly the text
+        // the piece already shows.
+        btn.dataset.search = `${piece.name} ${id} ${group.label} ${describePiece(piece)}`.toLowerCase();
         btn.innerHTML = `
           <span class="icon">${piece.icon}</span>
           <span class="label">${piece.name}</span>
@@ -79,22 +128,24 @@ export class Editor {
         btn.addEventListener('click', () => this._add(id));
         this.paletteEl.appendChild(btn);
         this.buttons.push(btn);
+        members.push(btn);
       }
+      this._groups.push({ label: group.label, sep, members });
     }
 
     // Decoration buttons (e.g. Ring of Fire). These attach to the SELECTED piece
     // rather than appending a new piece, so they live in their own labelled row.
     this.decoButtons = [];
     if (DECORATION_ORDER.length > 0) {
-      const sep = document.createElement('div');
-      sep.className = 'palette-sep';
-      sep.textContent = 'Decorations';
+      const sep = this._makeGroupHeader('Decorations', DECORATION_ORDER.length);
       this.paletteEl.appendChild(sep);
+      const members: HTMLElement[] = [];
       for (const decoId of DECORATION_ORDER) {
         const deco = DECORATIONS[decoId];
         const btn = document.createElement('button');
         btn.className = 'piece-btn deco';
         btn.dataset.decoId = decoId;
+        btn.dataset.search = `${deco.name} ${decoId} decoration`.toLowerCase();
         btn.title = 'Select a flat piece (straight, ramp, jump, booster…), then click to add/remove';
         btn.innerHTML = `
           <span class="icon">${deco.icon}</span>
@@ -103,9 +154,142 @@ export class Editor {
         btn.addEventListener('click', () => this._toggleDeco(decoId));
         this.paletteEl.appendChild(btn);
         this.decoButtons.push(btn);
+        members.push(btn);
+      }
+      this._groups.push({ label: 'Decorations', sep, members });
+    }
+    // A place to say "nothing matched" rather than showing an empty panel.
+    this._emptyNote = document.createElement('div');
+    this._emptyNote.className = 'palette-empty is-hidden';
+    this._emptyNote.textContent = 'No pieces match.';
+    this.paletteEl.appendChild(this._emptyNote);
+
+    this._applyCollapsed();
+    this._installSearch();
+    this._refreshButtons();
+    this._installScrollCue();
+  }
+
+  /**
+   * A group heading that doubles as its own collapse toggle. Kept a real
+   * `<button>` so it is keyboard-reachable and announces its state; the styling
+   * strips the button chrome back to a heading.
+   */
+  private _makeGroupHeader(label: string, count: number): HTMLElement {
+    const sep = document.createElement('button');
+    sep.className = 'palette-sep';
+    sep.dataset.groupLabel = label;
+    sep.innerHTML = `
+      <span class="palette-sep-chevron" aria-hidden="true">▾</span>
+      <span class="palette-sep-label">${label}</span>
+      <span class="palette-sep-count">${count}</span>
+    `;
+    if (typeof sep.setAttribute === 'function') sep.setAttribute('type', 'button');
+    sep.addEventListener('click', () => this._toggleGroup(label));
+    return sep;
+  }
+
+  /** Collapse or expand one group, and remember the choice. */
+  private _toggleGroup(label: string): void {
+    if (this._collapsed.has(label)) this._collapsed.delete(label);
+    else this._collapsed.add(label);
+    saveCollapsedGroups([...this._collapsed]);
+    this._applyCollapsed();
+  }
+
+  /**
+   * Reflect the collapsed set into the DOM. Visibility is driven by classes
+   * rather than inline styles because the Editor is unit-tested against a
+   * minimal element stub that has `classList.add`/`remove` and no `style`.
+   *
+   * A live search overrides collapse entirely: while filtering you want to see
+   * every match wherever it lives, and the previous collapse state comes back
+   * when the box is cleared.
+   */
+  private _applyCollapsed(): void {
+    const searching = this._query.length > 0;
+    for (const g of this._groups) {
+      const shut = !searching && this._collapsed.has(g.label);
+      if (shut) g.sep.classList.add('collapsed');
+      else g.sep.classList.remove('collapsed');
+      if (typeof g.sep.setAttribute === 'function') {
+        g.sep.setAttribute('aria-expanded', shut ? 'false' : 'true');
+      }
+      for (const b of g.members) {
+        if (shut) b.classList.add('hidden-by-group');
+        else b.classList.remove('hidden-by-group');
       }
     }
-    this._refreshButtons();
+  }
+
+  /** Wire the search box, when the host supplied one. */
+  private _installSearch(): void {
+    const el = this.searchEl;
+    if (!el || typeof el.addEventListener !== 'function') return;
+    el.addEventListener('input', () => {
+      this._query = (el.value ?? '').trim().toLowerCase();
+      this._applySearch();
+    });
+    // Escape clears the filter without reaching for the mouse.
+    el.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this._query.length > 0) {
+        e.stopPropagation();
+        el.value = '';
+        this._query = '';
+        this._applySearch();
+      }
+    });
+    this._applySearch();
+  }
+
+  /**
+   * Filter the palette to the current query, hiding groups that end up empty and
+   * showing a note when nothing matches at all.
+   */
+  private _applySearch(): void {
+    const q = this._query;
+    let anyVisible = false;
+    for (const g of this._groups) {
+      let groupHasMatch = false;
+      for (const b of g.members) {
+        const hay = b.dataset.search ?? '';
+        const hit = q.length === 0 || hay.includes(q);
+        if (hit) { b.classList.remove('hidden-by-search'); groupHasMatch = true; }
+        else b.classList.add('hidden-by-search');
+      }
+      if (groupHasMatch) { g.sep.classList.remove('hidden-by-search'); anyVisible = true; }
+      else g.sep.classList.add('hidden-by-search');
+    }
+    if (this._emptyNote) {
+      if (anyVisible) this._emptyNote.classList.add('is-hidden');
+      else this._emptyNote.classList.remove('is-hidden');
+    }
+    // Collapse state is suppressed while searching, so re-apply it either way.
+    this._applyCollapsed();
+  }
+
+  /**
+   * Keep the palette panel's "more below" fade in step with the scroll position:
+   * shown while there is more to reach, hidden at the end (and never shown at all
+   * when the whole catalogue happens to fit).
+   *
+   * Purely an affordance, so every DOM API it needs is feature-detected: the
+   * editor is unit-tested against a minimal element stub, and a cosmetic cue must
+   * never be the reason the palette fails to build.
+   */
+  private _installScrollCue(): void {
+    const pal = this.paletteEl as HTMLElement & { closest?: (s: string) => Element | null };
+    if (typeof pal.closest !== 'function') return;
+    const panel = pal.closest('.panel-pieces');
+    if (!panel || typeof pal.addEventListener !== 'function') return;
+    const sync = (): void => {
+      const atEnd = pal.scrollTop + pal.clientHeight >= pal.scrollHeight - 2;
+      panel.classList.toggle('at-end', atEnd);
+    };
+    pal.addEventListener('scroll', sync, { passive: true });
+    // The palette's height depends on the window, so re-check on resize too.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(sync).observe(pal);
+    sync();
   }
 
   setEnabled(on: boolean): void {

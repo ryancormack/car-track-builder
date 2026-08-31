@@ -181,7 +181,10 @@ body {
   background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
   border-right: 1px solid var(--line);
   padding: 14px;
-  overflow: hidden;
+  /* Scrolls only when the panels genuinely cannot fit (short windows); at normal
+     heights the palette absorbs the slack and this never engages. */
+  overflow-y: auto;
+  scrollbar-width: thin;
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -191,20 +194,47 @@ body {
    .panel-pieces flex:1 rule below (both are single-class otherwise). */
 .sidebar > .panel:not(.panel-pieces) { flex: 0 0 auto; }
 
-/* The Track Pieces panel takes the remaining height; its palette scrolls. */
+/* The Track Pieces panel takes the remaining height; its palette scrolls.
+   `min-height` is a floor, not a preference: the panel is the only flexible item
+   in the sidebar, so without it a short window squeezes it to a couple of rows
+   (measured: 134px, ONE piece reachable, at 1280x720). If the three panels
+   genuinely cannot fit, the sidebar itself scrolls rather than starving the
+   palette. */
 .panel-pieces {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 300px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
+/* The palette holds ~2200px of pieces in a few hundred px of box, so make the
+   cut-off visible: a fade at the bottom edge reads as "there is more below"
+   where a 9px scrollbar thumb in a dark panel does not. Sits on the panel (not
+   the scrolling palette) so it stays put while the content moves under it, and
+   is hidden once the palette is scrolled to the end. */
+.panel-pieces::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  height: 34px;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: linear-gradient(180deg, transparent, var(--panel-2) 78%);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 120ms ease-out;
+}
+.panel-pieces.at-end::after { opacity: 0; }
 .panel-pieces .palette {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
   margin-right: -4px;
+  /* Room for the fade so the last row is never hidden under it. */
+  padding-bottom: 26px;
+  scrollbar-width: thin;
 }
 .panel-pieces .palette::-webkit-scrollbar { width: 9px; }
 .panel-pieces .palette::-webkit-scrollbar-track { background: transparent; }
@@ -451,6 +481,86 @@ body.mode-play .drop-control { opacity: 0.5; }
   color: var(--muted-dim);
   border-top: 1px solid var(--line);
   padding-top: 8px;
+  /* It is a <button> so it is keyboard-reachable and announces its expanded
+     state; strip the button chrome back to a heading. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* Sticky so the section you are looking at stays labelled while you scroll.
+     With 40-odd pieces across 8 groups the palette is several screens tall, and
+     without this you lose track of which group you are in the moment the header
+     scrolls off.
+     Every header whose natural position is above the scroll top pins at top:0,
+     so they stack -- and because the LAST one to pin is the group you are
+     currently in, and later siblings paint over earlier ones, the visible label
+     is always the right one. That only reads correctly with an OPAQUE
+     background; a translucent one lets the previous groups' labels ghost
+     through. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 6px;
+  background: var(--panel-1);
+}
+.palette-sep:hover { color: var(--text); }
+.palette-sep:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.palette-sep-label { flex: 1 1 auto; }
+.palette-sep-count {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--muted-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 99px;
+  padding: 1px 6px;
+}
+.palette-sep-chevron {
+  font-size: 9px;
+  line-height: 1;
+  transition: transform 120ms ease-out;
+}
+.palette-sep.collapsed .palette-sep-chevron { transform: rotate(-90deg); }
+
+/* Visibility is class-driven, never inline styles: the Editor is unit-tested
+   against a minimal element stub that has classList.add/remove and no `style`. */
+.piece-btn.hidden-by-group,
+.piece-btn.hidden-by-search,
+.palette-sep.hidden-by-search { display: none; }
+
+.palette-empty {
+  grid-column: 1 / -1;
+  padding: 14px 2px;
+  font-size: 12px;
+  color: var(--muted-dim);
+  text-align: center;
+}
+.palette-empty.is-hidden { display: none; }
+
+/* Filter box: pinned above the scrolling palette so it never scrolls away. */
+.piece-search {
+  flex: 0 0 auto;
+  margin: 0 0 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: #0f1d34;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.piece-search::placeholder { color: var(--muted-dim); }
+.piece-search:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 .piece-btn.deco {
   border-color: rgba(255, 90, 30, 0.5);
