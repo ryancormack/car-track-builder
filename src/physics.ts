@@ -33,11 +33,22 @@ export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' 
 // and flat pieces are excluded — loops handle their own contact physics and the
 // others are flat or ballistic. Exported so the catalogue/test layer can assert
 // that every coil is treated consistently.
+//
+// The Immelmann and Cobra Roll are deliberately absent: both open with a genuine
+// vertical half-loop, so they fall under the loops exclusion above (and their
+// entry gates are derived from loopEntryGate, not from a graded-surface toll).
 export function isRampGrade(id: string): boolean {
   return id === 'RAMP_UP' || id === 'RAMP_DN' || id === 'STEEP_HILL'
     || id === 'STEEP_RAMP_UP' || id === 'STEEP_RAMP_DN' || id === 'TOP_HAT'
     || id === 'SWITCHBACK_L' || id === 'SWITCHBACK_R' || id === 'LAUNCHPAD'
-    || id === 'HELIX_UP' || id === 'HELIX_DN' || id === 'SPIRAL' || id === 'SPIRAL_TOWER';
+    || id === 'HELIX_UP' || id === 'HELIX_DN' || id === 'SPIRAL' || id === 'SPIRAL_TOWER'
+    // The Dive Turn is the Switchback's descending twin and rides the identical
+    // arc, so it must be graded identically or the same shape costs different
+    // friction depending on which way it points.
+    || id === 'DIVE_TURN_L' || id === 'DIVE_TURN_R'
+    // Both carry a real crest (Zero-G Roll reuses the Steep Hill's profile), and
+    // both entry gates are derived assuming this surcharge applies.
+    || id === 'ZERO_G_ROLL' || id === 'WAVE_TURN_L' || id === 'WAVE_TURN_R';
 }
 
 // Genuine "hills" the car drives over the top of (as opposed to looping through
@@ -45,7 +56,11 @@ export function isRampGrade(id: string): boolean {
 // means rolling back down rather than peeling off or stalling.
 export function isHill(id: string): boolean {
   return id === 'RAMP_UP' || id === 'STEEP_RAMP_UP' || id === 'STEEP_HILL' || id === 'HELIX_UP'
-    || id === 'TOP_HAT' || id === 'SWITCHBACK_L' || id === 'SWITCHBACK_R';
+    || id === 'TOP_HAT' || id === 'SWITCHBACK_L' || id === 'SWITCHBACK_R'
+    // Both are driven over a crest, so an underpowered car should roll back down
+    // rather than stall on the spot. The inversions (Immelmann, Cobra Roll) are
+    // NOT hills: the car is carried over by the loop, not by cresting a slope.
+    || id === 'ZERO_G_ROLL' || id === 'WAVE_TURN_L' || id === 'WAVE_TURN_R';
 }
 
 export class Simulator {

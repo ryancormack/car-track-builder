@@ -3,8 +3,31 @@
 import { PIECES, PALETTE_GROUPS, DECORATIONS, DECORATION_ORDER, canDecorate } from './pieces/index.js';
 import type { Track } from './track.js';
 import type { Renderer } from './renderer/index.js';
-import type { DecorationId, PieceId } from './types.js';
+import type { DecorationId, Piece, PieceId } from './types.js';
 import type { StatusKind } from './app/hud.js';
+
+/**
+ * Hover text for a palette button, derived from the piece's OWN fields rather
+ * than a hand-written blurb per piece. With 40-odd pieces the catalogue is far
+ * past the point where a name alone tells a player what a piece does, and a
+ * generated description cannot go stale: change `dz` or `minV2` and the tooltip
+ * follows. Reads e.g. "Turns 180° · climbs 2 · needs speed 50 · +18 excitement".
+ */
+export function describePiece(piece: Piece): string {
+  const parts: string[] = [];
+  const turn = Math.abs(piece.turn);
+  if (turn === 2) parts.push('Turns 180°');
+  else if (turn === 1) parts.push(`Turns 90° ${piece.turn < 0 ? 'left' : 'right'}`);
+  if (piece.sideAdvance) parts.push(`shifts ${Math.abs(piece.sideAdvance)} across`);
+  if (piece.dz > 0) parts.push(`climbs ${piece.dz}`);
+  else if (piece.dz < 0) parts.push(`drops ${Math.abs(piece.dz)}`);
+  if (piece.boostEnergy > 0) parts.push(`boosts speed (+${piece.boostEnergy})`);
+  else if (piece.boostEnergy < 0) parts.push('slows the car');
+  if (piece.minV2 > 0) parts.push(`needs speed ${Math.round(piece.minV2)}`);
+  if (piece.excitement > 0) parts.push(`+${piece.excitement} excitement`);
+  if (parts.length === 0) parts.push('Plain track');
+  return `${piece.name} — ${parts.join(' · ')}`;
+}
 
 export interface EditorOptions {
   track: Track;
@@ -70,6 +93,7 @@ export class Editor {
         if (piece.featured) btn.classList.add('featured');
         if (piece.boost) btn.classList.add('boost');
         btn.dataset.pieceId = id;
+        btn.title = describePiece(piece);
         btn.innerHTML = `
           <span class="icon">${piece.icon}</span>
           <span class="label">${piece.name}</span>
@@ -106,6 +130,31 @@ export class Editor {
       }
     }
     this._refreshButtons();
+    this._installScrollCue();
+  }
+
+  /**
+   * Keep the palette panel's "more below" fade in step with the scroll position:
+   * shown while there is more to reach, hidden at the end (and never shown at all
+   * when the whole catalogue happens to fit).
+   *
+   * Purely an affordance, so every DOM API it needs is feature-detected: the
+   * editor is unit-tested against a minimal element stub, and a cosmetic cue must
+   * never be the reason the palette fails to build.
+   */
+  private _installScrollCue(): void {
+    const pal = this.paletteEl as HTMLElement & { closest?: (s: string) => Element | null };
+    if (typeof pal.closest !== 'function') return;
+    const panel = pal.closest('.panel-pieces');
+    if (!panel || typeof pal.addEventListener !== 'function') return;
+    const sync = (): void => {
+      const atEnd = pal.scrollTop + pal.clientHeight >= pal.scrollHeight - 2;
+      panel.classList.toggle('at-end', atEnd);
+    };
+    pal.addEventListener('scroll', sync, { passive: true });
+    // The palette's height depends on the window, so re-check on resize too.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(sync).observe(pal);
+    sync();
   }
 
   setEnabled(on: boolean): void {
