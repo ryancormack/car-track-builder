@@ -197,6 +197,8 @@ export interface UIElements {
   btnLaunch: HTMLElement;
   hudCars: HTMLElement;
   palette: HTMLElement;
+  /** Palette filter box. */
+  pieceSearch: HTMLElement;
   garage: HTMLElement;
   status: HTMLElement;
   btnUndo: HTMLElement;

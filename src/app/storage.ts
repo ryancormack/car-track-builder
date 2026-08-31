@@ -9,6 +9,9 @@ const VEHICLE_KEY = 'hotTrack.vehicle.v1';
 // Player's chosen car count — also a profile preference, independent of the
 // track save, so it persists across tracks.
 const CAR_COUNT_KEY = 'hotTrack.carCount.v1';
+// Which palette groups the player has collapsed — a layout preference, so it is
+// also kept out of the track save.
+const COLLAPSED_GROUPS_KEY = 'hotTrack.collapsedGroups.v1';
 
 export function saveTrackJSON(json: TrackJSON): boolean {
   try {
@@ -56,8 +59,7 @@ export function loadVehicleId(): string | null {
 }
 
 
-/** Persist the player's chosen number of cars. Returns false if storage failed. */
-export function saveCarCount(count: number): boolean {
+/** Persist the player's chosen number of cars. Returns false if storage failed. */export function saveCarCount(count: number): boolean {
   try {
     localStorage.setItem(CAR_COUNT_KEY, String(count));
     return true;
@@ -76,6 +78,38 @@ export function loadCarCount(): number | null {
     if (raw === null) return null;
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+
+/**
+ * Persist which palette groups the player has collapsed. Also a profile
+ * preference rather than track state — how you like the palette arranged should
+ * survive loading a different track.
+ */
+export function saveCollapsedGroups(labels: readonly string[]): boolean {
+  try {
+    localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(labels));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns the stored collapsed group labels, or null when nothing is stored.
+ * Anything unparseable or not an array of strings is treated as absent rather
+ * than trusted, so a corrupted value cannot hide the whole palette.
+ */
+export function loadCollapsedGroups(): string[] | null {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_GROUPS_KEY);
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((x): x is string => typeof x === 'string');
   } catch {
     return null;
   }
