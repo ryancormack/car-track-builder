@@ -9,7 +9,11 @@ import { buildPieceMesh, buildGhostPiece, buildStartTower, buildRingOfFire, buil
 import type { FireRingHandle, WaterSplashHandle } from './meshes.js';
 import { buildVehicle, placeCar } from './car.js';
 import { buildLivingRoom, type RoomExtent } from './environment.js';
-import { computeRoomLayout, type RoomLayout } from './roomLayout.js';
+import {
+  computeCameraFit, computeRoomLayout, computeTrackBounds,
+  MIN_CAMERA_DISTANCE, MIN_FRUSTUM_SIZE,
+  type RoomLayout, type TrackBounds,
+} from './roomLayout.js';
 import { installCameraControls } from './controls.js';
 import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
@@ -31,6 +35,28 @@ export class Renderer implements CameraControlHost {
   cameraPolar: number;
   cameraZoom: number;
   frustumSize: number;
+
+  /**
+   * What the camera is looking at before the user's own panning is applied: the
+   * track's bounding-box centre in build mode, or the followed car in play mode.
+   */
+  private _cameraAnchor = new THREE.Vector3(0, 0, 0);
+  /**
+   * The user's accumulated drag-to-pan, held SEPARATELY from the anchor.
+   *
+   * `cameraTarget` is derived as anchor + panOffset on every update. Keeping the
+   * two apart is what lets a manual pan survive a track rebuild (adding a piece
+   * recomputes the anchor, not the pan) and lets the player pan while the
+   * follow-cam is tracking a car, instead of the follow overwriting it.
+   */
+  private _panOffset = new THREE.Vector3(0, 0, 0);
+  /** Live track bounds, kept so the frustum can be re-fitted on resize/rotate. */
+  private _fitBounds: TrackBounds | null = null;
+  /**
+   * True while the camera is chasing a car (play mode). Build mode frames the
+   * whole track; play mode keeps the original tight framing.
+   */
+  private _followMode = false;
 
   trackGroup: THREE.Group;
   ghostGroup: THREE.Group;
@@ -807,6 +833,10 @@ export class Renderer implements CameraControlHost {
   // -------- camera helpers --------
 
   updateCamera(): void {
+    // The frustum must be re-fitted before positioning, because the fit decides
+    // cameraDistance (and the near/far planes) as well as the frustum size.
+    this._updateFrustum();
+    this.cameraTarget.copy(this._cameraAnchor).add(this._panOffset);
     const r = this.cameraDistance;
     const az = this.cameraAzimuth, po = this.cameraPolar;
     const x = r * Math.cos(po) * Math.cos(az);
@@ -818,11 +848,26 @@ export class Renderer implements CameraControlHost {
       this.cameraTarget.z + z,
     );
     this.camera.lookAt(this.cameraTarget);
-    this._updateFrustum();
   }
 
   /**
-   * Smoothly lerp the camera target toward the car's current world position.
+   * Add to the user's manual pan. Called by the drag handler instead of writing
+   * `cameraTarget` directly, so the pan is preserved across track rebuilds and
+   * is not clobbered by the follow-cam each frame.
+   */
+  panBy(delta: THREE.Vector3): void {
+    this._panOffset.add(delta);
+    this.updateCamera();
+  }
+
+  /** Discard the user's manual pan, re-centring on the current anchor. */
+  clearPan(): void {
+    this._panOffset.set(0, 0, 0);
+    this.updateCamera();
+  }
+
+  /**
+   * Smoothly lerp the camera anchor toward the car's current world position.
    * Call each frame during play mode to track the car.
    *
    * carPos is in grid space (x = forward, y = lateral, z = up), matching
@@ -835,26 +880,58 @@ export class Renderer implements CameraControlHost {
    * back down within a fraction of a second, and a slow vertical lerp barely
    * reacts to that transient instead of bobbing up and down with it, while still
    * easing toward sustained elevation changes (e.g. climbing a helix).
+   *
+   * This moves the ANCHOR, not the target, so a pan the player applied mid-run
+   * still offsets the view rather than being overwritten on the next frame.
    */
   followCar(carPos: { x: number; y: number; z: number }, dt: number): void {
+    this._followMode = true;
     const horizFactor = 1 - Math.exp(-4 * dt);   // responsive horizontal follow
     const vertFactor = 1 - Math.exp(-1.2 * dt);  // gentle, damped vertical follow
-    this.cameraTarget.x += (carPos.x - this.cameraTarget.x) * horizFactor;
-    this.cameraTarget.z += (carPos.y - this.cameraTarget.z) * horizFactor;
-    this.cameraTarget.y += (carPos.z - this.cameraTarget.y) * vertFactor;
+    this._cameraAnchor.x += (carPos.x - this._cameraAnchor.x) * horizFactor;
+    this._cameraAnchor.z += (carPos.y - this._cameraAnchor.z) * horizFactor;
+    this._cameraAnchor.y += (carPos.z - this._cameraAnchor.y) * vertFactor;
     this.updateCamera();
   }
 
   /**
    * Reset the camera target to the track centroid. Used when switching back to
-   * build mode after play mode ends.
+   * build mode after play mode ends. This is an explicit reset, so it also drops
+   * any manual pan the player applied during the run.
    */
   resetCameraToTrack(track: Track): void {
+    this._followMode = false;
+    this._panOffset.set(0, 0, 0);
     this._recenterCamera(track);
   }
 
   _updateFrustum(): void {
     const aspect = this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1);
+    // Re-fit every update so the framing survives a window resize, an R-key
+    // rotation, and a track that grew since the last rebuild.
+    const fit = computeCameraFit(
+      this._fitBounds,
+      this._cameraAnchor,
+      this.cameraAzimuth,
+      this.cameraPolar,
+      aspect,
+    );
+    // Framing: build mode frames the WHOLE track (so a large layout is visible
+    // at all); play mode keeps the original tight framing, because the camera is
+    // chasing one car and fitting the whole track would shrink it to a speck.
+    this.frustumSize = this._followMode ? MIN_FRUSTUM_SIZE : fit.frustumSize;
+    // Depth is always fitted to the whole track, in both modes. Distance does
+    // not change orthographic framing, so pulling the camera back is free and it
+    // stops distant track being clipped by the near/far planes mid-run.
+    this.cameraDistance = fit.cameraDistance;
+    this.camera.near = fit.near;
+    this.camera.far = fit.far;
+    // Fog is measured in distance from the camera, so a fixed range fades a
+    // large track away entirely once the camera pulls back to frame it. Scale it
+    // with the fitted distance, keeping the original 20/54 look at the original
+    // distance of 14.
+    this._outdoorFog.near = fit.cameraDistance * (20 / MIN_CAMERA_DISTANCE);
+    this._outdoorFog.far = fit.cameraDistance * (54 / MIN_CAMERA_DISTANCE);
     const f = this.frustumSize / this.cameraZoom;
     this.camera.left = -f * aspect;
     this.camera.right = f * aspect;
@@ -869,7 +946,16 @@ export class Renderer implements CameraControlHost {
     // the track is always enclosed by the full padding (no dependence on a
     // drifting joint-mean). See roomLayout.ts.
     const layout = computeRoomLayout(track);
-    this.cameraTarget.set(layout.centerX, layout.centerY, layout.centerZ);
+    // Bounds are kept so _updateFrustum can size the ortho frustum to the whole
+    // track — a fixed frustum makes a large layout impossible to frame at any
+    // zoom level.
+    this._fitBounds = computeTrackBounds(track);
+    // Move the ANCHOR only: the user's manual pan is a separate offset, so
+    // adding or editing a piece no longer throws away where they were looking.
+    this._cameraAnchor.set(layout.centerX, layout.centerY, layout.centerZ);
+    // An empty track has no meaningful place to be panned to, so a leftover pan
+    // would leave the player staring at blank floor after Clear.
+    if (track.pieces.length === 0) this._panOffset.set(0, 0, 0);
 
     // Rebuild (if needed) the living-room environment sized to this layout.
     this._rebuildEnvironmentForTrack(layout);

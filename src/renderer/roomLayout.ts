@@ -127,3 +127,109 @@ export function computeRoomLayout(
 
   return { roomHalf, wallHeight, centerX, centerZ, centerY };
 }
+
+/** Smallest ortho half-height — preserves the original framing of small tracks. */
+export const MIN_FRUSTUM_SIZE = 8;
+/** Smallest camera distance — the original fixed value. */
+export const MIN_CAMERA_DISTANCE = 14;
+/** Slack around the fitted extent so the track isn't flush against the edges. */
+export const FRUSTUM_MARGIN = 1.12;
+/** Clearance kept in front of the near plane and behind the far plane. */
+export const DEPTH_PAD = 12;
+
+/**
+ * How the orthographic camera must be configured to frame a whole track.
+ *
+ * An orthographic frustum shows a fixed world-space rectangle, so it must be
+ * sized from the track's extent — otherwise a large track simply cannot fit on
+ * screen at any zoom. The camera *distance* does not affect ortho framing, but
+ * it does decide which geometry falls outside near/far, so it is fitted too.
+ */
+export interface CameraFit {
+  /** Ortho half-height that frames the whole track at zoom 1.0. */
+  frustumSize: number;
+  /** Distance from the target along the view axis. */
+  cameraDistance: number;
+  /** Near plane. */
+  near: number;
+  /** Far plane. */
+  far: number;
+}
+
+/**
+ * The camera's world-space basis for a given azimuth/polar orbit angle, matching
+ * `Renderer.updateCamera` (camera sits at target + distance·backward, with
+ * Three's default up of +Y).
+ */
+export function cameraBasis(azimuth: number, polar: number): {
+  right: [number, number, number];
+  up: [number, number, number];
+  backward: [number, number, number];
+} {
+  const ca = Math.cos(azimuth), sa = Math.sin(azimuth);
+  const cp = Math.cos(polar), sp = Math.sin(polar);
+  return {
+    // Horizontal, perpendicular to the view axis.
+    right: [sa, 0, -ca],
+    // Screen-up, tilted by the polar angle.
+    up: [-sp * ca, cp, -sp * sa],
+    // From target toward the camera.
+    backward: [cp * ca, sp, cp * sa],
+  };
+}
+
+/**
+ * Fit the orthographic camera to a track's bounding box.
+ *
+ * Projects the box's eight corners onto the camera's screen-right / screen-up /
+ * view axes, so the fit is exact for any orbit angle (pressing R to rotate
+ * re-fits rather than cropping) and for any aspect ratio. Returns the original
+ * fixed values for an empty track, so small tracks look exactly as before.
+ */
+export function computeCameraFit(
+  bounds: TrackBounds | null,
+  center: { x: number; y: number; z: number },
+  azimuth: number,
+  polar: number,
+  aspect: number,
+): CameraFit {
+  if (!bounds) {
+    return {
+      frustumSize: MIN_FRUSTUM_SIZE,
+      cameraDistance: MIN_CAMERA_DISTANCE,
+      near: 0.1,
+      far: MIN_CAMERA_DISTANCE + DEPTH_PAD * 4,
+    };
+  }
+
+  const { right, up, backward } = cameraBasis(azimuth, polar);
+  const safeAspect = aspect > 0 && Number.isFinite(aspect) ? aspect : 1;
+
+  let halfRight = 0, halfUp = 0, halfBack = 0;
+  for (const x of [bounds.minX, bounds.maxX]) {
+    for (const y of [bounds.minY, bounds.maxY]) {
+      for (const z of [bounds.minZ, bounds.maxZ]) {
+        const vx = x - center.x, vy = y - center.y, vz = z - center.z;
+        halfRight = Math.max(halfRight, Math.abs(vx * right[0] + vy * right[1] + vz * right[2]));
+        halfUp = Math.max(halfUp, Math.abs(vx * up[0] + vy * up[1] + vz * up[2]));
+        halfBack = Math.max(halfBack, Math.abs(vx * backward[0] + vy * backward[1] + vz * backward[2]));
+      }
+    }
+  }
+
+  // Fit BOTH axes: the horizontal need is divided by aspect because the frustum
+  // is expressed as a half-HEIGHT (half-width = frustumSize · aspect).
+  const frustumSize = Math.max(
+    MIN_FRUSTUM_SIZE,
+    FRUSTUM_MARGIN * Math.max(halfUp, halfRight / safeAspect),
+  );
+  // Pull the camera back far enough that the nearest corner stays in front of
+  // the near plane, then extend far past the most distant corner.
+  const cameraDistance = Math.max(MIN_CAMERA_DISTANCE, halfBack + DEPTH_PAD);
+  return {
+    frustumSize,
+    cameraDistance,
+    near: 0.1,
+    far: cameraDistance + halfBack + DEPTH_PAD * 2,
+  };
+}

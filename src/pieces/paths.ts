@@ -169,10 +169,15 @@ export const pathCrumbleBridge: PathFn = (t) => ({ lx: 2 * t, ly: 0, lz: 0, bank
 // two lanes over and 2 units higher. Stacking alternating left/right switchbacks
 // makes a compact zig-zag climb. Like a half-turn of an ascending helix that
 // also reverses direction. sign = +1 turns/​offsets right (+y), -1 left.
-// Endpoints: t=0 → (0,0,0) heading +x; t=1 → (0, ±2, 2) heading -x. Pairs with
-// turn=2, sideAdvance=±2, dz=2.
-export function makeSwitchbackPath(sign: number): PathFn {
-  const R = 1, dz = 2;
+// Endpoints: t=0 → (0,0,0) heading +x; t=1 → (0, ±2, rise) heading -x. Pairs with
+// turn=2, sideAdvance=±2, dz=rise.
+//
+// `rise` is signed: +2 gives the climbing Switchback, -2 the descending Dive
+// Turn, which is the same hairpin taken downhill (see DIVE_TURN_* in
+// definitions.ts). The shape is identical, so both share this factory and one
+// pathLen.
+export function makeSwitchbackPath(sign: number, rise = 2): PathFn {
+  const R = 1;
   return (t) => {
     const phi = Math.PI * t;
     return {
@@ -181,8 +186,8 @@ export function makeSwitchbackPath(sign: number): PathFn {
       // Ease the climb at both seams (easedProgress) so the ramp glides out of
       // and back into flat track — and stacks cleanly with the next switchback —
       // instead of kinking sharply upward right at the join. Total rise is still
-      // dz; only the grade at the ends is flattened.
-      lz: dz * easedProgress(t),
+      // `rise`; only the grade at the ends is flattened.
+      lz: rise * easedProgress(t),
       // Level road (no roll): a clean, upright parking-ramp hairpin. Rolling the
       // tight climbing turn looked twisted, so the switchback now rides flat.
       banking: 0,
@@ -191,6 +196,17 @@ export function makeSwitchbackPath(sign: number): PathFn {
 }
 export const pathSwitchbackR: PathFn = makeSwitchbackPath(1);
 export const pathSwitchbackL: PathFn = makeSwitchbackPath(-1);
+
+// --- Dive turn ----------------------------------------------------------------
+// The descending mirror of the Switchback: the same flat 180° hairpin, but it
+// drops 2 units instead of climbing them. This is the piece that lets a track
+// come back DOWN off a stacked level while reversing — previously the only
+// single-piece reversals (Switchback, Top Hat) either climbed or stayed level, so
+// getting down again cost a long run of ramps. Loosely the Dive Loop of the
+// roller-coaster vocabulary: trade height for speed while turning back.
+export const pathDiveTurnR: PathFn = makeSwitchbackPath(1, -2);
+export const pathDiveTurnL: PathFn = makeSwitchbackPath(-1, -2);
+
 
 // The Wall is a flat one-cell straight; its breakable barrier is a renderer
 // overlay (see renderer/meshes.ts) and its smash/explode behaviour lives in the
@@ -453,6 +469,232 @@ export const pathSteepHill: PathFn = (t) => {
   // no crease at the seams (a plain sine arc was steepest right at the joins).
   return { lx: 2 * t, ly: 0, lz: 1.5 * smoothHump(t), banking: 0 };
 };
+
+// --- Zero-g roll --------------------------------------------------------------
+/**
+ * Crest height of the Zero-g roll's hill. Exported so the entry-speed gate in
+ * definitions.ts is derived from the geometry the car actually drives, instead of
+ * a second literal that can silently drift out of step with this one.
+ */
+export const ZERO_G_ROLL_RISE = 1.5;
+/** Crest height of the Wave turn's hump. Exported for the same reason. */
+export const WAVE_TURN_RISE = 0.5;
+
+// A full 360° barrel roll performed OVER the crest of an airtime hill, so the
+// car goes weightless and inverted at the same moment. This is what separates it
+// from the Corkscrew, which rolls along flat track: same rotation, completely
+// different feel, and it costs the hill's climb on the way in.
+//
+// Reuses the Steep Hill's elevation profile exactly (same rise, same eased
+// seams) and layers the Corkscrew's eased roll on top, so it joins flat track
+// cleanly at both ends and ends upright (banking 2π ≡ 0).
+export const pathZeroGRoll: PathFn = (t) => ({
+  lx: 2 * t,
+  ly: 0,
+  lz: ZERO_G_ROLL_RISE * smoothHump(t),
+  banking: 2 * Math.PI * easedProgress(t),
+});
+
+// --- Wave turn ----------------------------------------------------------------
+// A banked 90° corner that lifts over a small airtime hump halfway round, so the
+// car gets a kick of weightlessness mid-corner. Named for the roller-coaster
+// wave turn (a banked turn carrying a camelback); this grid is built on 90°
+// turns, so it is implemented as a quarter turn rather than the 180° exit some
+// real installations use.
+//
+// Geometry is the Banked turn's quarter circle (identical endpoints, so it drops
+// into any slot a Bank fits) plus a smoothHump rise and a deeper lean than a
+// plain Bank. sign = +1 turns right, -1 left.
+const WAVE_BANK_MAX = 0.85; // ~49° of lean at the apex — deeper than a Bank
+function makeWaveTurnPath(sign: number): PathFn {
+  const R = CURVE_RADIUS;
+  return (t) => {
+    const a = sign > 0
+      ? -Math.PI / 2 + (Math.PI / 2) * t
+      : Math.PI / 2 - (Math.PI / 2) * t;
+    return {
+      lx: R * Math.cos(a),
+      ly: sign * R + R * Math.sin(a),
+      lz: WAVE_TURN_RISE * smoothHump(t),
+      banking: -sign * WAVE_BANK_MAX * Math.sin(Math.PI * t),
+    };
+  };
+}
+export const pathWaveTurnR: PathFn = makeWaveTurnPath(1);
+export const pathWaveTurnL: PathFn = makeWaveTurnPath(-1);
+
+// --- Compound inversions (Immelmann, Cobra Roll) -------------------------------
+//
+// These two are built from phases of very different length — a short vertical
+// half-loop followed by a long rolling run — so equal steps of the raw phase
+// parameter cover wildly different distances. The simulator advances the path
+// parameter by ds/pathLen assuming constant distance-per-parameter, so without a
+// correction the car would crawl through the loop and then rocket along the
+// run, and the renderer would starve the long section of segments. The Top Hat
+// hit the same problem and solved it with a bespoke table; this is the same fix
+// as a reusable helper. (The Top Hat keeps its own table because it also measures
+// its climbing-leg length to derive its entry gate, which this does not.)
+interface ArcParam {
+  /** Total arc length of the shape. */
+  total: number;
+  /** Uniform arc fraction t → raw phase parameter s. */
+  toPhase(t: number): number;
+}
+
+function buildArcParam(geom: (s: number) => LocalPoint, samples = 1024): ArcParam {
+  const phase: number[] = [0];
+  const cumLen: number[] = [0];
+  let prev = geom(0);
+  let acc = 0;
+  for (let i = 1; i <= samples; i++) {
+    const s = i / samples;
+    const p = geom(s);
+    acc += Math.hypot(p.lx - prev.lx, p.ly - prev.ly, p.lz - prev.lz);
+    phase.push(s);
+    cumLen.push(acc);
+    prev = p;
+  }
+  return {
+    total: acc,
+    toPhase(t: number): number {
+      const target = (t < 0 ? 0 : t > 1 ? 1 : t) * acc;
+      let lo = 1;
+      let hi = cumLen.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cumLen[mid] < target) lo = mid + 1; else hi = mid;
+      }
+      const segLen = cumLen[lo] - cumLen[lo - 1];
+      const f = segLen > 1e-12 ? (target - cumLen[lo - 1]) / segLen : 0;
+      return phase[lo - 1] + (phase[lo] - phase[lo - 1]) * f;
+    },
+  };
+}
+
+/** Radius of the vertical half-loop shared by the Immelmann and the Cobra Roll. */
+export const HALF_LOOP_RADIUS = 1.1;
+/** Net climb of the Immelmann (it exits higher than it entered). */
+export const IMMELMANN_RISE = 1;
+/** Crest of the Cobra Roll's second (rolled) hump. */
+export const COBRA_SECOND_HUMP = 1.1;
+
+/**
+ * A vertical half-loop in the local x–z plane: enters at (0,0,0) heading +x and
+ * leaves at (0,0,2R) heading -x, INVERTED. The inversion is genuine pitch — the
+ * tangent rotates up and over, exactly as in the full Loop — which is why
+ * `banking` stays 0 through it and the frame's up vector flips on its own (see
+ * the sign-continuity tracking in frames.ts).
+ *
+ * The loop is kept STRICTLY in the x–z plane (no sideways lean). That is not
+ * cosmetic: frames.ts derives the surface normal by tracking the lateral axis
+ * sign-continuously, so leaning the loop out changes the parity of that tracking
+ * and a following half-roll then leaves the car upside down at the exit instead
+ * of upright. Measured both ways — a planar loop is what makes a π roll right the
+ * car, and it is also the only version that goes fully inverted (up.z = -1) at
+ * the apex. All sideways travel therefore happens in the roll-out.
+ */
+function halfLoop(u: number, R: number): LocalPoint {
+  const a = -Math.PI / 2 + Math.PI * u;
+  return {
+    lx: R * Math.cos(a),
+    ly: 0,
+    lz: R + R * Math.sin(a),
+    banking: 0,
+  };
+}
+
+// --- Immelmann ----------------------------------------------------------------
+// Half vertical loop straight into a half roll: the car pitches up and over
+// (inverting), then rolls upright while easing back down and arcing into the lane
+// two over, exiting reversed and one unit higher.
+//
+// Note the exit `banking` is π, not 0. That is not a bug and not a seam crease:
+// after a pitched half-loop the frame is upside down at banking 0, so a roll of
+// exactly π is what puts the car back on its wheels. Combined with the reversed
+// horizontal tangent the exit frame's up is +z, matching flat track (verified in
+// test/coaster-elements.test.ts, which checks the up vector at both seams).
+//
+// The roll-out is deliberately LONG (the piece declares forward 4, so it exits
+// three cells back down the lane). A short roll-out has to cram the whole
+// direction change into its last fraction, which reads as the car snapping round
+// at the very end instead of arcing round — measured at 40° of tangent swing in
+// the final 5% before this was widened.
+const IMMELMANN_LOOP_SPAN = 0.42;
+const IMMELMANN_EXIT_LX = -3;
+
+function immelmannGeom(s: number): LocalPoint {
+  const R = HALF_LOOP_RADIUS;
+  if (s < IMMELMANN_LOOP_SPAN) {
+    return halfLoop(s / IMMELMANN_LOOP_SPAN, R);
+  }
+  const u = (s - IMMELMANN_LOOP_SPAN) / (1 - IMMELMANN_LOOP_SPAN);
+  return {
+    // Linear in lx so the exit tangent is a clean, non-degenerate -x, and long
+    // enough that the lateral and vertical terms never dominate it.
+    lx: IMMELMANN_EXIT_LX * u,
+    // Raised cosine: zero lateral slope at BOTH ends, so it neither creases the
+    // junction out of the loop nor skews the exit heading.
+    ly: 1 - Math.cos(Math.PI * u),
+    lz: 2 * R + (IMMELMANN_RISE - 2 * R) * smootherstep(u),
+    banking: Math.PI * smootherstep(u),
+  };
+}
+
+const IMMELMANN_ARC = buildArcParam(immelmannGeom);
+export const IMMELMANN_LENGTH = IMMELMANN_ARC.total;
+export const pathImmelmann: PathFn = (t) => immelmannGeom(IMMELMANN_ARC.toPhase(t));
+
+// --- Cobra Roll ---------------------------------------------------------------
+// Two humps, two inversions, exits reversed — the double-inversion turnaround.
+//
+// The first hump is a true vertical half-loop (pitch inversion, as above). The
+// car then rolls upright as it comes down, and takes the SECOND hump through a
+// full 360° roll, so it is inverted again exactly at that hump's crest. Total
+// roll is 3π: an odd multiple, which is what leaves it upright at the exit.
+//
+// A textbook cobra roll reaches its 180° exit by yawing through two half
+// corkscrews between two vertical half-loops. Two vertical half-loops each
+// reverse the heading, so on their own they would cancel and the piece would
+// exit the way it came in; this build takes the reversal from the single pitch
+// loop and makes the second hump roll-driven instead. Same silhouette, same two
+// inversions, same reversed exit, and it stays authorable as an explicit curve
+// with exact endpoints.
+//
+// It is the longest piece in the catalogue (forward 6) because a descent AND a
+// second hump have to fit after the loop without either becoming a cliff.
+const COBRA_LOOP_SPAN = 0.3;
+const COBRA_EXIT_LX = -5;
+
+function cobraGeom(s: number): LocalPoint {
+  const R = HALF_LOOP_RADIUS;
+  if (s < COBRA_LOOP_SPAN) {
+    return halfLoop(s / COBRA_LOOP_SPAN, R);
+  }
+  const u = (s - COBRA_LOOP_SPAN) / (1 - COBRA_LOOP_SPAN);
+  // Descend out of the first hump (u < 0.5), then take the second hump (u >= 0.5).
+  // Both sub-phases meet at lz = 0 with zero slope, so the valley is creaseless.
+  const lz = u < 0.5
+    ? 2 * R * (1 - smootherstep(2 * u))
+    : COBRA_SECOND_HUMP * smoothHump(2 * u - 1);
+  // Roll: 0 → π rights the car on the way down, then π → 3π is the full roll over
+  // the second hump. smootherstep puts the halfway point of that second sweep
+  // (banking = 2π, fully inverted) exactly at the second hump's crest.
+  const banking = u < 0.5
+    ? Math.PI * smootherstep(2 * u)
+    : Math.PI + 2 * Math.PI * smootherstep(2 * u - 1);
+  return {
+    lx: COBRA_EXIT_LX * u,
+    ly: 1 - Math.cos(Math.PI * u),
+    lz,
+    banking,
+  };
+}
+
+const COBRA_ARC = buildArcParam(cobraGeom);
+export const COBRA_ROLL_LENGTH = COBRA_ARC.total;
+export const pathCobraRoll: PathFn = (t) => cobraGeom(COBRA_ARC.toPhase(t));
+
+
 
 export const pathHelixDown: PathFn = (t) =>
   // Two full descending revolutions (720°) filling a 3×3 square, dropping 3
