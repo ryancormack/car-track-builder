@@ -71,6 +71,7 @@ const els: UIElements = {
   pieceSearch: el('piece-search'),
   garage: el('garage'),
   status: el('status'),
+  playStatus: document.getElementById('play-status'),
   btnUndo: el('btn-undo'),
   btnClear: el('btn-clear'),
   btnSave: el('btn-save'),
@@ -560,6 +561,13 @@ function stepCar(car: RaceCar, dt: number): void {
   }
 
   if (sim.failed && !car.wipeoutDone) {
+    // Tell the player WHY the run ended, at the moment it ends. The sim already
+    // computes a per-failure reason (too fast for the corner, too slow to smash
+    // the wall, bridge collapsed, …); without this the car just flies off with
+    // no explanation and the reason only surfaces on the end-of-race card much
+    // later. Only announce the followed car so a multi-car pile-up doesn't spam
+    // the status line.
+    if (car.id === followedCarId) hud.flashStatus(sim.failReason ?? 'The car crashed!', 'err');
     // A collapsing bridge gives way visibly as the car drops.
     if (sim.failType === 'collapse' && sim.failPieceIndex >= 0) renderer.crumbleBridge(sim.failPieceIndex);
     renderer.startWipeoutAnimation(car.id, sim.failType, sim.carSample());

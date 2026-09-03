@@ -412,8 +412,18 @@ export class Editor {
 
   deselectPiece(): void {
     this.selectedIndex = null;
-    this.insertCursor = null;
-    this.insertAnchor = null;
+    // Keep the gap-fill cursor alive while an edit is still open. deselectPiece
+    // fires on incidental gestures during an edit — an empty-canvas click or
+    // Escape after a delete — and the track is still in editing mode (frozen
+    // downstream) at that point. Wiping insertCursor here would strand the next
+    // palette click into the APPEND branch of _add(), which places past the
+    // frozen suffix (or is blocked by the Finish line): the classic "removed a
+    // piece, can't connect a new one back in" bug. Selecting another piece or
+    // finishing the edit (Rejoin) clears the cursor through their own paths.
+    if (!this.track.isEditing()) {
+      this.insertCursor = null;
+      this.insertAnchor = null;
+    }
     this.renderer.highlightPiece(null);
     this._refreshButtons();
     this.onSelectionChange(null);

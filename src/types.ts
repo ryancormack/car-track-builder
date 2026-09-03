@@ -201,6 +201,8 @@ export interface UIElements {
   pieceSearch: HTMLElement;
   garage: HTMLElement;
   status: HTMLElement;
+  /** Play-mode status banner over the stage (build status line is sidebar-only). */
+  playStatus?: HTMLElement | null;
   btnUndo: HTMLElement;
   btnClear: HTMLElement;
   btnSave: HTMLElement;

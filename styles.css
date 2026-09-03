@@ -783,6 +783,40 @@ body.mode-play .sidebar .panel:not(.always) {
   transition: opacity 0.25s, filter 0.25s;
 }
 
+/* Crash / status banner during play. The build-mode status line lives in the
+   (dimmed) sidebar, so a crash reason written there is invisible mid-race. The
+   #play-status banner sits in the stage instead and is shown only while it
+   carries a message: flashStatus adds `.ok`/`.err` for the message's lifetime
+   and strips them when it auto-clears, so the banner appears with the message
+   and vanishes with it. */
+.play-status {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  pointer-events: none;
+  max-width: min(90%, 560px);
+  text-align: center;
+  padding: 10px 20px;
+  font-size: 15px;
+  font-weight: 800;
+  border-radius: 14px;
+  background: rgba(8, 15, 30, 0.92);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+/* Only visible while a message is present (flashStatus toggles .ok/.err). */
+.play-status.ok { opacity: 1; color: var(--green); }
+.play-status.err {
+  opacity: 1;
+  color: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 8px 28px rgba(255, 60, 80, 0.35);
+}
+
 /* Disabled play button (no Finish piece) */
 .mode-btn.disabled {
   opacity: 0.5;
