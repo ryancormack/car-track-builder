@@ -363,3 +363,58 @@ test('Bug 3: insert-mode undo with no session piece laid leaves the frozen suffi
   assert.equal(track.isEditing(), true);
   assert.equal(editor.insertCursor, 0);
 });
+
+
+// ===========================================================================
+// Bug 4 — Reconnect broken: deselect during an edit strands the re-add
+// ===========================================================================
+//
+// Repro of the reported "remove a piece, then add a bit back in, can't connect
+// them" bug. The failure was NOT in the track geometry — it was an editor state
+// desync: after a delete the editor is in insert mode (frozen downstream), but
+// an incidental deselect (empty-canvas click, or Escape) used to wipe
+// insertCursor while the track was still editing. The next palette click then
+// fell through to the APPEND branch, placing past the frozen suffix (or being
+// blocked by a trailing FINISH) instead of filling the gap.
+//
+// The fix keeps insertCursor alive in deselectPiece() while track.isEditing().
+
+test('Bug 4: deselect during an edit keeps insert mode so the re-add fills the gap', () => {
+  const { editor, track, clickPiece } = setupEditor();
+  clickPiece('STRAIGHT'); // 0
+  clickPiece('STRAIGHT'); // 1
+  clickPiece('STRAIGHT'); // 2
+  editor.selectPiece(1);
+  editor.deleteSelected(); // pieces [S,S]; editing; insertCursor=0
+  assert.equal(track.isEditing(), true);
+  assert.equal(editor.insertCursor, 0);
+
+  // Incidental deselect (empty-canvas click / Escape) DURING the edit.
+  editor.deselectPiece();
+  // Insert intent must survive because the track is still editing.
+  assert.equal(track.isEditing(), true);
+  assert.equal(editor.insertCursor, 0);
+  assert.equal(editor.selectedIndex, null);
+
+  // The re-add must go through the INSERT branch (fill the gap), not append.
+  clickPiece('STRAIGHT');
+  assert.deepEqual(track.pieces, ['STRAIGHT', 'STRAIGHT', 'STRAIGHT']);
+  // The gap is refilled and the whole track reconnects on Rejoin.
+  assert.equal(track.rejoin(), true);
+  assert.equal(track.isEditing(), false);
+});
+
+test('Bug 4: deselect when NOT editing still fully clears insert/select state', () => {
+  // Preservation: outside an edit, deselectPiece must still null everything so a
+  // subsequent palette click appends normally (the pre-fix behaviour).
+  const { editor, track, clickPiece } = setupEditor();
+  clickPiece('STRAIGHT');
+  editor.selectPiece(0); // replace-mode selection, NOT editing yet
+  assert.equal(track.isEditing(), false);
+
+  editor.deselectPiece();
+
+  assert.equal(editor.selectedIndex, null);
+  assert.equal(editor.insertCursor, null);
+  assert.equal(editor.insertAnchor, null);
+});

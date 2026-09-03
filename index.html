@@ -97,6 +97,10 @@
 
     <section class="stage">
       <canvas id="canvas"></canvas>
+      <!-- Play-mode status banner: the build-mode status line lives in the
+           sidebar, which is dimmed during play, so crash reasons are mirrored
+           here where the player can see them over the stage. -->
+      <div id="play-status" class="play-status"></div>
       <div id="selbar" class="selbar hidden">
         <span class="selbar-label">Editing <strong id="sel-name">—</strong></span>
         <span class="selbar-hint">pick a palette piece to swap</span>

@@ -43,10 +43,22 @@ export class Hud {
   flashStatus(msg: string, kind: StatusKind = ''): void {
     this.els.status.textContent = msg;
     this.els.status.className = 'status ' + kind;
+    // Mirror into the stage banner so the message is visible during play (the
+    // sidebar status line is dimmed in play mode). Same lifetime — cleared by
+    // the timer below.
+    const banner = this.els.playStatus;
+    if (banner) {
+      banner.textContent = msg;
+      banner.className = 'play-status ' + kind;
+    }
     if (this._timer) clearTimeout(this._timer);
     this._timer = setTimeout(() => {
       this.els.status.textContent = '';
       this.els.status.className = 'status';
+      if (banner) {
+        banner.textContent = '';
+        banner.className = 'play-status';
+      }
     }, 2000);
   }
 }
