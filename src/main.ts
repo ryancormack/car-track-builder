@@ -6,6 +6,7 @@ import { Renderer } from './renderer/index.js';
 import { Editor } from './editor.js';
 import { Simulator } from './physics.js';
 import { computeScore } from './scoring.js';
+import { SURFACE_ORDER } from './pieces/index.js';
 import { SPEED_SCALE, MIN_CARS, MAX_CARS, DEFAULT_CARS } from './constants.js';
 import { Hud } from './app/hud.js';
 import type { RaceHudStats } from './app/hud.js';
@@ -69,6 +70,8 @@ const els: UIElements = {
   hudCars: el('hud-cars'),
   palette: el('palette'),
   pieceSearch: el('piece-search'),
+  surfaceStrip: el('surface-strip'),
+  selSurfaces: el('sel-surfaces'),
   garage: el('garage'),
   status: el('status'),
   playStatus: document.getElementById('play-status'),
@@ -101,6 +104,8 @@ const editor = new Editor({
   renderer,
   paletteEl: els.palette,
   searchEl: els.pieceSearch as HTMLInputElement | null,
+  surfaceStripEl: els.surfaceStrip,
+  selSurfaceEl: els.selSurfaces,
   statusEl: els.status,
   onChange: () => { refreshHud(); updateRejoinButton(); updateInsertModeUI(); },
   onSelectionChange: (sel) => updateSelectionBar(sel),
@@ -311,7 +316,23 @@ window.addEventListener('keydown', (e) => {
     editor.undo();
   }
   if (e.key === 'Escape' && mode === 'build') {
-    editor.deselectPiece();
+    // Disarm a laid surface FIRST: the armed banner advertises Esc, and someone
+    // stopping "laying ice" does not usually also mean to drop their selection.
+    // A second Esc then deselects as before.
+    if (!editor.disarmSurface()) editor.deselectPiece();
+  }
+  // Surface shortcuts: 1 = plain (disarm), then one key per catalogue surface
+  // (2 = Ice, 3 = Gravel). Derived from SURFACE_ORDER so adding a surface does
+  // not need a new key wired here. R, Space, Esc, Delete and Ctrl+Z are taken.
+  if (mode === 'build' && e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const n = Number(e.key);
+    if (n === 1) {
+      e.preventDefault();
+      editor.armSurface(null);
+    } else if (n - 2 < SURFACE_ORDER.length) {
+      e.preventDefault();
+      editor.armSurface(SURFACE_ORDER[n - 2]);
+    }
   }
   if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'build') {
     if (editor.selectedIndex !== null) {

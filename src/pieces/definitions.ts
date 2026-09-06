@@ -21,8 +21,8 @@ import {
   pathHelixUp, pathHelixDown, pathSpiralTower,
   pathGiantLoop, pathGiantJump,
 } from './paths.js';
-import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS, GIANT_LOOP_RADIUS } from '../constants.js';
-import type { DecorationId, Piece, PieceId } from '../types.js';
+import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS, GIANT_LOOP_RADIUS, ICE_FRICTION_MULT, GRAVEL_FRICTION_MULT } from '../constants.js';
+import type { DecorationId, Piece, PieceId, SurfaceId } from '../types.js';
 
 // A vertical loop only stays "stuck to the track" while the car is fast enough
 // that the required centripetal pull doesn't exceed what gravity + the track can
@@ -583,4 +583,82 @@ const DECORATABLE: ReadonlySet<PieceId> = new Set<PieceId>([
 /** Whether a Ring of Fire can be placed on the given piece type. */
 export function canDecorate(pieceId: PieceId): boolean {
   return DECORATABLE.has(pieceId);
+}
+
+/** A surface that can be laid over an existing piece, changing its grip. */
+export interface Surface {
+  id: SurfaceId;
+  name: string;
+  icon: string;
+  /** Multiplier applied to FRICTION along a piece carrying this surface. */
+  frictionMult: number;
+  /** One-line description for the palette chip's tooltip. */
+  blurb: string;
+}
+
+export const SURFACES: Record<SurfaceId, Surface> = {
+  ICE: {
+    id: 'ICE', name: 'Ice', icon: '❄️', frictionMult: ICE_FRICTION_MULT,
+    blurb: 'Almost no grip — the car barely loses speed along it',
+  },
+  GRAVEL: {
+    id: 'GRAVEL', name: 'Gravel', icon: '🪨', frictionMult: GRAVEL_FRICTION_MULT,
+    blurb: 'Loose and draggy — scrubs speed off the car',
+  },
+};
+
+/** Surface ordering for the palette strip. */
+export const SURFACE_ORDER: SurfaceId[] = ['ICE', 'GRAVEL'];
+
+/** Narrows an arbitrary string to a known SurfaceId. */
+export function isSurfaceId(id: string): id is SurfaceId {
+  return Object.prototype.hasOwnProperty.call(SURFACES, id);
+}
+
+/**
+ * Pieces that cannot carry a laid surface because the car is not riding on its
+ * wheels along normal road: the inversions and coils that flip it (where "grip"
+ * is incoherent and the simulator's own mid-loop contact rule governs instead),
+ * the ballistic jumps (airborne for most of the piece), and the two barrier
+ * pieces that gate on their own constants (WALL_SMASH_V2 / CRUMBLE_BRIDGE_V2).
+ *
+ * This is an explicit list because the property it encodes — "the car goes
+ * inverted or airborne here" — is a fact about each sampler's geometry. The
+ * INVERTING half is kept honest by a catalogue-derived test that measures every
+ * piece's up-vector and fails, naming the piece, if this list drifts (the same
+ * guard pattern that `isRampGrade` / `isHill` use in physics.ts, after a literal
+ * list there once silently missed seven new pieces). The two jumps are listed on
+ * the separate ballistic grounds that the car leaves the road entirely, which
+ * that up-vector measurement does not detect — so a NEW jump-like piece would
+ * need adding here by hand.
+ */
+const UNSURFACEABLE: ReadonlySet<PieceId> = new Set<PieceId>([
+  'LOOP', 'GIANT_LOOP', 'CORKSCREW', 'IMMELMANN', 'COBRA_ROLL', 'ZERO_G_ROLL',
+  'JUMP', 'GIANT_JUMP',
+  'WALL', 'CRUMBLE_BRIDGE',
+]);
+
+/**
+ * Whether a surface can be laid on the given piece type.
+ *
+ * Deliberately much wider than {@link canDecorate}: a decoration is a prop that
+ * would clip through banked or curved track, whereas a surface is the piece's
+ * own road material and so is geometrically fine anywhere the car has wheels
+ * down — including every climb, descent, turn and coil.
+ *
+ * Note that a gated piece (`minV2 > 0`) is deliberately still surfaceable: the
+ * gate is tested at ENTRY, before this piece's friction is integrated, so a
+ * surface cannot invalidate the threshold. It only changes how much speed the
+ * car keeps ALONG the piece — a gravelled climb the car cannot crest is
+ * reported as a rollback by the simulator, which is the intended difficulty
+ * rather than a broken gate.
+ */
+export function canModify(pieceId: PieceId): boolean {
+  const piece = PIECES[pieceId];
+  if (!piece) return false;
+  if (piece.isStart || piece.isFinish) return false;
+  // Boosters, brakes and the launchpad exist purely to change speed; layering a
+  // grip change on top muddles a piece whose whole identity is its speed effect.
+  if (piece.boostEnergy !== 0) return false;
+  return !UNSURFACEABLE.has(pieceId);
 }

@@ -1,9 +1,9 @@
 // editor.ts -- Build-mode UI: palette buttons, hover ghost preview, undo/clear.
 
-import { PIECES, PALETTE_GROUPS, DECORATIONS, DECORATION_ORDER, canDecorate } from './pieces/index.js';
+import { PIECES, PALETTE_GROUPS, DECORATIONS, DECORATION_ORDER, canDecorate, SURFACES, SURFACE_ORDER, canModify } from './pieces/index.js';
 import type { Track } from './track.js';
 import type { Renderer } from './renderer/index.js';
-import type { DecorationId, Piece, PieceId } from './types.js';
+import type { DecorationId, Piece, PieceId, SurfaceId } from './types.js';
 import type { StatusKind } from './app/hud.js';
 import { loadCollapsedGroups, saveCollapsedGroups } from './app/storage.js';
 
@@ -40,6 +40,17 @@ export interface EditorOptions {
    * looked up by id, so the unit tests can simply omit it.
    */
   searchEl?: HTMLInputElement | null;
+  /**
+   * Optional container for the armed-surface strip (the Plain / Ice / Gravel
+   * chips plus the "currently laying" banner). Injected like `searchEl` so the
+   * unit tests can omit it and the editor still builds.
+   */
+  surfaceStripEl?: HTMLElement | null;
+  /**
+   * Optional container for the surface chips shown in the selection bar, used to
+   * change the surface on a piece that is already placed.
+   */
+  selSurfaceEl?: HTMLElement | null;
   onChange?: () => void;
   /** Called whenever the selected slot changes (null when nothing is selected). */
   onSelectionChange?: (sel: { index: number; name: string } | null) => void;
@@ -51,11 +62,25 @@ export class Editor {
   paletteEl: HTMLElement;
   statusEl: HTMLElement | null;
   searchEl: HTMLInputElement | null;
+  surfaceStripEl: HTMLElement | null;
+  selSurfaceEl: HTMLElement | null;
   onChange: () => void;
   onSelectionChange: (sel: { index: number; name: string } | null) => void;
   enabled = true;
   buttons: HTMLButtonElement[] = [];
   decoButtons: HTMLButtonElement[] = [];
+  /** Chips in the palette strip that ARM a surface for subsequent placements. */
+  surfaceButtons: HTMLButtonElement[] = [];
+  /** Chips in the selection bar that apply a surface to the selected piece. */
+  selSurfaceButtons: HTMLButtonElement[] = [];
+  /**
+   * The surface currently being "laid": while set, every piece placed by `_add`
+   * gets it automatically, so building an icy stretch costs one click to arm
+   * plus the pieces themselves. `null` means plain track.
+   */
+  activeSurface: SurfaceId | null = null;
+  /** The "you are currently laying X" banner, built alongside the strip. */
+  private _armedNote: HTMLElement | null = null;
   selectedIndex: number | null = null;
   /**
    * When building out a new section in the middle of the track, this tracks
@@ -78,12 +103,14 @@ export class Editor {
   private _emptyNote: HTMLElement | null = null;
   private _statusTimer?: ReturnType<typeof setTimeout>;
 
-  constructor({ track, renderer, paletteEl, statusEl, searchEl, onChange, onSelectionChange }: EditorOptions) {
+  constructor({ track, renderer, paletteEl, statusEl, searchEl, surfaceStripEl, selSurfaceEl, onChange, onSelectionChange }: EditorOptions) {
     this.track = track;
     this.renderer = renderer;
     this.paletteEl = paletteEl;
     this.statusEl = statusEl;
     this.searchEl = searchEl ?? null;
+    this.surfaceStripEl = surfaceStripEl ?? null;
+    this.selSurfaceEl = selSurfaceEl ?? null;
     this.onChange = onChange ?? (() => {});
     this.onSelectionChange = onSelectionChange ?? (() => {});
     this._build();
@@ -166,8 +193,187 @@ export class Editor {
 
     this._applyCollapsed();
     this._installSearch();
+    this._buildSurfaceStrip();
+    this._buildSelSurfaceChips();
     this._refreshButtons();
     this._installScrollCue();
+  }
+
+  /**
+   * The armed-surface strip: pick a surface once and every piece placed
+   * afterwards carries it. Lives OUTSIDE the scrolling palette (the host puts it
+   * above), because the whole point is that laying an icy stretch must not mean
+   * scrolling past eight piece groups for each piece.
+   *
+   * Built into an injected container rather than looked up by id, and every DOM
+   * call the strip needs is one the palette already relies on, so the editor
+   * still builds against the tests' minimal element stub.
+   */
+  private _buildSurfaceStrip(): void {
+    this.surfaceButtons = [];
+    this._armedNote = null;
+    const host = this.surfaceStripEl;
+    if (!host) return;
+    host.innerHTML = '';
+
+    const row = document.createElement('div');
+    row.className = 'surface-row';
+
+    // "Plain" is the disarm chip. It is a real option rather than only an Escape
+    // keypress so the mode is escapable with the mouse alone, and so the strip
+    // always shows which of the three states you are in.
+    const plain = document.createElement('button');
+    plain.className = 'surf-btn';
+    plain.dataset.surface = '';
+    plain.title = 'Lay plain track (no surface) — shortcut 1';
+    plain.innerHTML = '<span class="icon">🛣</span><span class="label">Plain</span><span class="key">1</span>';
+    plain.addEventListener('click', () => this.armSurface(null));
+    row.appendChild(plain);
+    this.surfaceButtons.push(plain);
+
+    SURFACE_ORDER.forEach((id, i) => {
+      const surface = SURFACES[id];
+      const btn = document.createElement('button');
+      btn.className = 'surf-btn';
+      btn.dataset.surface = id;
+      // Shortcut numbering continues from Plain, so Ice is 2 and Gravel is 3.
+      btn.title = `${surface.name} — ${surface.blurb} (shortcut ${i + 2})`;
+      btn.innerHTML = `<span class="icon">${surface.icon}</span><span class="label">${surface.name}</span><span class="key">${i + 2}</span>`;
+      btn.addEventListener('click', () => this.armSurface(id));
+      row.appendChild(btn);
+      this.surfaceButtons.push(btn);
+    });
+
+    host.appendChild(row);
+
+    // The loud indicator. An armed mode that silently changes every piece you
+    // place is the main hazard of this interaction, so the banner states the
+    // surface by name and how to stop, and is only in the DOM while armed.
+    const note = document.createElement('div');
+    note.className = 'surface-armed is-hidden';
+    host.appendChild(note);
+    this._armedNote = note;
+  }
+
+  /**
+   * Surface chips for the selection bar, so a piece that is ALREADY placed can be
+   * changed without arming a mode. This is the retrofit path; the strip above is
+   * the bulk-laying path.
+   */
+  private _buildSelSurfaceChips(): void {
+    this.selSurfaceButtons = [];
+    const host = this.selSurfaceEl;
+    if (!host) return;
+    host.innerHTML = '';
+    for (const id of SURFACE_ORDER) {
+      const surface = SURFACES[id];
+      const btn = document.createElement('button');
+      btn.className = 'surf-chip';
+      btn.dataset.surface = id;
+      btn.title = `${surface.name} — ${surface.blurb}`;
+      btn.innerHTML = `<span class="icon">${surface.icon}</span>`;
+      btn.addEventListener('click', () => this._applySurfaceToSelected(id));
+      host.appendChild(btn);
+      this.selSurfaceButtons.push(btn);
+    }
+    // Clear chip: removes whatever surface the selected piece carries.
+    const clear = document.createElement('button');
+    clear.className = 'surf-chip';
+    clear.dataset.surface = '';
+    clear.title = 'Back to plain track';
+    clear.innerHTML = '<span class="icon">⊘</span>';
+    clear.addEventListener('click', () => this._applySurfaceToSelected(null));
+    host.appendChild(clear);
+    this.selSurfaceButtons.push(clear);
+  }
+
+  /**
+   * Arm (or disarm) a surface for subsequent placements. Clicking the surface
+   * that is already armed disarms it, so the same chip toggles.
+   *
+   * When a piece is currently SELECTED, arming also applies the surface to that
+   * piece straight away — otherwise clicking Ice with a piece selected would
+   * appear to do nothing, which is the confusing case the old decoration flow
+   * had. The two entry points therefore agree: the chip you click always affects
+   * what you are looking at.
+   */
+  armSurface(id: SurfaceId | null): void {
+    if (!this.enabled) return;
+    const next = id !== null && this.activeSurface === id ? null : id;
+    this.activeSurface = next;
+    if (this.selectedIndex !== null) {
+      this._applySurfaceToSelected(next, { quiet: true });
+    }
+    const label = next === null ? 'plain track' : SURFACES[next].name;
+    this._setStatus(
+      next === null
+        ? 'Laying plain track.'
+        : `Laying ${label} — every piece you place is on ${label.toLowerCase()}. Esc to stop.`,
+      'ok',
+    );
+    this._refreshButtons();
+  }
+
+  /** Disarm the active surface, if any. Wired to Escape by the host. */
+  disarmSurface(): boolean {
+    if (this.activeSurface === null) return false;
+    this.activeSurface = null;
+    this._setStatus('Laying plain track.', 'ok');
+    this._refreshButtons();
+    return true;
+  }
+
+  /** Apply a surface to the currently selected piece (selection-bar chips). */
+  private _applySurfaceToSelected(id: SurfaceId | null, opts: { quiet?: boolean } = {}): void {
+    if (!this.enabled) return;
+    if (this.selectedIndex === null) {
+      this._setStatus('Select a piece first, or pick a surface and place new track.', 'err');
+      return;
+    }
+    const pieceId = this.track.pieces[this.selectedIndex];
+    if (id !== null && !canModify(pieceId)) {
+      this._setStatus(`${SURFACES[id].name} can't be laid on a ${PIECES[pieceId].name}.`, 'err');
+      return;
+    }
+    const changed = this.track.setSurface(this.selectedIndex, id);
+    if (!changed) {
+      this._refreshButtons();
+      return;
+    }
+    this.renderer.rebuildTrack(this.track);
+    // Re-apply the selection highlight (rebuild recreated the meshes).
+    this.renderer.highlightPiece(this.selectedIndex);
+    if (!opts.quiet) {
+      this._setStatus(
+        id === null
+          ? `${PIECES[pieceId].name} is back to plain track.`
+          : `Laid ${SURFACES[id].name} on the ${PIECES[pieceId].name}.`,
+        'ok',
+      );
+    }
+    this._refreshButtons();
+    this.onChange();
+  }
+
+  /**
+   * Stamp the armed surface onto a piece that has just been placed at `index`.
+   * Silently does nothing when nothing is armed, or when the piece cannot carry a
+   * surface — placing a loop while laying ice should still place the loop rather
+   * than refuse, so the arm is an intent that simply does not apply everywhere.
+   */
+  private _stampActiveSurface(index: number): void {
+    if (this.activeSurface === null) return;
+    this.track.setSurface(index, this.activeSurface);
+  }
+
+  /**
+   * " on ice" / " on gravel" suffix for a placement message. Reports what
+   * actually landed, so a loop placed while ice is armed does not claim to be
+   * icy.
+   */
+  private _laidSuffix(index: number): string {
+    const laid = this.track.surfaceAt(index);
+    return laid === null ? '' : ` on ${SURFACES[laid].name.toLowerCase()}`;
   }
 
   /**
@@ -350,9 +556,10 @@ export class Editor {
         this._setStatus(this._collisionMessage('Cannot replace that piece.'), 'err');
         return;
       }
+      this._stampActiveSurface(this.selectedIndex);
       this.renderer.rebuildTrack(this.track);
       this.renderer.clearGhost();
-      this._setStatus(`Replaced with ${PIECES[id].name}.`, 'ok');
+      this._setStatus(`Replaced with ${PIECES[id].name}${this._laidSuffix(this.selectedIndex)}.`, 'ok');
       // Set the insert cursor so the next palette click inserts AFTER this slot.
       const cursorPos = this.selectedIndex;
       this.selectedIndex = null;
@@ -373,9 +580,10 @@ export class Editor {
       }
       // Advance the cursor to the newly inserted piece.
       this.insertCursor = insertIdx;
+      this._stampActiveSurface(insertIdx);
       this.renderer.rebuildTrack(this.track);
       this.renderer.clearGhost();
-      this._setStatus(`Inserted ${PIECES[id].name} - keep clicking to extend, or Rejoin.`, 'ok');
+      this._setStatus(`Inserted ${PIECES[id].name}${this._laidSuffix(insertIdx)} - keep clicking to extend, or Rejoin.`, 'ok');
       this._refreshButtons();
       this.onChange();
       return;
@@ -389,9 +597,11 @@ export class Editor {
       this._setStatus(this._collisionMessage('Cannot add that piece.'), 'err');
       return;
     }
+    const addedIdx = this.track.pieces.length - 1;
+    this._stampActiveSurface(addedIdx);
     this.renderer.rebuildTrack(this.track);
     this.renderer.clearGhost();
-    this._setStatus(`Added ${PIECES[id].name}.`, 'ok');
+    this._setStatus(`Added ${PIECES[id].name}${this._laidSuffix(addedIdx)}.`, 'ok');
     this._refreshButtons();
     this.onChange();
   }
@@ -526,6 +736,49 @@ export class Editor {
         && this.track.decorationAt(this.selectedIndex) === decoId;
       if (active) b.classList.add('deco-active');
       else b.classList.remove('deco-active');
+    }
+    this._refreshSurfaceUI();
+  }
+
+  /**
+   * Sync the surface strip, its armed banner, and the selection-bar chips.
+   *
+   * Drives everything by class and `textContent` only — no `classList.toggle`
+   * and no inline `style` — because the editor is deliberately unit-tested
+   * against a minimal element stub that implements just `classList.add`/`remove`.
+   */
+  private _refreshSurfaceUI(): void {
+    for (const b of this.surfaceButtons) {
+      b.disabled = !this.enabled;
+      const raw = b.dataset.surface ?? '';
+      const armed = raw === '' ? this.activeSurface === null : raw === this.activeSurface;
+      if (armed) b.classList.add('surf-armed');
+      else b.classList.remove('surf-armed');
+    }
+
+    if (this._armedNote) {
+      if (this.activeSurface === null) {
+        this._armedNote.classList.add('is-hidden');
+        this._armedNote.textContent = '';
+      } else {
+        const s = SURFACES[this.activeSurface];
+        this._armedNote.classList.remove('is-hidden');
+        this._armedNote.textContent = `${s.icon} Laying ${s.name} — every piece you place is on ${s.name.toLowerCase()}. Esc to stop.`;
+      }
+    }
+
+    // Selection-bar chips: only meaningful for a selected piece that can carry a
+    // surface. The chip matching the piece's current surface is marked active
+    // (the clear chip stands in for "plain").
+    const selectable = this.selectedIndex !== null
+      && canModify(this.track.pieces[this.selectedIndex]);
+    const current = this.selectedIndex !== null ? this.track.surfaceAt(this.selectedIndex) : null;
+    for (const b of this.selSurfaceButtons) {
+      b.disabled = !this.enabled || !selectable;
+      const raw = b.dataset.surface ?? '';
+      const active = selectable && (raw === '' ? current === null : raw === current);
+      if (active) b.classList.add('surf-active');
+      else b.classList.remove('surf-active');
     }
   }
 

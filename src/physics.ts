@@ -8,7 +8,7 @@
 // require enough centripetal speed to stay on the track). Failing that, the
 // car is launched off the track and the run ends.
 
-import { PIECES, trackFrameAt, resolvePathLocal } from './pieces/index.js';
+import { PIECES, SURFACES, trackFrameAt, resolvePathLocal } from './pieces/index.js';
 import {
   G, FRICTION, RAMP_FRICTION_MULT, DRAG,
   CORNER_MAX_V2, STALL_SPEED, LOOP_RADIUS, GIANT_LOOP_RADIUS, WALL_SMASH_V2, CRUMBLE_BRIDGE_V2,
@@ -200,9 +200,18 @@ export class Simulator {
     const resolvedPath = this._resolvedPath!;
 
     // Friction multiplier: every graded piece — ramps AND coils (helix, spiral,
-    // spiral tower) — pays the steeper-grade surcharge. Computed once here so the
-    // rollback estimate and the energy update agree on the toll.
-    const frictionMult = isRampGrade(pieceId) ? RAMP_FRICTION_MULT : 1.0;
+    // spiral tower) — pays the steeper-grade surcharge, and a laid surface (ice
+    // or gravel) scales it further. Computed once here so the rollback estimate
+    // and the energy update agree on the toll.
+    //
+    // Ice lands below 1.0 and gravel above it, so a gravelled ramp pays both
+    // tolls and an icy one keeps almost all its speed. Note this is the ONLY
+    // place a surface enters the simulation: it changes how much energy the car
+    // sheds along the piece, never how much it has on entry — which is why an
+    // entry gate (`minV2`) stays valid on a surfaced piece.
+    const surface = this.track.surfaceAt(this.pieceIndex);
+    const surfaceMult = surface !== null ? SURFACES[surface].frictionMult : 1.0;
+    const frictionMult = (isRampGrade(pieceId) ? RAMP_FRICTION_MULT : 1.0) * surfaceMult;
 
     // Rollback: on a genuine hill (a piece the car drives over the top of), bail
     // out the instant it can no longer reach the next crest, rather than waiting

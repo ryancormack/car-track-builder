@@ -20,9 +20,11 @@ step — the **silent** ones are the dangerous ones, because the piece looks fin
 | 5 | Classify it in `isRampGrade` and `isHill` | `src/physics.ts` | **Was silent, now loud** — `catalogue.integration.test.ts` derives both from your sampler's geometry and fails if the piece is missing. This is the step that was missed when seven pieces were added at once |
 | 6 | Add a mesh branch, or let it fall through to `buildRailedTrack` | `src/renderer/meshes.ts` | **Silent** — falling through is legitimate and gives the default orange rail, so a piece that *should* have looked distinctive just quietly does not |
 | 7 | Decide whether it can carry a decoration | `DECORATABLE` in `definitions.ts` | **Silent** — omission just means no Ring of Fire on it, which is usually right for anything curved or rolling |
-| 8 | Add tests for the *mechanic* the piece exists for | `test/coaster-elements.test.ts` | **Silent** — the catalogue-wide suites prove it is well-formed and driveable, not that it does the interesting thing you added it for |
+| 8 | Decide whether it can carry a laid surface (ice / gravel) | `UNSURFACEABLE` in `definitions.ts` | **Loud if it inverts** — `surfaces.test.ts` measures every sampler's up-vector and fails by name if an inverting piece is left surfaceable. **Silent otherwise**: a new piece DEFAULTS to surfaceable, which is right for anything the car drives on its wheels, but a new *ballistic* piece (a jump) has to be added by hand — no measurement catches that |
+| 9 | Add tests for the *mechanic* the piece exists for | `test/coaster-elements.test.ts` | **Silent** — the catalogue-wide suites prove it is well-formed and driveable, not that it does the interesting thing you added it for |
 
-Steps 1–5 are enforced. Steps 6–8 are judgement.
+Steps 1–5 are enforced, as is the inverting half of step 8. Steps 6, 7 and 9 are
+judgement.
 
 ## The seam contract
 

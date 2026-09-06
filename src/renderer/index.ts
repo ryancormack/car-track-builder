@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { PIECES, isPieceId, resolvePathLocal } from '../pieces/index.js';
 import { COLORS } from './colors.js';
-import { buildPieceMesh, buildGhostPiece, buildStartTower, buildRingOfFire, buildWaterSplash } from './meshes.js';
+import { buildPieceMesh, buildGhostPiece, buildStartTower, buildRingOfFire, buildWaterSplash, buildSurfaceOverlay } from './meshes.js';
 import type { FireRingHandle, WaterSplashHandle } from './meshes.js';
 import { buildVehicle, placeCar } from './car.js';
 import { buildLivingRoom, type RoomExtent } from './environment.js';
@@ -293,6 +293,14 @@ export class Renderer implements CameraControlHost {
       const resolvedPath = resolvePathLocal(track.pieces, i);
       const mesh = buildPieceMesh(p, entry, resolvedPath);
       this.trackGroup.add(mesh);
+
+      // A laid surface coats its piece. Like decorations it goes in decorGroup so
+      // it never intercepts piece picking, and it is rebuilt from the piece's own
+      // resolved path so it banks with the road.
+      const surface = track.surfaceAt(i);
+      if (surface !== null) {
+        this.decorGroup.add(buildSurfaceOverlay(resolvedPath, entry, surface));
+      }
 
       // Decorations overlay their piece. Kept in a separate group so they don't
       // interfere with track piece picking.
