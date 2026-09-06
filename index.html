@@ -75,6 +75,10 @@
         <input id="piece-search" class="piece-search" type="search"
                placeholder="Search pieces…" autocomplete="off"
                aria-label="Search track pieces" />
+        <!-- Surface strip sits OUTSIDE #palette so it never scrolls away: the
+             whole point of arming a surface is that laying an icy stretch does
+             not mean scrolling the piece list once per piece. -->
+        <div id="surface-strip" class="surface-strip"></div>
         <div id="palette" class="palette"></div>
       </section>
 
@@ -104,6 +108,7 @@
       <div id="selbar" class="selbar hidden">
         <span class="selbar-label">Editing <strong id="sel-name">—</strong></span>
         <span class="selbar-hint">pick a palette piece to swap</span>
+        <span id="sel-surfaces" class="selbar-surfaces" title="Lay a surface on this piece"></span>
         <button id="sel-delete" class="btn" title="Delete this piece (downstream stays in place until Rejoin)">🗑 Delete</button>
         <button id="sel-rejoin" class="btn primary hidden" title="Commit changes and rejoin the track (downstream will reposition to connect)">🔗 Rejoin Track</button>
         <button id="sel-deselect" class="btn ghost" title="Deselect (Esc)">✕</button>

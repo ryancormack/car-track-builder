@@ -95,6 +95,14 @@ export type PieceId =
  */
 export type DecorationId = 'RING_OF_FIRE' | 'WATER_SPLASH';
 
+/**
+ * A surface "laid" over an existing piece, changing how much grip the car has
+ * along it. Unlike a {@link DecorationId} — which is a prop the car drives
+ * through — a surface is the piece's own road material, so it applies to far
+ * more of the catalogue (see `canModify`). One surface per piece at most.
+ */
+export type SurfaceId = 'ICE' | 'GRAVEL';
+
 export type PieceCategory =
   | 'meta'
   | 'basic'
@@ -179,6 +187,12 @@ export interface TrackJSON {
    * entry means the piece has no decoration. Omitted entirely for legacy saves.
    */
   decorations?: (DecorationId | null)[];
+  /**
+   * Optional per-piece surfaces, aligned with `pieces` by index. A `null` entry
+   * means plain track. Omitted entirely for saves made before surfaces existed,
+   * which therefore load as all-plain.
+   */
+  surfaces?: (SurfaceId | null)[];
 }
 
 /** The DOM elements the app wires up at boot. */
@@ -199,6 +213,10 @@ export interface UIElements {
   palette: HTMLElement;
   /** Palette filter box. */
   pieceSearch: HTMLElement;
+  /** Always-visible strip of surface chips that ARM a surface for placements. */
+  surfaceStrip: HTMLElement;
+  /** Surface chips inside the selection bar, for a piece already placed. */
+  selSurfaces: HTMLElement;
   garage: HTMLElement;
   status: HTMLElement;
   /** Play-mode status banner over the stage (build status line is sidebar-only). */

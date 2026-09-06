@@ -864,3 +864,126 @@ body.mode-play .sidebar .panel:not(.always) {
 .selbar .selbar-label.hidden,
 .selbar .selbar-hint.hidden { display: none; }
 .selbar .btn.ghost.hidden { display: none; }
+
+/* ---------- Laid surfaces (ice / gravel) ---------- */
+
+/* The strip lives above #palette and never scrolls, so arming a surface is
+   always one click away no matter where the piece list is scrolled to. */
+.surface-strip {
+  flex: 0 0 auto;
+  margin: 0 0 8px;
+}
+
+.surface-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.surf-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 2px 6px;
+  background: linear-gradient(180deg, #16294a, #0f1d34);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.surf-btn .icon { font-size: 15px; line-height: 1; }
+.surf-btn .label { font-size: 10px; letter-spacing: 0.02em; }
+
+/* The keyboard hint is the discoverability half of the shortcut: the chips are
+   clickable for a first-time player and teach 1/2/3 in passing. */
+.surf-btn .key {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  font-size: 8px;
+  color: var(--muted-dim);
+}
+
+.surf-btn:hover:not(:disabled) {
+  border-color: var(--blue);
+  background: linear-gradient(180deg, #1b3358, #12233f);
+}
+
+.surf-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Armed chip: a full accent ring, not a subtle tint — an armed mode that
+   silently changes every piece you place has to be unmistakable. */
+.surf-btn.surf-armed {
+  border-color: var(--cyan);
+  background: linear-gradient(180deg, #14405a, #0d2b3f);
+  box-shadow: 0 0 0 1px var(--cyan), 0 0 12px rgba(37, 224, 255, 0.35);
+}
+
+.surf-btn.surf-armed .key { color: var(--cyan); }
+
+/* The armed banner. Deliberately loud and always present while armed. */
+.surface-armed {
+  margin-top: 6px;
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--cyan);
+  background: rgba(37, 224, 255, 0.09);
+  border-left: 2px solid var(--cyan);
+  border-radius: 4px;
+}
+
+.surface-armed.is-hidden { display: none; }
+
+/* ---------- Surface chips in the selection bar ---------- */
+
+/* Folded into the bar that ALREADY appears on selection, so changing a placed
+   piece costs no trip to the sidebar and no scrolling. */
+.selbar-surfaces {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 2px;
+}
+
+.surf-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  /* `font: inherit` keeps the chip on the app's own font stack; a bare <button>
+     otherwise falls back to the UA font (Arial) and reads subtly differently
+     from the strip chips and every other button in the sidebar. */
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  background: #0e1c33;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.surf-chip .icon { font-size: 14px; line-height: 1; }
+
+.surf-chip:hover:not(:disabled) {
+  border-color: var(--blue);
+  background: #13294a;
+}
+
+.surf-chip:disabled { opacity: 0.35; cursor: default; }
+
+.surf-chip.surf-active {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px var(--cyan);
+  background: #10344a;
+}

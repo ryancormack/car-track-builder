@@ -9,6 +9,17 @@ export const FRICTION = 0.55;            // energy lost per unit length of track
 export const RAMP_FRICTION_MULT = 1.1;   // ramps/coils are slightly costlier (steeper grade)
 export const DRAG = 0.0008;              // tiny v²-proportional drag, keeps things bounded
 
+// Surface modifiers ("laid" over a normal piece) scale FRICTION on that piece.
+// They multiply into the same product as RAMP_FRICTION_MULT and the vehicle's
+// own friction profile, so a gravelled ramp pays both tolls.
+//
+// Ice does NOT add energy: the simulator has no propulsion (speed comes only
+// from the drop and boosters), so a car cannot be accelerated by the surface it
+// is on without breaking energy conservation. Near-zero friction instead means
+// the car stops LOSING speed, which is what reads as "faster" over a run.
+export const ICE_FRICTION_MULT = 0.1;
+export const GRAVEL_FRICTION_MULT = 1.6;
+
 // Maximum launch (drop) height in grid units. Single source of truth shared by
 // the simulator's corner threshold, the track JSON clamp (track.ts), and the
 // drop-height slider (index.html `max`). Bump this in one place to raise the

@@ -487,6 +487,94 @@ function buildWallPiece(path: PathFn, entry: GridState): THREE.Group {
   return group;
 }
 
+// ---------- Laid surfaces (ice / gravel) ----------
+
+/**
+ * A translucent ribbon laid just above a piece's road surface, tinted for the
+ * laid surface. Built from the same `trackFrames` basis the road itself uses, so
+ * it banks and inverts with the piece instead of floating flat over it.
+ *
+ * Deliberately an OVERLAY rather than a change to `buildPieceMesh`: every piece
+ * type has its own bespoke mesh builder and colour, so re-tinting them all would
+ * mean touching each one. An overlay is one function that works for all 27
+ * surfaceable pieces, and it lives in the decoration group so piece PICKING is
+ * unaffected.
+ */
+export function buildSurfaceOverlay(path: PathFn, entry: GridState, surface: 'ICE' | 'GRAVEL'): THREE.Group {
+  const group = new THREE.Group();
+  const segments = 48;
+  // Slightly narrower than the 0.22 road half-width so the piece's own edge
+  // barriers stay visible and the overlay reads as a coating, not a new piece.
+  const halfWidth = 0.2;
+  // Lift it clear of the road by more than the centre line's 0.005 raise, so the
+  // overlay wins the depth test against both the road and its lane marking.
+  const raise = 0.012;
+
+  const frames = trackFrames(path, entry, segments, 0, 1);
+  const leftVerts: THREE.Vector3[] = [];
+  const rightVerts: THREE.Vector3[] = [];
+  const upVecs: THREE.Vector3[] = [];
+
+  for (const f of frames) {
+    const pos = new THREE.Vector3(f.pos.x, f.pos.z, f.pos.y);
+    const side = new THREE.Vector3(f.side.x, f.side.z, f.side.y);
+    const up = new THREE.Vector3(f.up.x, f.up.z, f.up.y);
+    const base = pos.clone().addScaledVector(up, raise);
+    leftVerts.push(base.clone().addScaledVector(side, -halfWidth));
+    rightVerts.push(base.clone().addScaledVector(side, halfWidth));
+    upVecs.push(up.clone());
+  }
+
+  const geom = buildRibbonGeometry(leftVerts, rightVerts, upVecs);
+  const icy = surface === 'ICE';
+  const mat = new THREE.MeshStandardMaterial({
+    color: icy ? COLORS.ice : COLORS.gravel,
+    emissive: icy ? COLORS.iceEm : COLORS.gravelEm,
+    emissiveIntensity: icy ? 0.45 : 0.12,
+    // Ice reads as wet and reflective; gravel as dry and rough.
+    metalness: icy ? 0.65 : 0.0,
+    roughness: icy ? 0.08 : 0.98,
+    transparent: true,
+    opacity: icy ? 0.72 : 0.88,
+    side: THREE.DoubleSide,
+  });
+  group.add(new THREE.Mesh(geom, mat));
+
+  // A sparse scatter of specks so the two surfaces are distinguishable at a
+  // glance even in a still frame: bright glints on ice, dark chippings on gravel.
+  const speckCount = 14;
+  const speckGeom = icy
+    ? new THREE.OctahedronGeometry(0.022)
+    : new THREE.BoxGeometry(0.03, 0.012, 0.03);
+  const speckMat = new THREE.MeshStandardMaterial({
+    color: icy ? COLORS.iceSheen : COLORS.gravelGrit,
+    emissive: icy ? COLORS.iceSheen : COLORS.gravelEm,
+    emissiveIntensity: icy ? 0.7 : 0.05,
+    metalness: icy ? 0.5 : 0.0,
+    roughness: icy ? 0.15 : 1.0,
+  });
+  for (let i = 0; i < speckCount; i++) {
+    const t = (i + 0.5) / speckCount;
+    const fi = Math.min(Math.round(t * segments), frames.length - 1);
+    const f = frames[fi];
+    const pos = new THREE.Vector3(f.pos.x, f.pos.z, f.pos.y);
+    const side = new THREE.Vector3(f.side.x, f.side.z, f.side.y);
+    const up = new THREE.Vector3(f.up.x, f.up.z, f.up.y);
+    // Deterministic pseudo-scatter: a fixed irrational stride keeps the specks
+    // from lining up without needing a seeded RNG (a rebuild must look stable).
+    const across = ((i * 0.6180339887) % 1) * 2 - 1;
+    const speck = new THREE.Mesh(speckGeom, speckMat);
+    speck.position.copy(
+      pos.clone()
+        .addScaledVector(up, raise + 0.006)
+        .addScaledVector(side, across * halfWidth * 0.8),
+    );
+    group.add(speck);
+  }
+
+  return group;
+}
+
 // ---------- Ring of Fire (decoration) ----------
 
 /** Animatable handles for a ring-of-fire decoration, consumed by the renderer. */

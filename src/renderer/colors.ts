@@ -46,6 +46,13 @@ export const COLORS = {
   waterPoolEm: 0x0a2a4a,
   waterDroplet: 0x8fd0ff,   // flung droplets / spray
   waterRipple: 0xbfe6ff,    // expanding ripple rings
+  // ---- Laid surfaces (ice / gravel) ----
+  ice: 0x9fe4ff,            // pale blue sheen laid over the road
+  iceEm: 0x2a6f95,
+  iceSheen: 0xe8fbff,       // bright glints on the ice
+  gravel: 0x8a8578,         // dusty grey-brown scatter
+  gravelEm: 0x2a2620,
+  gravelGrit: 0x5f5a50,     // darker chippings
   // ---- Banked turn ----
   bank: 0xffb000,           // warm amber banked road
   bankEm: 0x6a4500,

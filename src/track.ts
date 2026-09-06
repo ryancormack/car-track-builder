@@ -6,7 +6,7 @@
 // the frozen entries are cleared and everything recomputes from the actual
 // piece sequence. No shadows, no ghosts, no gap placeholders.
 
-import { PIECES, applyPiece, isPieceId, canDecorate, isDecorationId } from './pieces/index.js';
+import { PIECES, applyPiece, isPieceId, canDecorate, isDecorationId, canModify, isSurfaceId } from './pieces/index.js';
 import { MAX_DROP_HEIGHT } from './constants.js';
 import {
   buildOccupiedSet,
@@ -16,7 +16,7 @@ import {
   computeCells,
 } from './collision.js';
 import type { CellKey, CollisionResult, GridCell } from './collision.js';
-import type { DecorationId, GridState, Piece, PieceId, TrackJSON } from './types.js';
+import type { DecorationId, GridState, Piece, PieceId, SurfaceId, TrackJSON } from './types.js';
 
 export class Track {
   dropHeight = 3;
@@ -30,6 +30,14 @@ export class Track {
    * spliced in lockstep with `pieces` by every mutation so the alignment holds.
    */
   decorations: (DecorationId | null)[] = [];
+
+  /**
+   * Per-piece laid surfaces (ice / gravel), aligned with `pieces` by index.
+   * `surfaces[i]` is the surface on `pieces[i]`, or `null` for plain track.
+   * Spliced in lockstep with `pieces` by every mutation, exactly like
+   * `decorations`, so the alignment holds.
+   */
+  surfaces: (SurfaceId | null)[] = [];
 
   // Frozen entries: when the first edit of a session happens, we snapshot the
   // entry states of the pieces *downstream* of the edit. Those frozen positions
@@ -253,6 +261,7 @@ export class Track {
     if (!result.ok) return false;
     this.pieces.push(pieceId);
     this.decorations.push(null);
+    this.surfaces.push(null);
     return true;
   }
 
@@ -295,6 +304,7 @@ export class Track {
     }
     const removed = this.pieces.splice(index, 1)[0];
     this.decorations.splice(index, 1);
+    this.surfaces.splice(index, 1);
     this._maybeEndEdit();
     return removed;
   }
@@ -323,6 +333,7 @@ export class Track {
     if (this.frozenEntries === null) this._freezeFrom(index);
     this.pieces.splice(index, 0, pieceId);
     this.decorations.splice(index, 0, null);
+    this.surfaces.splice(index, 0, null);
     return true;
   }
 
@@ -350,6 +361,11 @@ export class Track {
     this.pieces[index] = pieceId;
     // Drop the decoration if the new piece type can't carry it.
     if (this.decorations[index] && !canDecorate(pieceId)) this.decorations[index] = null;
+    // The laid surface, by contrast, is KEPT: it describes that stretch of track
+    // rather than the piece standing on it, so swapping a straight for a ramp
+    // leaves the section still icy. It is only dropped when the replacement
+    // genuinely cannot carry a surface (a loop, a jump, a booster).
+    if (this.surfaces[index] && !canModify(pieceId)) this.surfaces[index] = null;
     return true;
   }
 
@@ -453,12 +469,14 @@ export class Track {
 
   undo(): PieceId | undefined {
     this.decorations.pop();
+    this.surfaces.pop();
     return this.pieces.pop();
   }
 
   clear(): void {
     this.pieces.length = 0;
     this.decorations.length = 0;
+    this.surfaces.length = 0;
     this.frozenEntries = null;
   }
 
@@ -479,6 +497,31 @@ export class Track {
   /** The decoration on piece `index`, or null. */
   decorationAt(index: number): DecorationId | null {
     return this.decorations[index] ?? null;
+  }
+
+  /**
+   * Lay `surfaceId` on the piece at `index`, or clear it with `null`. Returns
+   * whether the track changed: `false` for an out-of-range index, an unknown id,
+   * a piece that cannot carry a surface, or a no-op write of the same value.
+   *
+   * Unlike `toggleDecoration` this SETS rather than toggles, because the caller
+   * (an armed surface, or a chip in the selection bar) already knows the value it
+   * wants — toggling would make laying the same surface twice silently undo it.
+   */
+  setSurface(index: number, surfaceId: SurfaceId | null): boolean {
+    if (index < 0 || index >= this.pieces.length) return false;
+    if (surfaceId !== null) {
+      if (!isSurfaceId(surfaceId)) return false;
+      if (!canModify(this.pieces[index])) return false;
+    }
+    if (this.surfaces[index] === surfaceId) return false;
+    this.surfaces[index] = surfaceId;
+    return true;
+  }
+
+  /** The surface laid on piece `index`, or null for plain track. */
+  surfaceAt(index: number): SurfaceId | null {
+    return this.surfaces[index] ?? null;
   }
 
   hasFinish(): boolean {
@@ -504,6 +547,7 @@ export class Track {
       dropHeight: this.dropHeight,
       pieces: [...this.pieces],
       decorations: [...this.decorations],
+      surfaces: [...this.surfaces],
     };
   }
 
@@ -522,6 +566,15 @@ export class Track {
     this.decorations = this.pieces.map((pieceId, i) => {
       const d = rawDecos[i];
       if (typeof d === 'string' && isDecorationId(d) && canDecorate(pieceId)) return d;
+      return null;
+    });
+    // Surfaces: same contract as decorations — aligned by index, ids validated,
+    // and dropped for any piece that cannot carry one. A save written before
+    // surfaces existed has no field at all and so loads as all-plain.
+    const rawSurfaces = Array.isArray(obj.surfaces) ? obj.surfaces : [];
+    this.surfaces = this.pieces.map((pieceId, i) => {
+      const s = rawSurfaces[i];
+      if (typeof s === 'string' && isSurfaceId(s) && canModify(pieceId)) return s;
       return null;
     });
     // Clear any editing state on load.
