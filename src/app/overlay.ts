@@ -34,6 +34,8 @@ function describeOutcome(sim: Simulator): { title: string; body: string } {
       return { title: '\u{1F4A5} SMASHED!', body: sim.failReason || 'Not enough speed — the car exploded against the wall!' };
     case 'collapse':
       return { title: '\u{1F573}\u{FE0F} COLLAPSED!', body: sim.failReason || 'Too slow — the bridge gave way and the car fell!' };
+    case 'rear_end':
+      return { title: '\u{1F4A5} SHUNT!', body: sim.failReason || 'The cars piled into each other!' };
     case 'stall':
       return { title: '\u{1F40C} Out of Steam!', body: sim.failReason || 'The car ground to a halt.' };
     default:
@@ -71,7 +73,11 @@ export class ResultOverlay {
       for (const r of results) {
         const row = document.createElement('div');
         row.className = 'overlay-car-row';
-        const outcome = r.sim.failed ? '\u{1F4A5} Crashed' : '\u{1F3C1} Finished';
+        // A shunt is called out separately: in a mixed field the interesting
+        // question is whether a car crashed on its own or was taken out.
+        const outcome = !r.sim.failed
+          ? '\u{1F3C1} Finished'
+          : r.sim.failType === 'rear_end' ? '\u{1F4A5} Shunted' : '\u{1F4A5} Crashed';
         row.innerHTML = `<span class="car-label">${r.label}</span>` +
           `<span class="car-outcome">${outcome}</span>` +
           `<span class="car-score">${r.score.total}</span>`;

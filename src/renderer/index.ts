@@ -19,7 +19,6 @@ import type { CameraControlHost } from './controls.js';
 import type { Track } from '../track.js';
 import type { PieceId } from '../types.js';
 import type { VehicleId } from '../vehicles.js';
-import { DEFAULT_VEHICLE_ID } from '../vehicles.js';
 import type { TrackFrame } from '../pieces/frames.js';
 import type { FailType } from '../physics.js';
 
@@ -70,7 +69,6 @@ export class Renderer implements CameraControlHost {
    * each get their own mesh + wipeout state).
    */
   private _cars = new Map<number, THREE.Group>();
-  private _vehicleId: VehicleId = DEFAULT_VEHICLE_ID;
 
   // Optional living-room backdrop. Hidden by default; toggled via
   // setEnvironmentVisible(). Repositioned to the track centroid on each rebuild.
@@ -186,13 +184,15 @@ export class Renderer implements CameraControlHost {
   // -------- public API --------
 
   /**
-   * Ensure a car mesh exists for `carId`, building it (using the currently
-   * selected vehicle) if this is the first time we've seen that id.
+   * Ensure a car mesh exists for `carId`, building it from `vehicleId` if this
+   * is the first time we've seen that id. The vehicle belongs to the CAR, not to
+   * the renderer, so a mixed field (a Speedster chasing a Monster) shows each
+   * car in its own bodywork.
    */
-  private _ensureCar(carId: number): THREE.Group {
+  private _ensureCar(carId: number, vehicleId: VehicleId): THREE.Group {
     let car = this._cars.get(carId);
     if (!car) {
-      car = buildVehicle(this._vehicleId);
+      car = buildVehicle(vehicleId);
       car.visible = false;
       this.scene.add(car);
       this._cars.set(carId, car);
@@ -204,8 +204,8 @@ export class Renderer implements CameraControlHost {
    * Show/hide and place the car mesh for `carId`. Each racing car gets its own
    * mesh + id, so several cars can be visible and animated simultaneously.
    */
-  setCar(carId: number, visible: boolean, sample: TrackFrame | null = null, skid = 0): void {
-    const car = this._ensureCar(carId);
+  setCar(carId: number, vehicleId: VehicleId, visible: boolean, sample: TrackFrame | null = null, skid = 0): void {
+    const car = this._ensureCar(carId, vehicleId);
     car.visible = !!visible;
     // Reset any wipeout transform (a crash shrinks/hides the car) so a fresh run
     // shows it whole again.
@@ -230,26 +230,6 @@ export class Renderer implements CameraControlHost {
   /** Remove every car mesh currently on the track (switching back to build mode). */
   clearCars(): void {
     for (const carId of Array.from(this._cars.keys())) this.removeCar(carId);
-  }
-
-  /**
-   * Swap the active vehicle mesh (garage selection) for every car currently on
-   * the track, plus future cars. Disposes the old meshes and builds the chosen
-   * one, preserving each car's visibility so the swap is seamless in either
-   * build or play mode. No-op if the id is already active.
-   */
-  setVehicle(id: VehicleId): void {
-    if (id === this._vehicleId) return;
-    this._vehicleId = id;
-    for (const [carId, oldCar] of this._cars) {
-      const wasVisible = oldCar.visible;
-      this.scene.remove(oldCar);
-      this._disposeObject(oldCar);
-      const newCar = buildVehicle(id);
-      newCar.visible = wasVisible;
-      this.scene.add(newCar);
-      this._cars.set(carId, newCar);
-    }
   }
 
   /**
@@ -419,7 +399,9 @@ export class Renderer implements CameraControlHost {
 
   startWipeoutAnimation(carId: number, failType: FailType, frame: TrackFrame | null): void {
     this.cleanupWipeout(carId);
-    const car = this._ensureCar(carId);
+    // The car has been racing, so its mesh exists; nothing to wipe out if not.
+    const car = this._cars.get(carId);
+    if (!car) return;
     const startPos = car.position.clone();
     let duration: number;
     let velocity: THREE.Vector3;
@@ -461,6 +443,17 @@ export class Renderer implements CameraControlHost {
         duration = 1.6;
         velocity = new THREE.Vector3(0, -1.5, 0);
         break;
+      case 'rear_end':
+        // Shunted from behind (or into the back of someone): the pair is punted
+        // forward off the track and tumbles away.
+        duration = 1.6;
+        if (frame) {
+          velocity = new THREE.Vector3(frame.tangent.x, frame.tangent.y, frame.tangent.z).multiplyScalar(2.2);
+          velocity.y += 2.2;
+        } else {
+          velocity = new THREE.Vector3(0, 2.2, 2.2);
+        }
+        break;
       default: // stall, speed_gate
         duration = 1.0;
         velocity = new THREE.Vector3(0, 0.5, 0);
@@ -468,7 +461,7 @@ export class Renderer implements CameraControlHost {
     }
 
     const particles: THREE.Mesh[] = [];
-    if (failType === 'overspeed_corner') {
+    if (failType === 'overspeed_corner' || failType === 'rear_end') {
       for (let i = 0; i < 10; i++) {
         const p = new THREE.Mesh(this._particleGeom, this._particleMat.clone());
         p.position.copy(startPos);
@@ -506,7 +499,11 @@ export class Renderer implements CameraControlHost {
   updateWipeoutAnimation(carId: number, dt: number): boolean {
     const w = this._wipeouts.get(carId);
     if (!w) return false;
-    const car = this._ensureCar(carId);
+    const car = this._cars.get(carId);
+    if (!car) {
+      this._wipeouts.delete(carId);
+      return false;
+    }
     w.elapsed += dt;
 
     if (w.elapsed >= w.duration) {

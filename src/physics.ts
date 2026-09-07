@@ -12,7 +12,7 @@ import { PIECES, SURFACES, trackFrameAt, resolvePathLocal } from './pieces/index
 import {
   G, FRICTION, RAMP_FRICTION_MULT, DRAG,
   CORNER_MAX_V2, STALL_SPEED, LOOP_RADIUS, GIANT_LOOP_RADIUS, WALL_SMASH_V2, CRUMBLE_BRIDGE_V2,
-  LATERAL_GRIP,
+  LATERAL_GRIP, REAR_END_GAP,
 } from './constants.js';
 import type { Track } from './track.js';
 import type { TrackFrame } from './pieces/frames.js';
@@ -39,7 +39,7 @@ const CONTACT_EPS = 0.25; // how far below the loop contact threshold counts as 
 // it. Raising it further only makes the onset a harder pop.
 const SKID_RESPONSE = 30;
 
-export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' | 'fly_off' | 'crash' | 'collapse' | null;
+export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' | 'fly_off' | 'crash' | 'collapse' | 'rear_end' | null;
 
 // Pieces that carry a graded surface (a non-trivial up/down slope) and so pay
 // the steeper-grade friction surcharge: the ramps plus every coil. Loops, jumps
@@ -154,6 +154,21 @@ export class Simulator {
   get speed(): number { return Math.sqrt(Math.max(this.v2, 0)); }
 
   isRunning(): boolean { return !this.failed && !this.finished; }
+
+  /**
+   * End this car's run from OUTSIDE its own physics — used when another car
+   * shunts it (see findRearEnds). A car's own failures are raised inline in
+   * step(); this is the only external path, and it deliberately no-ops on a car
+   * that has already finished or failed so a pile-up cannot overwrite the
+   * reason a car went out.
+   */
+  crash(reason: string, type: FailType): void {
+    if (!this.isRunning()) return;
+    this.failed = true;
+    this.failReason = reason;
+    this.failType = type;
+    this.failPieceIndex = this.pieceIndex;
+  }
 
   // Advance simulation by dt seconds.
   step(dt: number): void {
@@ -435,4 +450,51 @@ export class Simulator {
     const resolvedPath = resolvePathLocal(this.track.pieces, idx);
     return trackFrameAt(resolvedPath, entry, t);
   }
+}
+
+/** One car's position along the shared track, for the rear-end check. */
+export interface RunningCar {
+  id: number;
+  distanceTraveled: number;
+  speed: number;
+}
+
+/** A trailing car that has run into the back of the car ahead of it. */
+export interface RearEnd {
+  trailing: number;
+  lead: number;
+}
+
+/**
+ * Find every trailing car that has run into the back of the car in front.
+ *
+ * Every car runs the SAME one-dimensional path, so "how far apart are they" is
+ * just the difference of their travelled distances — this needs no 3D collision
+ * and no knowledge of the track's shape.
+ *
+ * A shunt requires BOTH a closed gap and the trailing car actually going faster
+ * than the one ahead. The speed condition is what makes this "caught up with the
+ * car in front" rather than "launched too soon": two cars with the same handling
+ * hold a constant gap forever (there is no propulsion, so nothing makes one
+ * reel the other in), and launching right behind a car that is pulling away is
+ * fair game. It also stops a launch on the same frame as the car ahead from
+ * registering as an instant crash while both sit at distance 0.
+ *
+ * Pass only cars still running; a wreck is treated as cleared off the track
+ * (its mesh is shrunk away by the wipeout animation). Chain reactions fall out
+ * naturally: with three cars nose-to-tail, both adjacent pairs are returned.
+ */
+export function findRearEnds(cars: RunningCar[]): RearEnd[] {
+  // Leader first, so each car's only possible victim is its immediate neighbour.
+  const order = [...cars].sort((a, b) => b.distanceTraveled - a.distanceTraveled);
+  const hits: RearEnd[] = [];
+  for (let i = 1; i < order.length; i++) {
+    const lead = order[i - 1];
+    const trailing = order[i];
+    const gap = lead.distanceTraveled - trailing.distanceTraveled;
+    if (gap < REAR_END_GAP && trailing.speed > lead.speed) {
+      hits.push({ trailing: trailing.id, lead: lead.id });
+    }
+  }
+  return hits;
 }

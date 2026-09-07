@@ -65,7 +65,10 @@
 
   <main class="layout">
     <aside class="sidebar" id="sidebar">
-      <section class="panel">
+      <!-- `always`: the garage stays live during a race (every other sidebar
+           panel is dimmed and click-blocked in play mode) because it now picks
+           the vehicle for the NEXT launch, so a race can mix types. -->
+      <section class="panel always">
         <h2 class="panel-title">Garage</h2>
         <div id="garage" class="garage"></div>
       </section>
