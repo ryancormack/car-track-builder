@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { COLORS } from './colors.js';
 import { VEHICLES, type VehicleId, type VehicleVisual } from '../vehicles.js';
 import type { TrackFrame } from '../pieces/frames.js';
+import { SKID_MAX_YAW, SKID_MAX_OFFSET } from '../constants.js';
 
 /**
  * Build the mesh for a catalogue vehicle. Dispatches on the vehicle's `kind`
@@ -373,7 +374,7 @@ function buildBikeMesh(visual: VehicleVisual): THREE.Group {
  */
 const RIDE_HEIGHT = 0.12;
 
-export function placeCar(car: THREE.Group, frame: TrackFrame): void {
+export function placeCar(car: THREE.Group, frame: TrackFrame, skid = 0): void {
   // Grid space (x=fwd, y=lateral, z=up) -> three.js (x, z, y).
   const pos = new THREE.Vector3(frame.pos.x, frame.pos.z, frame.pos.y);
   const tang = new THREE.Vector3(frame.tangent.x, frame.tangent.z, frame.tangent.y).normalize();
@@ -383,5 +384,24 @@ export function placeCar(car: THREE.Group, frame: TrackFrame): void {
   const side = new THREE.Vector3().crossVectors(tang, up).normalize();
 
   car.position.copy(pos).addScaledVector(up, RIDE_HEIGHT);
+
+  if (skid !== 0) {
+    // `skid` is signed along the frame's OWN lateral axis (grid space), while the
+    // basis above uses a re-derived `side` that may oppose it because the grid->three
+    // map flips handedness. Resolve that here by projecting the frame's lateral axis
+    // onto the derived one, so the car slides the way the simulator meant regardless
+    // of which convention wins.
+    const frameSide = new THREE.Vector3(frame.side.x, frame.side.z, frame.side.y);
+    const sense = side.dot(frameSide) < 0 ? -1 : 1;
+    const s = skid * sense;
+    // Body slides toward the outside of the bend...
+    car.position.addScaledVector(side, s * SKID_MAX_OFFSET);
+    // ...while the nose swings toward the inside: the readable drifting pose.
+    const yawed = tang.clone().applyAxisAngle(up, -s * SKID_MAX_YAW).normalize();
+    const yawedSide = new THREE.Vector3().crossVectors(yawed, up).normalize();
+    car.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(yawed, up, yawedSide));
+    return;
+  }
+
   car.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(tang, up, side));
 }

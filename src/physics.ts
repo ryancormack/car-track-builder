@@ -12,6 +12,7 @@ import { PIECES, SURFACES, trackFrameAt, resolvePathLocal } from './pieces/index
 import {
   G, FRICTION, RAMP_FRICTION_MULT, DRAG,
   CORNER_MAX_V2, STALL_SPEED, LOOP_RADIUS, GIANT_LOOP_RADIUS, WALL_SMASH_V2, CRUMBLE_BRIDGE_V2,
+  LATERAL_GRIP,
 } from './constants.js';
 import type { Track } from './track.js';
 import type { TrackFrame } from './pieces/frames.js';
@@ -25,6 +26,18 @@ export { G, FRICTION, RAMP_FRICTION_MULT, DRAG };
 // a failure on a car that is genuinely within its physical envelope.
 const ROLLBACK_EPS = 0.5; // how far below "energy to crest" counts as doomed
 const CONTACT_EPS = 0.25; // how far below the loop contact threshold counts as a peel-off
+
+// How quickly the rendered skid chases the instantaneous slip demand, per second.
+// Curvature is constant across a CURVE, so the raw demand steps from 0 to full at
+// the piece seam; easing toward it stops the car snapping sideways at the join and
+// lets the slide build and then recover.
+//
+// Calibrated, not guessed: a tight bend is crossed in well under 0.1s, so a slower
+// response never develops the skid at all (at 8/s a full-demand icy bank only
+// reached 0.40 of its slide and was still visibly crabbed at the finish line).
+// This settles to ~0.9 within the bend and decays to near-nothing a short way past
+// it. Raising it further only makes the onset a harder pop.
+const SKID_RESPONSE = 30;
 
 export type FailType = 'speed_gate' | 'stall' | 'rollback' | 'overspeed_corner' | 'fly_off' | 'crash' | 'collapse' | null;
 
@@ -79,6 +92,16 @@ export class Simulator {
   distanceTraveled = 0;
   topSpeed = 0;
   boostersUsed = 0;
+  /**
+   * Signed lateral slip, -1..1, for the renderer to pose a skid with. 0 means the
+   * car is gripping. The sign is the direction the car slides along its frame's
+   * `side` axis — outward from the bend — so the renderer needs no notion of which
+   * way the corner goes.
+   *
+   * Only a piece carrying a laid surface can produce slip; plain track is always 0,
+   * which is what keeps every pre-existing track behaving exactly as before.
+   */
+  slip = 0;
   failed = false;
   failReason: string | null = null;
   failType: FailType = null;
@@ -112,6 +135,7 @@ export class Simulator {
     this.distanceTraveled = 0;
     this.topSpeed = Math.sqrt(this.v2);
     this.boostersUsed = 0;
+    this.slip = 0;
     this.failed = false;
     this.failReason = null;
     this.failType = null;
@@ -293,6 +317,10 @@ export class Simulator {
     const newSpeed = Math.sqrt(Math.max(this.v2, 0));
     if (newSpeed > this.topSpeed) this.topSpeed = newSpeed;
 
+    // Skid: ease the rendered slip toward what this piece currently demands.
+    this.slip += (this._slipTarget(resolvedPath) - this.slip)
+      * Math.min(1, dt * SKID_RESPONSE);
+
     this.t = t_new;
     this.distanceTraveled += ds_actual;
 
@@ -340,6 +368,48 @@ export class Simulator {
       prev = pt;
     }
     return this.v2 + ROLLBACK_EPS < required;
+  }
+
+  /**
+   * How hard the car is being asked to slide right now, as a signed -1..1 value.
+   *
+   * A bend needs lateral force proportional to v²·κ, where κ is the path's
+   * curvature. The surface supplies `LATERAL_GRIP · gripMult · vehicle.corner` of
+   * that; whatever the bend demands beyond it becomes slip, saturating at 1 so a
+   * wildly overspeed corner does not fling the car off the road mesh.
+   *
+   * Returns 0 for plain track without measuring anything — that early exit is what
+   * guarantees an unsurfaced track is bit-for-bit unchanged, and it also keeps the
+   * three frame samples below off the hot path for the common case.
+   */
+  private _slipTarget(path: PathFn): number {
+    const surface = this.track.surfaceAt(this.pieceIndex);
+    if (surface === null) return 0;
+    const grip = LATERAL_GRIP * SURFACES[surface].gripMult * this.vehicle.corner;
+    if (grip <= 0) return 0;
+
+    // Signed curvature: the rate the tangent turns, projected onto the lateral
+    // axis. Projecting (rather than taking |dT/ds|) is what yields the SIGN, so the
+    // renderer can slide the car outward without knowing the turn direction.
+    const h = 0.02;
+    const ta = Math.max(this.t - h, 0);
+    const tb = Math.min(this.t + h, 1);
+    if (tb - ta < 1e-6) return 0;
+    const entry = this.track.entryStateAt(this.pieceIndex);
+    const a = trackFrameAt(path, entry, ta);
+    const b = trackFrameAt(path, entry, tb);
+    const here = trackFrameAt(path, entry, this.t);
+    const ds = Math.hypot(b.pos.x - a.pos.x, b.pos.y - a.pos.y, b.pos.z - a.pos.z);
+    if (ds < 1e-9) return 0;
+    const kSigned = ((b.tangent.x - a.tangent.x) * here.side.x
+      + (b.tangent.y - a.tangent.y) * here.side.y
+      + (b.tangent.z - a.tangent.z) * here.side.z) / ds;
+
+    const excess = (this.v2 * Math.abs(kSigned)) / grip - 1;
+    if (excess <= 0) return 0;
+    // Negative sign: the tangent swings TOWARD the centre of the bend, so the car
+    // slides the other way — outward.
+    return -Math.sign(kSigned) * Math.min(excess, 1);
   }
 
   // Sample the car's current frame (position + orientation) from the shared,

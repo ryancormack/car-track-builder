@@ -21,7 +21,7 @@ import {
   pathHelixUp, pathHelixDown, pathSpiralTower,
   pathGiantLoop, pathGiantJump,
 } from './paths.js';
-import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS, GIANT_LOOP_RADIUS, ICE_FRICTION_MULT, GRAVEL_FRICTION_MULT } from '../constants.js';
+import { G, FRICTION, RAMP_FRICTION_MULT, LOOP_RADIUS, GIANT_LOOP_RADIUS, ICE_FRICTION_MULT, GRAVEL_FRICTION_MULT, ICE_GRIP_MULT, GRAVEL_GRIP_MULT } from '../constants.js';
 import type { DecorationId, Piece, PieceId, SurfaceId } from '../types.js';
 
 // A vertical loop only stays "stuck to the track" while the car is fast enough
@@ -592,6 +592,12 @@ export interface Surface {
   icon: string;
   /** Multiplier applied to FRICTION along a piece carrying this surface. */
   frictionMult: number;
+  /**
+   * Fraction of {@link LATERAL_GRIP} this surface keeps. Below 1 the car can break
+   * traction in a bend and slide (see `Simulator.slip`). Plain track has no entry
+   * here at all and never slides.
+   */
+  gripMult: number;
   /** One-line description for the palette chip's tooltip. */
   blurb: string;
 }
@@ -599,11 +605,13 @@ export interface Surface {
 export const SURFACES: Record<SurfaceId, Surface> = {
   ICE: {
     id: 'ICE', name: 'Ice', icon: '❄️', frictionMult: ICE_FRICTION_MULT,
-    blurb: 'Almost no grip — the car barely loses speed along it',
+    gripMult: ICE_GRIP_MULT,
+    blurb: 'Almost no grip — the car keeps its speed and slides through bends',
   },
   GRAVEL: {
     id: 'GRAVEL', name: 'Gravel', icon: '🪨', frictionMult: GRAVEL_FRICTION_MULT,
-    blurb: 'Loose and draggy — scrubs speed off the car',
+    gripMult: GRAVEL_GRIP_MULT,
+    blurb: 'Loose and draggy — scrubs speed off and slips a little in bends',
   },
 };
 
