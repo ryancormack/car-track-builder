@@ -50,6 +50,35 @@ export const CURVE_RADIUS = 0.5;
 // alone always clears a corner, while stacking a booster on top sends you over.
 export const CORNER_MAX_V2 = 2 * G * MAX_DROP_HEIGHT + 2.4;
 
+// ---- Skidding on a laid surface ----
+//
+// The lateral demand a bend puts on grip is v²·κ (κ = path curvature = 1/radius),
+// so grip is expressed in those same units and compared directly.
+//
+// The reference point is the flat corner's OWN throw-off condition: CORNER_MAX_V2
+// is the speed at which a tight flat CURVE (κ = 1/CURVE_RADIUS) throws the car off,
+// so that product is already the game's notion of "the most a bare corner holds".
+// Surfaces scale it down from there.
+//
+// Declared after CORNER_MAX_V2 and CURVE_RADIUS deliberately — reading either from
+// above its declaration would hit the const temporal dead zone and throw on import.
+export const LATERAL_GRIP = CORNER_MAX_V2 / CURVE_RADIUS;
+
+// The fraction of that grip each surface keeps. Ice keeps little, so it breaks away
+// at ordinary cornering speeds; gravel is loose but still bites.
+//
+// PLAIN track deliberately has NO grip limit and can never skid, so every existing
+// track behaves exactly as it did — only a laid surface introduces sliding.
+export const ICE_GRIP_MULT = 0.3;
+export const GRAVEL_GRIP_MULT = 0.75;
+
+// Visual reach of a full-magnitude skid: the nose yaws toward the inside of the
+// bend while the body slides toward the outside — the readable "drifting" pose.
+// The offset stays well inside the road's 0.22 half-width so even a fully skidding
+// car keeps its wheels over the track rather than hanging in space.
+export const SKID_MAX_YAW = 0.42;    // radians (~24°)
+export const SKID_MAX_OFFSET = 0.12; // grid units, lateral
+
 // Radius of the vertical loop, in grid units. Must match `R` in pathLoop()
 // (pieces/paths.ts): the loop apex sits at 2·R = 1.0.
 export const LOOP_RADIUS = 0.5;

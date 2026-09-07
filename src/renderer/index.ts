@@ -204,13 +204,13 @@ export class Renderer implements CameraControlHost {
    * Show/hide and place the car mesh for `carId`. Each racing car gets its own
    * mesh + id, so several cars can be visible and animated simultaneously.
    */
-  setCar(carId: number, visible: boolean, sample: TrackFrame | null = null): void {
+  setCar(carId: number, visible: boolean, sample: TrackFrame | null = null, skid = 0): void {
     const car = this._ensureCar(carId);
     car.visible = !!visible;
     // Reset any wipeout transform (a crash shrinks/hides the car) so a fresh run
     // shows it whole again.
     if (visible) car.scale.setScalar(1);
-    if (visible && sample) placeCar(car, sample);
+    if (visible && sample) placeCar(car, sample, skid);
   }
 
   /** Remove a car's mesh entirely (e.g. once its run result has been shown). */

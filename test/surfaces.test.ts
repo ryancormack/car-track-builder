@@ -25,7 +25,6 @@ import {
 } from '../src/pieces/index.js';
 import { MAX_DROP_HEIGHT, ICE_FRICTION_MULT, GRAVEL_FRICTION_MULT } from '../src/constants.js';
 import type { PieceId, SurfaceId } from '../src/types.js';
-
 function trackOf(ids: string[], dropHeight = 3): Track {
   const t = new Track();
   t.dropHeight = dropHeight;
@@ -324,4 +323,132 @@ test('gravel never makes a piece impassable that was passable plain', () => {
     regressions, [],
     `gravel made these pieces impassable at every legal budget: ${regressions.join(', ')}`,
   );
+});
+
+// ---------- 5. Skidding: a surfaced bend can break traction ----------
+//
+// `Simulator.slip` is a signed -1..1 render hint, not a failure mode: a skid poses
+// the car, it never throws it off. The single most important property is the first
+// test — plain track must be bit-for-bit unaffected, because that is what lets this
+// ship without re-tuning every existing track.
+
+function peakSlip(ids: string[], surface: SurfaceId | null, dropHeight = 3): { peak: number; finished: boolean } {
+  const t = new Track();
+  t.dropHeight = dropHeight;
+  for (const id of ids) t.addPiece(id);
+  if (surface !== null) {
+    for (let i = 0; i < t.pieces.length; i++) if (canModify(t.pieces[i])) t.setSurface(i, surface);
+  }
+  const sim = new Simulator(t);
+  let steps = 0;
+  let peak = 0;
+  while (sim.isRunning() && steps++ < 20000) {
+    sim.step(1 / 240);
+    if (Math.abs(sim.slip) > Math.abs(peak)) peak = sim.slip;
+  }
+  return { peak, finished: sim.finished };
+}
+
+test('every surface declares a grip multiplier below 1, or it could never skid', () => {
+  for (const id of SURFACE_ORDER) {
+    const s = SURFACES[id];
+    assert.ok(s.gripMult > 0, `${id} grip multiplier is positive`);
+    assert.ok(s.gripMult < 1, `${id} must keep less than full grip to be able to slide`);
+  }
+});
+
+test('PLAIN track never skids, at any speed, on any turn — the zero-regression guard', () => {
+  for (const turn of ['CURVE_L', 'CURVE_R', 'BANK_L', 'BANK_R', 'CHICANE_L', 'WIDE_R_2'] as PieceId[]) {
+    for (const drop of [1, 3, MAX_DROP_HEIGHT]) {
+      const { peak } = peakSlip(['START', 'STRAIGHT', turn, 'STRAIGHT', 'FINISH'], null, drop);
+      assert.equal(peak, 0, `plain ${turn} at drop ${drop} must not slip (got ${peak})`);
+    }
+  }
+});
+
+test('an icy straight never skids — no curvature, no lateral demand', () => {
+  const { peak } = peakSlip(['START', 'STRAIGHT', 'STRAIGHT', 'STRAIGHT', 'FINISH'], 'ICE', MAX_DROP_HEIGHT);
+  assert.equal(peak, 0, 'a straight cannot break traction');
+});
+
+test('an icy bend skids, and skids harder the faster the car arrives', () => {
+  const slow = peakSlip(['START', 'STRAIGHT', 'CURVE_R', 'STRAIGHT', 'FINISH'], 'ICE', 1);
+  const mid = peakSlip(['START', 'STRAIGHT', 'CURVE_R', 'STRAIGHT', 'FINISH'], 'ICE', 3);
+  const fast = peakSlip(['START', 'STRAIGHT', 'CURVE_R', 'STRAIGHT', 'FINISH'], 'ICE', MAX_DROP_HEIGHT);
+
+  assert.equal(slow.peak, 0, 'gentle cornering still grips');
+  assert.ok(mid.peak > 0.2, `a normal-speed icy bend should visibly slide (got ${mid.peak})`);
+  assert.ok(fast.peak > mid.peak, `faster must slide more (${fast.peak} vs ${mid.peak})`);
+  assert.ok(Math.abs(fast.peak) <= 1, 'slip saturates at 1 so the car cannot leave the road mesh');
+});
+
+test('slip points OUTWARD, so its sign flips with the turn direction', () => {
+  const right = peakSlip(['START', 'STRAIGHT', 'BANK_R', 'STRAIGHT', 'FINISH'], 'ICE', MAX_DROP_HEIGHT);
+  const left = peakSlip(['START', 'STRAIGHT', 'BANK_L', 'STRAIGHT', 'FINISH'], 'ICE', MAX_DROP_HEIGHT);
+  assert.ok(right.peak !== 0 && left.peak !== 0, 'both directions skid');
+  assert.ok(
+    Math.sign(right.peak) === -Math.sign(left.peak),
+    `mirrored turns must slide opposite ways (R=${right.peak}, L=${left.peak})`,
+  );
+});
+
+test('gravel slips less than ice on the same bend', () => {
+  const ice = peakSlip(['START', 'STRAIGHT', 'CURVE_R', 'STRAIGHT', 'FINISH'], 'ICE', 3);
+  const gravel = peakSlip(['START', 'STRAIGHT', 'CURVE_R', 'STRAIGHT', 'FINISH'], 'GRAVEL', 3);
+  assert.ok(
+    Math.abs(gravel.peak) < Math.abs(ice.peak),
+    `gravel keeps more grip than ice (gravel ${gravel.peak} vs ice ${ice.peak})`,
+  );
+});
+
+test('a skid poses the car but never fails the run', () => {
+  // Ryan's reported track: an icy banked turn taken with a booster. It must skid
+  // hard AND still finish — skidding is deliberately not a new failure mode.
+  const r = peakSlip(
+    ['START', 'STRAIGHT', 'STRAIGHT', 'BOOSTER', 'STRAIGHT', 'STRAIGHT', 'BANK_R', 'STRAIGHT', 'FINISH'],
+    'ICE',
+  );
+  assert.ok(Math.abs(r.peak) > 0.5, `the reported case should skid clearly (got ${r.peak})`);
+  assert.equal(r.finished, true, 'a skid must not throw the car off');
+});
+
+test('reset() clears any accumulated skid', () => {
+  const t = new Track();
+  t.dropHeight = MAX_DROP_HEIGHT;
+  for (const id of ['START', 'STRAIGHT', 'BANK_R', 'STRAIGHT', 'FINISH']) t.addPiece(id);
+  for (let i = 0; i < t.pieces.length; i++) if (canModify(t.pieces[i])) t.setSurface(i, 'ICE');
+  const sim = new Simulator(t);
+  let steps = 0;
+  while (sim.isRunning() && steps++ < 20000) {
+    sim.step(1 / 240);
+    if (Math.abs(sim.slip) > 0.3) break;
+  }
+  assert.ok(Math.abs(sim.slip) > 0.3, 'precondition: the car is mid-skid');
+  sim.reset();
+  assert.equal(sim.slip, 0, 'reset clears the skid');
+});
+
+test('the frame lateral axis is collinear with the basis the renderer derives', () => {
+  // placeCar builds its basis as tangent × up, which the grid->three handedness flip
+  // can leave OPPOSED to the frame's own `side`. It therefore resolves the sign by
+  // projecting one onto the other. That projection is only meaningful if the two are
+  // collinear rather than merely similar, so pin that here — in plain arithmetic, so
+  // the test needs no three.js and runs in the same suite as the rest.
+  const map = (v: { x: number; y: number; z: number }) => ({ x: v.x, y: v.z, z: v.y });
+  const cross = (a: {x:number;y:number;z:number}, b: {x:number;y:number;z:number}) => ({
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  });
+  for (const id of ['STRAIGHT', 'CURVE_R', 'BANK_R', 'BANK_L', 'HELIX_UP', 'SPIRAL'] as PieceId[]) {
+    for (const f of trackFrames(PIECES[id].pathLocal, { gx: 0, gy: 0, gz: 0, dir: 1 }, 24)) {
+      const t3 = map(f.tangent), u3 = map(f.up), s3 = map(f.side);
+      const derived = cross(t3, u3);
+      const dot = derived.x * s3.x + derived.y * s3.y + derived.z * s3.z;
+      assert.ok(
+        Math.abs(Math.abs(dot) - 1) < 1e-6,
+        `${id}: derived side must be parallel or antiparallel to frame.side, |dot| was ${Math.abs(dot).toFixed(6)}`,
+      );
+    }
+  }
 });

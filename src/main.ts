@@ -566,7 +566,7 @@ function stepCar(car: RaceCar, dt: number): void {
     }
     const sample = sim.carSample();
     if (sample) {
-      renderer.setCar(car.id, true, sample);
+      renderer.setCar(car.id, true, sample, sim.slip);
       if (car.id === followedCarId) renderer.followCar(sample.pos, dt);
     }
     return;
