@@ -4,7 +4,7 @@
 import { Track } from './track.js';
 import { Renderer } from './renderer/index.js';
 import { Editor } from './editor.js';
-import { Simulator } from './physics.js';
+import { Simulator, findRearEnds } from './physics.js';
 import { computeScore } from './scoring.js';
 import { SURFACE_ORDER } from './pieces/index.js';
 import { SPEED_SCALE, MIN_CARS, MAX_CARS, DEFAULT_CARS } from './constants.js';
@@ -38,6 +38,12 @@ type Mode = 'build' | 'play';
 interface RaceCar {
   id: number;
   label: string;
+  /**
+   * The vehicle THIS car was launched in. Held per car (not globally) so a race
+   * can mix types: the garage picks the vehicle for the NEXT launch, and every
+   * car already on the track keeps its own handling profile and bodywork.
+   */
+  vehicleId: VehicleId;
   sim: Simulator;
   /** True once this car's wipeout animation has finished playing (or it never crashed). */
   wipeoutDone: boolean;
@@ -390,19 +396,22 @@ function switchMode(next: Mode): void {
 }
 
 /**
- * Launch one more car down the track: a new Simulator + car mesh, using the
- * currently selected vehicle. No-op once `carCount` cars have already been
- * launched, or outside play mode. The plunger animation replays on every
- * launch, including the very first one from the Play button.
+ * Launch one more car down the track, in the vehicle currently selected in the
+ * garage. The garage stays live during a race, so each launch can pick a
+ * different type and they race each other. No-op once `carCount` cars have
+ * already been launched, or outside play mode. The plunger animation replays on
+ * every launch, including the very first one from the Play button.
  */
 function launchCar(): void {
   if (mode !== 'play') return;
   if (cars.length >= carCount) return;
   const id = nextCarId++;
-  const sim = new Simulator(track, VEHICLES[selectedVehicleId].physics);
+  const vehicleId = selectedVehicleId;
+  const sim = new Simulator(track, VEHICLES[vehicleId].physics);
   const car: RaceCar = {
     id,
-    label: `Car ${cars.length + 1}`,
+    label: `Car ${cars.length + 1} (${VEHICLES[vehicleId].name})`,
+    vehicleId,
     sim,
     wipeoutDone: false,
     done: false,
@@ -411,7 +420,7 @@ function launchCar(): void {
   };
   cars.push(car);
   followedCarId = id;
-  renderer.setCar(id, true, sim.carSample());
+  renderer.setCar(id, vehicleId, true, sim.carSample());
   renderer.animateLauncher();
   refreshHud();
   updateLaunchButton();
@@ -429,7 +438,9 @@ function updateLaunchButton(): void {
   const canLaunch = cars.length < carCount;
   (els.btnLaunch as HTMLButtonElement).disabled = !canLaunch;
   els.btnLaunch.textContent = canLaunch
-    ? `🔴 Launch Car (${cars.length}/${carCount})`
+    // Name the vehicle: the garage stays live mid-race, so the button is where
+    // the player sees WHICH type the next press will send down the track.
+    ? `🔴 Launch ${VEHICLES[selectedVehicleId].name} (${cars.length}/${carCount})`
     : `🏁 All ${carCount} cars launched`;
 }
 
@@ -492,9 +503,9 @@ function updateEnvButton(visible: boolean): void {
 }
 
 /**
- * Build the garage (vehicle picker). Restores the saved vehicle, renders one
- * button per catalogue vehicle, and shows the chosen one in the scene. Clicking
- * a button selects + persists that vehicle and swaps the live mesh immediately.
+ * Build the garage (vehicle picker). Restores the saved vehicle and renders one
+ * button per catalogue vehicle. Clicking a button selects + persists that
+ * vehicle, which is the one the next launch will use.
  */
 function buildGarage(): void {
   const saved = loadVehicleId();
@@ -515,15 +526,18 @@ function buildGarage(): void {
     els.garage.appendChild(btn);
   }
   highlightVehicle();
-  renderer.setVehicle(selectedVehicleId);
 }
 
-/** Select a vehicle: persist it, swap the mesh, and update the button state. */
+/**
+ * Select a vehicle: persist it and update the button state. This is the vehicle
+ * the NEXT launch will use — cars already on the track keep the one they were
+ * launched in, which is what lets a race mix types.
+ */
 function selectVehicle(id: VehicleId): void {
   selectedVehicleId = id;
   saveVehicleId(id);
-  renderer.setVehicle(id);
   highlightVehicle();
+  updateLaunchButton();
 }
 
 /** Mark the active vehicle's button as selected. */
@@ -566,7 +580,7 @@ function stepCar(car: RaceCar, dt: number): void {
     }
     const sample = sim.carSample();
     if (sample) {
-      renderer.setCar(car.id, true, sample, sim.slip);
+      renderer.setCar(car.id, car.vehicleId, true, sample, sim.slip);
       if (car.id === followedCarId) renderer.followCar(sample.pos, dt);
     }
     return;
@@ -637,12 +651,38 @@ function maybeShowResults(): void {
   }, delay);
 }
 
+/**
+ * Crash any car that has run into the back of the car ahead of it. Called once
+ * per frame after every car has stepped, so the whole field is compared at a
+ * single consistent moment rather than pairwise mid-update.
+ *
+ * Both cars in a shunt go out — a rear-ender takes the innocent car with it,
+ * which is the pile-up the player is inviting by launching a faster car into
+ * traffic. Marking the sims is all this does: stepCar picks up `failed` on the
+ * next frame and runs the normal wipeout + crash-banner + scoring path.
+ */
+function applyRearEndCrashes(): void {
+  const running = cars
+    .filter((c) => c.sim.isRunning())
+    .map((c) => ({ id: c.id, distanceTraveled: c.sim.distanceTraveled, speed: c.sim.speed }));
+  if (running.length < 2) return;
+
+  for (const hit of findRearEnds(running)) {
+    const trailing = cars.find((c) => c.id === hit.trailing);
+    const lead = cars.find((c) => c.id === hit.lead);
+    if (!trailing || !lead) continue;
+    trailing.sim.crash(`Slammed into the back of ${lead.label}!`, 'rear_end');
+    lead.sim.crash(`Rear-ended by ${trailing.label}!`, 'rear_end');
+  }
+}
+
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
   lastFrameTime = now;
 
   if (mode === 'play') {
     for (const car of cars) stepCar(car, dt);
+    applyRearEndCrashes();
     refreshHud(); // keep the live speed readout current every frame
   }
 

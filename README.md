@@ -19,9 +19,9 @@ npm run preview      # serves the production build locally
 ## Controls
 
 - **Sidebar palette** — click a piece to add it to the end of the track; hover to preview a ghost outline of where it lands. Hover a palette button for what the piece does and the entry speed it needs. The palette scrolls (the catalogue is taller than the panel) and its group headings stick as you go.
-- **Garage** — pick a vehicle. Each has its own drag, friction and cornering grip, so the same track plays differently.
+- **Garage** — pick a vehicle. Each has its own drag, friction and cornering grip, so the same track plays differently. The garage stays live during a race and sets the vehicle for the *next* launch, so a field can mix types — cars already on the track keep the one they were launched in.
 - **Drop height slider** — sets initial speed (`v² = 2·g·h`). Higher drops = bigger stunts available.
-- **Cars slider** — how many cars a run sends down the track.
+- **Cars slider** — how many cars a run sends down the track. Cars share one path, so a faster car that catches the one in front rear-ends it and both go out.
 - **Drag** the canvas to pan, **scroll** to zoom, press **R** to rotate the camera. In build mode the view frames the whole track automatically as it grows; your own panning is kept until you switch modes.
 - **Space** toggles between Build and Play. In Play, the launch button sends the next car off.
 - **Click a placed piece** to select it, then a palette piece to replace it, or **Del**/**Backspace** to delete it; **Escape** deselects. Deleting or inserting freezes the downstream track where it is until you press **Rejoin**.

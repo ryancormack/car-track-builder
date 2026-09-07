@@ -113,6 +113,13 @@ export const WALL_SMASH_V2 = 50;
 // about carrying momentum across, not smashing.
 export const CRUMBLE_BRIDGE_V2 = 40;
 
+// How close (in grid units of track travelled) a trailing car may get to the car
+// in front before it rear-ends it. Every car runs the SAME path, so the gap is
+// just the difference of their travelled distances — no 3D collision needed.
+// Sized to the car mesh, whose body spans -0.27..0.30 along its length
+// (renderer/car.ts), so contact happens at roughly bumper-to-bumper.
+export const REAR_END_GAP = 0.55;
+
 // Scale factor applied to simulation time in the run loop (main.ts).
 // A value < 1 makes the car traverse the track more slowly, giving a more
 // dramatic and watchable run without altering the underlying physics.
